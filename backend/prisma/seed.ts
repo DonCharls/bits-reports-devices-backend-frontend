@@ -7,7 +7,7 @@ async function main() {
     console.log('🌱 Starting seed...')
 
     // 1. Create Departments
-    const departments = ['Engineering', 'Design', 'HR', 'Finance', 'Marketing', 'Operations']
+    const departments = ['ENGINEERING DEPARTMENT', 'ACCOUNTING DEPARTMENT', 'HUMAN RESOURCES DEPARTMENT', 'MARKETING DEPARTMENT', 'OPERATIONS DEPARTMENT', 'IT DEPARTMENT']
     for (const name of departments) {
         await prisma.department.upsert({
             where: { name },
@@ -39,7 +39,7 @@ async function main() {
             firstName: 'Admin',
             lastName: 'User',
             role: 'ADMIN',
-            department: 'Operations',
+            department: 'OPERATIONS DEPARTMENT',
             position: 'System Administrator',
             preferredZkId: 1
         },
@@ -48,7 +48,7 @@ async function main() {
             firstName: 'Maria',
             lastName: 'Santos',
             role: 'HR',
-            department: 'HR',
+            department: 'HUMAN RESOURCES DEPARTMENT',
             position: 'HR Manager',
             preferredZkId: 2
         },
@@ -57,7 +57,7 @@ async function main() {
             firstName: 'John',
             lastName: 'Doe',
             role: 'USER',
-            department: 'Engineering',
+            department: 'ENGINEERING DEPARTMENT',
             position: 'Senior Developer',
             preferredZkId: 3
         },
@@ -66,7 +66,7 @@ async function main() {
             firstName: 'Jane',
             lastName: 'Smith',
             role: 'USER',
-            department: 'Design',
+            department: 'ENGINEERING DEPARTMENT',
             position: 'UI Designer',
             preferredZkId: 4
         },
@@ -75,7 +75,7 @@ async function main() {
             firstName: 'Alex',
             lastName: 'Rivera',
             role: 'USER',
-            department: 'Marketing',
+            department: 'MARKETING DEPARTMENT',
             position: 'Marketing Lead',
             preferredZkId: 5
         }
@@ -110,7 +110,7 @@ async function main() {
                     zkId: finalZkId,
                     employmentStatus: 'ACTIVE',
                     employeeNumber: `EMP${String(finalZkId).padStart(3, '0')}`,
-                    branch: 'MAIN OFFICE',
+                    branch: 'NRA',
                     hireDate: new Date('2024-01-15'),
                     updatedAt: new Date()
                 }
