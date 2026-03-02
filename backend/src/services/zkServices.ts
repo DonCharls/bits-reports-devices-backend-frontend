@@ -11,6 +11,10 @@ interface SyncResult {
     count?: number;
 }
 
+// UIDs on the device that must NEVER be overwritten by employee sync/add.
+// UID 1 is the SUPER ADMIN on the ZKTeco device.
+const PROTECTED_DEVICE_UIDS = [1];
+
 /**
  * Convert Philippine Time to UTC
  * ZKTeco device returns timestamps in Philippine Time (UTC+8)
@@ -50,17 +54,16 @@ export const syncZkData = async (): Promise<SyncResult> => {
 
                 if (isNaN(zkUserId)) continue;
 
-                // 1. Ensure Employee Exists
-                const employee = await prisma.employee.upsert({
-                    where: { zkId: zkUserId },
-                    update: {},
-                    create: {
-                        zkId: zkUserId,
-                        firstName: `Employee`,
-                        lastName: `${zkUserId}`,
-                        updatedAt: new Date()
-                    },
+                // 1. Find Employee by zkId — SKIP if not in DB (prevents ghost re-creation)
+                const employee = await prisma.employee.findUnique({
+                    where: { zkId: zkUserId }
                 });
+
+                if (!employee) {
+                    // This zkId was removed from the DB intentionally. Do not re-create.
+                    console.log(`[ZK] Skipping unknown zkId ${zkUserId} — not in database`);
+                    continue;
+                }
 
                 // 2. Fetch Last Log to prevent duplicates
                 const lastLog = await prisma.attendanceLog.findFirst({
@@ -125,17 +128,70 @@ export const syncZkData = async (): Promise<SyncResult> => {
     }
 };
 
-export const addUserToDevice = async (userId: number, name: string, role: string = 'USER', badgeNumber: string = ""): Promise<SyncResult> => {
+export const addUserToDevice = async (zkId: number, name: string, role: string = 'USER', badgeNumber: string = ""): Promise<SyncResult> => {
     const zk = getDriver();
 
     try {
-        console.log(`[ZK] Adding User ${userId} (${name})...`);
+        console.log(`[ZK] Adding User with zkId=${zkId} (${name}), badgeNumber="${badgeNumber}"...`);
         await zk.connect();
+
         const deviceRole = role === 'ADMIN' ? 14 : 0;
-        const visibleId = badgeNumber || userId.toString();
-        await zk.setUser(userId, name, "", deviceRole, 0, visibleId);
-        console.log(`[ZK] Added User ${userId} successfully (ID: ${visibleId}, Role: ${deviceRole}).`);
-        return { success: true, message: `User ${name} added to device.` };
+        // The visible ID on the device screen — use badgeNumber if available, otherwise zkId
+        const visibleId = badgeNumber || zkId.toString();
+
+        // Fetch all existing users from the device
+        const existingUsers = await zk.getUsers();
+
+        // DEBUG: Dump ALL device users so we can trace the issue
+        console.log(`[ZK] === DEBUG: All ${existingUsers.length} device users ===`);
+        existingUsers.forEach((u: any) => {
+            console.log(`[ZK]   UID=${u.uid}, userId="${u.userId}", name="${u.name}", role=${u.role}`);
+        });
+        console.log(`[ZK] === Looking for match: visibleId="${visibleId}", zkId.toString()="${zkId.toString()}" ===`);
+
+        // Look for an existing device user that matches this employee.
+        const existingUser = existingUsers.find(
+            (u: any) => u.userId === visibleId || u.userId === zkId.toString()
+        );
+
+        if (existingUser) {
+            console.log(`[ZK] === MATCH FOUND: UID=${existingUser.uid}, userId="${existingUser.userId}", name="${existingUser.name}" ===`);
+        } else {
+            console.log(`[ZK] === NO MATCH FOUND ===`);
+        }
+
+        let deviceUid: number;
+
+        if (existingUser) {
+            // CRITICAL: Never overwrite a protected UID (e.g. UID 1 = SUPER ADMIN)
+            if (PROTECTED_DEVICE_UIDS.includes(existingUser.uid)) {
+                console.warn(`[ZK] ⚠ PROTECTED UID ${existingUser.uid} matched ("${existingUser.name}", userId="${existingUser.userId}"). Refusing to overwrite — assigning new UID instead.`);
+                // Treat as a new user — assign the next available UID
+                deviceUid = await zk.getNextUid();
+                // Also make sure the next UID itself isn't protected
+                while (PROTECTED_DEVICE_UIDS.includes(deviceUid)) {
+                    deviceUid++;
+                }
+                console.log(`[ZK] New user. Assigning safe device UID: ${deviceUid}`);
+            } else {
+                // Safe to update in place
+                deviceUid = existingUser.uid;
+                console.log(`[ZK] User already exists on device (UID: ${deviceUid}). Updating...`);
+            }
+        } else {
+            // User doesn't exist — get the NEXT AVAILABLE UID from the device
+            deviceUid = await zk.getNextUid();
+            // Make sure we never accidentally land on a protected UID
+            while (PROTECTED_DEVICE_UIDS.includes(deviceUid)) {
+                deviceUid++;
+            }
+            console.log(`[ZK] New user. Assigning device UID: ${deviceUid}`);
+        }
+
+        console.log(`[ZK] === FINAL: Calling setUser(deviceUid=${deviceUid}, name="${name}", role=${deviceRole}, visibleId="${visibleId}") ===`);
+        await zk.setUser(deviceUid, name, "", deviceRole, 0, visibleId);
+        console.log(`[ZK] ${existingUser && !PROTECTED_DEVICE_UIDS.includes(existingUser.uid) ? 'Updated' : 'Added'} User successfully (UID: ${deviceUid}, Visible ID: ${visibleId}, Role: ${deviceRole}).`);
+        return { success: true, message: `User ${name} ${existingUser && !PROTECTED_DEVICE_UIDS.includes(existingUser.uid) ? 'updated on' : 'added to'} device.` };
     } catch (error: any) {
         console.error('[ZK] Add User Error:', error);
         throw new Error(`Failed to add employee: ${error.message || error}`);
@@ -147,9 +203,23 @@ export const addUserToDevice = async (userId: number, name: string, role: string
 export const deleteUserFromDevice = async (zkId: number): Promise<SyncResult> => {
     const zk = getDriver();
     try {
-        console.log(`[ZK] Deleting User ${zkId} from device...`);
+        console.log(`[ZK] Deleting User with zkId=${zkId} from device...`);
         await zk.connect();
-        await zk.deleteUser(zkId);
+
+        // Look up the user on the device by their visible userId to find the correct internal UID
+        const deviceUsers = await zk.getUsers();
+        const targetUser = deviceUsers.find(
+            (u: any) => u.userId === zkId.toString()
+        );
+
+        if (!targetUser) {
+            console.log(`[ZK] User with zkId=${zkId} not found on device. Nothing to delete.`);
+            return { success: true, message: `User ${zkId} not found on device (already removed).` };
+        }
+
+        console.log(`[ZK] Found user on device: UID=${targetUser.uid}, Name="${targetUser.name}", userId="${targetUser.userId}"`);
+        await zk.deleteUser(targetUser.uid);
+        console.log(`[ZK] Successfully deleted user (UID: ${targetUser.uid}).`);
         return { success: true, message: `User ${zkId} deleted from device.` };
     } catch (error: any) {
         console.error('[ZK] Delete User Error:', error);
@@ -185,12 +255,17 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
         console.log(`[ZK] Connecting...`);
         await zk.connect();
 
-        // 1. Fetch current device users to preserve existing data (password, cardno)
+        // 1. Fetch current device users — map by visible userId string for safe lookup
         console.log(`[ZK] Fetching existing device users...`);
         const deviceUsers = await zk.getUsers();
-        const deviceUserMap = new Map<number, any>();
-        deviceUsers.forEach(u => deviceUserMap.set(u.uid, u));
+        const deviceUserByVisibleId = new Map<string, any>();
+        deviceUsers.forEach(u => deviceUserByVisibleId.set(u.userId, u));
         console.log(`[ZK] Found ${deviceUsers.length} existing users on device.`);
+
+        // Track the next available UID for new users — skip protected UIDs
+        const existingUids = deviceUsers.map((u: any) => u.uid);
+        let nextUid = existingUids.length > 0 ? Math.max(...existingUids) + 1 : 1;
+        while (PROTECTED_DEVICE_UIDS.includes(nextUid)) nextUid++;
 
         let successCount = 0;
         let failedCount = 0;
@@ -201,22 +276,40 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
             try {
                 const role = employee.role === 'ADMIN' ? 14 : 0; // 14 = Admin, 0 = User
                 const zkId = employee.zkId!;
-                const displayName = fullName; // Use just name for name field
-
-                // Check if user exists on device to preserve password/cardno
-                const existingUser = deviceUserMap.get(zkId);
-                const password = existingUser ? existingUser.password : "";
-                const cardno = existingUser ? existingUser.cardno : 0;
+                const displayName = fullName;
 
                 // Use employeeNumber as the visible User ID if available
                 const userIdString = employee.employeeNumber || zkId.toString();
 
-                await zk.setUser(zkId, displayName, password, role, cardno, userIdString);
+                // Look up by visible userId string — NOT by internal UID
+                const existingUser = deviceUserByVisibleId.get(userIdString) || deviceUserByVisibleId.get(zkId.toString());
+
+                // Preserve existing password/cardno if user already on device
+                const password = existingUser ? existingUser.password : "";
+                const cardno = existingUser ? existingUser.cardno : 0;
+
+                // Use existing UID if found, otherwise assign next available UID
+                // CRITICAL: Never overwrite a protected UID
+                let deviceUid: number;
+                if (existingUser) {
+                    if (PROTECTED_DEVICE_UIDS.includes(existingUser.uid)) {
+                        console.warn(`[ZK]   ⚠ SKIPPING ${displayName} — matched protected UID ${existingUser.uid} ("${existingUser.name}"). Assigning new UID.`);
+                        deviceUid = nextUid++;
+                        while (PROTECTED_DEVICE_UIDS.includes(deviceUid)) deviceUid = nextUid++;
+                    } else {
+                        deviceUid = existingUser.uid;
+                    }
+                } else {
+                    deviceUid = nextUid++;
+                    while (PROTECTED_DEVICE_UIDS.includes(deviceUid)) deviceUid = nextUid++;
+                }
+
+                await zk.setUser(deviceUid, displayName, password, role, cardno, userIdString);
 
                 if (existingUser) {
-                    console.log(`[ZK]   ✓ Updated: ${displayName} (ID: ${userIdString}, Role: ${role}, Card: ${cardno})`);
+                    console.log(`[ZK]   ✓ Updated: ${displayName} (UID: ${deviceUid}, ID: ${userIdString}, Role: ${role}, Card: ${cardno})`);
                 } else {
-                    console.log(`[ZK]   ✓ Added: ${displayName} (ID: ${userIdString}, Role: ${role})`);
+                    console.log(`[ZK]   ✓ Added: ${displayName} (UID: ${deviceUid}, ID: ${userIdString}, Role: ${role})`);
                 }
 
                 successCount++;
@@ -349,21 +442,9 @@ export const syncEmployeesFromDevice = async (): Promise<SyncResult> => {
                 }
                 updateCount++;
             } else {
-                const nameParts = user.name.split(' ');
-                const firstName = nameParts[0] || 'Device';
-                const lastName = nameParts.slice(1).join(' ') || `User ${zkId}`;
-
-                await prisma.employee.create({
-                    data: {
-                        zkId,
-                        firstName,
-                        lastName,
-                        email: null, // Device users don't have email by default
-                        employmentStatus: 'ACTIVE',
-                        updatedAt: new Date()
-                    }
-                });
-                newCount++;
+                // Unknown device user — do NOT auto-create in DB.
+                // If this user was deleted from DB intentionally, they should stay deleted.
+                console.log(`[ZK] Skipping unknown device user zkId=${zkId} ("${user.name}") — not in database. Delete from device if unwanted.`);
             }
         }
 

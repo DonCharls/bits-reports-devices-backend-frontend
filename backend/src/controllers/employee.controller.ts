@@ -15,6 +15,8 @@ export const getAllEmployees = async (req: Request, res: Response) => {
                 email: true,
                 role: true,
                 department: true,
+                departmentId: true,
+                Department: { select: { name: true } },
                 position: true,
                 branch: true,
                 contactNumber: true,
@@ -288,7 +290,9 @@ export const createEmployee = async (req: Request, res: Response) => {
             }
         });
         // Start from zkId 2 (skip 1 for admin), or increment from max
-        const nextZkId = maxZkIdEmployee?.zkId ? maxZkIdEmployee.zkId + 1 : 2;
+        // SAFETY: zkId 1 is ALWAYS reserved for the device SUPER ADMIN — never assign it
+        let nextZkId = maxZkIdEmployee?.zkId ? maxZkIdEmployee.zkId + 1 : 2;
+        if (nextZkId <= 1) nextZkId = 2;
 
         // Create employee
         const newEmployee = await prisma.employee.create({
@@ -410,6 +414,183 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
             success: false,
             message: 'Failed to enroll fingerprint',
             error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
+    }
+};
+
+// PUT /api/employees/:id - Update an employee's details
+export const updateEmployee = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const employeeId = parseInt(id as string, 10);
+
+        if (isNaN(employeeId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid employee ID format',
+            });
+        }
+
+        const {
+            firstName,
+            lastName,
+            email,
+            contactNumber,
+            position,
+            departmentId,
+            branch,
+            employmentStatus
+        } = req.body;
+
+        // Check if employee exists
+        const existingEmployee = await prisma.employee.findUnique({
+            where: { id: employeeId },
+        });
+
+        if (!existingEmployee) {
+            return res.status(404).json({
+                success: false,
+                message: 'Employee not found',
+            });
+        }
+
+        // Prepare data for update
+        const updateData: any = {};
+        if (firstName !== undefined) updateData.firstName = firstName;
+        if (lastName !== undefined) updateData.lastName = lastName;
+        if (email !== undefined) updateData.email = email === '' ? null : email;
+        if (contactNumber !== undefined) updateData.contactNumber = contactNumber;
+        if (position !== undefined) updateData.position = position;
+        if (departmentId !== undefined) {
+            updateData.departmentId = departmentId ? parseInt(departmentId, 10) : null;
+        }
+        if (branch !== undefined) updateData.branch = branch;
+        if (employmentStatus !== undefined && ['ACTIVE', 'INACTIVE', 'TERMINATED'].includes(employmentStatus)) {
+            updateData.employmentStatus = employmentStatus;
+        }
+
+        updateData.updatedAt = new Date();
+
+        // Update the employee
+        const updatedEmployee = await prisma.employee.update({
+            where: { id: employeeId },
+            data: updateData,
+            select: {
+                id: true,
+                zkId: true,
+                employeeNumber: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                role: true,
+                Department: { select: { name: true } },
+                departmentId: true,
+                position: true,
+                branch: true,
+                contactNumber: true,
+                hireDate: true,
+                employmentStatus: true,
+                createdAt: true,
+                updatedAt: true
+            },
+        });
+
+        res.json({
+            success: true,
+            message: 'Employee updated successfully',
+            employee: updatedEmployee,
+        });
+
+    } catch (error: any) {
+        console.error('Error updating employee:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update employee',
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
+    }
+};
+
+// DELETE /api/employees/:id/permanent - Permanently delete an inactive employee
+export const permanentDeleteEmployee = async (req: Request, res: Response) => {
+    try {
+        const id = req.params.id as string;
+        const employeeId = parseInt(id);
+
+        if (isNaN(employeeId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid employee ID',
+            });
+        }
+
+        // Check if employee exists
+        const employee = await prisma.employee.findUnique({
+            where: { id: employeeId },
+            select: { id: true, firstName: true, lastName: true, employmentStatus: true, zkId: true, role: true, email: true },
+        });
+
+        if (!employee) {
+            return res.status(404).json({
+                success: false,
+                message: 'Employee not found',
+            });
+        }
+
+        // Prevent deleting the main admin account
+        if (employee.email === 'admin@avegabros.com') {
+            return res.status(403).json({
+                success: false,
+                message: 'Permanent deletion of the main admin account is protected.',
+            });
+        }
+
+        // Only allow permanent deletion of inactive users
+        if (employee.employmentStatus === 'ACTIVE') {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot permanently delete an active user. Please deactivate them first.',
+            });
+        }
+
+        // Delete from ZK Device if zkId exists
+        if (employee.zkId) {
+            try {
+                await deleteUserFromDevice(employee.zkId);
+            } catch (err) {
+                console.error(`[API] Failed to delete user ${employee.zkId} from device before permanent deletion:`, err);
+                // Continue with DB delete even if device delete fails
+            }
+        }
+
+        // Delete all related attendance logs and attendance records first to avoid foreign key constraints
+        // We'll run this in a transaction to ensure all or nothing
+        await prisma.$transaction(async (tx) => {
+            // Delete Attendance Logs
+            await tx.attendanceLog.deleteMany({
+                where: { employeeId: employeeId }
+            });
+
+            // Delete Attendance Records
+            await tx.attendance.deleteMany({
+                where: { employeeId: employeeId }
+            });
+
+            // Delete the employee
+            await tx.employee.delete({
+                where: { id: employeeId }
+            });
+        });
+
+        res.json({
+            success: true,
+            message: `User "${employee.firstName} ${employee.lastName}" permanently deleted`,
+        });
+    } catch (error) {
+        console.error('Error permanently deleting employee:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to permanently delete employee',
         });
     }
 };

@@ -121,8 +121,19 @@ export async function enrollFingerprint(
             // Get all users from device to find the internal UID
             const employees = await zkDriver.getUsers();
 
-            // Find user by matching the visible User ID string (badge number)
-            const targetEmployee = employees.find((emp: any) => String(emp.userId) === targetUserIdString);
+            // Try multiple lookup strategies to find the user
+            // 1. Match by the provided userIdString (e.g. zkId as string)
+            let targetEmployee = employees.find((emp: any) => String(emp.userId) === targetUserIdString);
+
+            // 2. If not found, try matching by employeeId string
+            if (!targetEmployee) {
+                targetEmployee = employees.find((emp: any) => String(emp.userId) === String(employeeId));
+            }
+
+            // 3. If still not found, try matching by name
+            if (!targetEmployee) {
+                targetEmployee = employees.find((emp: any) => emp.name === name);
+            }
 
             if (targetEmployee) {
                 // IMPORTANT: ZKTeco uses an internal 2-byte UID (uid) for enrollment commands,
@@ -131,29 +142,19 @@ export async function enrollFingerprint(
                 userExists = true;
                 console.log(`[Enrollment] Found User: "${targetEmployee.name}" (Badge: ${targetEmployee.userId}). Internal UID: ${enrollmentUid}`);
             } else {
-                console.warn(`[Enrollment] Warning: User ID ${targetUserIdString} not found. Creating user before enrollment...`);
+                console.error(`[Enrollment] User not found on device with any lookup strategy (userIdString="${targetUserIdString}", employeeId=${employeeId}, name="${name}"). Available users:`);
+                employees.forEach((emp: any) => {
+                    console.log(`[Enrollment]   UID=${emp.uid}, userId="${emp.userId}", name="${emp.name}"`);
+                });
             }
 
         } catch (error) {
             console.error("[Enrollment] Failed to fetch users list.", error);
         }
 
-        // If user does not exist, create them
+        // If user does not exist on device, fail instead of creating (addUserToDevice already handled creation)
         if (!userExists) {
-            try {
-                // IMPORTANT: Get next available UID from device to prevent ghost users
-                enrollmentUid = await zkDriver.getNextUid();
-                console.log(`[Enrollment] Creating user: ${name} (Badge ID: ${targetUserIdString}, Next UID: ${enrollmentUid})`);
-
-                // Use ZKDriver's setUser method
-                await zkDriver.setUser(enrollmentUid, name, "", 0, 0);
-
-                console.log(`[Enrollment] User created successfully with UID ${enrollmentUid}.`);
-
-            } catch (createError: any) {
-                console.error(`[Enrollment] Failed to create user: ${createError.message}`);
-                throw new Error(`Failed to create user on device: ${createError.message}`);
-            }
+            throw new Error(`User ${name} (ID: ${targetUserIdString}) not found on device. Please ensure the employee was synced to the device first.`);
         }
 
         // Validate finger index

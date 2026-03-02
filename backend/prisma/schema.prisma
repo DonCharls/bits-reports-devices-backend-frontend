@@ -16,7 +16,7 @@ model Attendance {
   status       String    @default("present")
   notes        String?
   createdAt    DateTime  @default(now())
-  updatedAt DateTime   @updatedAt
+  updatedAt    DateTime  @updatedAt
   employee     Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, date])
@@ -33,7 +33,7 @@ model AttendanceLog {
   deviceId   Int?
   createdAt  DateTime @default(now())
   Device     Device?  @relation(fields: [deviceId], references: [id])
-  employee     Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([timestamp, employeeId])
   @@index([deviceId])
@@ -42,6 +42,14 @@ model AttendanceLog {
 }
 
 model Department {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime
+  Employee  Employee[]
+}
+
+model Branch {
   id        Int        @id @default(autoincrement())
   name      String     @unique
   createdAt DateTime   @default(now())
@@ -72,26 +80,29 @@ model Employee {
   email            String?          @unique
   password         String?
   employmentStatus EmploymentStatus @default(ACTIVE)
-  
+
   // Secondary Info
-  department       String?
-  position         String?
-  branch           String?
-  contactNumber    String?
-  employeeNumber   String?          @unique
-  hireDate         DateTime?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime
+  department     String?
+  position       String?
+  branch         String?
+  contactNumber  String?
+  employeeNumber String?   @unique
+  hireDate       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime
 
   // Relations (Unused for now)
-  departmentId     Int?
-  shiftId          Int?
-  Attendance       Attendance[]
-  AttendanceLog    AttendanceLog[]
-  Department       Department?      @relation(fields: [departmentId], references: [id])
-  Shift            Shift?           @relation(fields: [shiftId], references: [id])
+  departmentId  Int?
+  branchId      Int?
+  shiftId       Int?
+  Attendance    Attendance[]
+  AttendanceLog AttendanceLog[]
+  Department    Department?     @relation(fields: [departmentId], references: [id])
+  Branch        Branch?         @relation(fields: [branchId], references: [id])
+  Shift         Shift?          @relation(fields: [shiftId], references: [id])
 
   @@index([departmentId])
+  @@index([branchId])
   @@index([email])
   @@index([employeeNumber])
   @@index([employmentStatus])

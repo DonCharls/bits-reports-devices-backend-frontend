@@ -11,6 +11,23 @@ import { prisma } from '../lib/prisma';
  * - Midnight cleanup → Mark incomplete records from previous days
  */
 
+/**
+ * Convert a UTC timestamp to its Philippine calendar date, stored as UTC.
+ * e.g. 7 AM PHT Feb 28 (= 11 PM UTC Feb 27) → PHT midnight Feb 28 (= 4 PM UTC Feb 27)
+ * This ensures scans between 12 AM–8 AM PHT are grouped under the correct PHT date.
+ */
+const toPHTDate = (utcDate: Date): Date => {
+    // Shift to PHT (+8 hours)
+    const pht = new Date(utcDate.getTime() + 8 * 60 * 60 * 1000);
+    // Zero out time to get PHT midnight (still represented as UTC internally)
+    pht.setUTCHours(0, 0, 0, 0);
+    // Shift back to UTC: PHT midnight = UTC - 8 hours
+    return new Date(pht.getTime() - 8 * 60 * 60 * 1000);
+};
+
+/** Get "today" in Philippine Time, returned as UTC equivalent of PHT midnight */
+const getTodayPHT = (): Date => toPHTDate(new Date());
+
 interface ProcessResult {
     success: boolean;
     processed: number;
@@ -34,16 +51,15 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
         // Get all logs ordered by timestamp
         const logs = await prisma.attendanceLog.findMany({
             orderBy: { timestamp: 'asc' },
-            include: { Employee: true }
+            include: { employee: true }
         });
 
         let created = 0;
         let updated = 0;
 
         for (const log of logs) {
-            // Normalize date to midnight for grouping (e.g., 2026-02-10 08:30:00 → 2026-02-10 00:00:00)
-            const dateOnly = new Date(log.timestamp);
-            dateOnly.setHours(0, 0, 0, 0);
+            // Normalize to Philippine calendar date for consistent grouping
+            const dateOnly = toPHTDate(log.timestamp);
 
             // Check if attendance record exists for this employee on this date
             const existingAttendance = await prisma.attendance.findUnique({
@@ -131,8 +147,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
  */
 export const autoCloseIncompleteAttendance = async (): Promise<number> => {
     try {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const today = getTodayPHT();
 
         // Find all records before today with no check-out time
         const result = await prisma.attendance.updateMany({
@@ -161,14 +176,12 @@ export const autoCloseIncompleteAttendance = async (): Promise<number> => {
  */
 export const autoCheckoutEmployees = async (): Promise<number> => {
     try {
-        // Get today's date at midnight (UTC)
-        const today = new Date();
-        today.setUTCHours(0, 0, 0, 0);
+        // Get today's date in PHT
+        const today = getTodayPHT();
 
         // Create checkout time at 5:00 PM Philippine Time
-        // 5 PM PHT = 9 AM UTC (5 - 8 = -3, then + 12 = 9)
-        const autoCheckoutTime = new Date(today);
-        autoCheckoutTime.setUTCHours(9, 0, 0, 0);  // 9 AM UTC = 5 PM PHT
+        // PHT midnight + 17 hours = 5 PM PHT
+        const autoCheckoutTime = new Date(today.getTime() + 17 * 60 * 60 * 1000);
 
         // Find all records for TODAY that still don't have a checkout time
         const result = await prisma.attendance.updateMany({
@@ -197,8 +210,7 @@ export const autoCheckoutEmployees = async (): Promise<number> => {
  */
 export const repairMissingCheckouts = async (): Promise<number> => {
     try {
-        const today = new Date();
-        today.setUTCHours(0, 0, 0, 0);
+        const today = getTodayPHT();
 
         // Find all records from dates BEFORE today that have no checkout time
         const records = await prisma.attendance.findMany({
@@ -212,9 +224,9 @@ export const repairMissingCheckouts = async (): Promise<number> => {
 
         let repairedCount = 0;
         for (const record of records) {
-            // Set checkout time to 5:00 PM PHT (9:00 AM UTC) for that specific date
-            const repairTime = new Date(record.date);
-            repairTime.setUTCHours(9, 0, 0, 0);
+            // Set checkout time to 5:00 PM PHT for that specific date
+            // record.date is PHT midnight in UTC, so +17 hours = 5 PM PHT
+            const repairTime = new Date(record.date.getTime() + 17 * 60 * 60 * 1000);
 
             await prisma.attendance.update({
                 where: { id: record.id },
@@ -266,9 +278,15 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
         prisma.attendance.findMany({
             where,
             include: {
-                employee: true
+                employee: {
+                    include: {
+                        Department: {
+                            select: { name: true }
+                        }
+                    }
+                }
             },
-            orderBy: { date: 'desc' },
+            orderBy: [{ date: 'desc' }, { checkInTime: 'desc' }],
             skip,
             take: limit
         })
@@ -307,8 +325,7 @@ const formatToPhilippineTime = (utcDate: Date): string => {
  * Get today's attendance
  */
 export const getTodayAttendance = async () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = getTodayPHT();
 
     const result = await getAttendanceRecords({
         startDate: today,
@@ -331,4 +348,39 @@ export const getEmployeeAttendanceHistory = async (
         endDate
     });
     return result.data;
+};
+
+/**
+ * Get today's raw attendance logs (individual scan events)
+ * Returns each scan as a separate entry for a real-time activity feed
+ */
+export const getTodayLogs = async () => {
+    const todayStart = getTodayPHT();
+    // End of today in PHT: PHT midnight + 24 hours
+    const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+
+    const logs = await prisma.attendanceLog.findMany({
+        where: {
+            timestamp: {
+                gte: todayStart,
+                lt: todayEnd
+            }
+        },
+        include: {
+            employee: {
+                include: {
+                    Department: { select: { name: true } }
+                }
+            }
+        },
+        orderBy: { timestamp: 'desc' }
+    });
+
+    return logs.map((log: any) => ({
+        id: log.id,
+        employeeId: log.employeeId,
+        timestamp: log.timestamp,
+        timestampPH: formatToPhilippineTime(log.timestamp),
+        employee: log.employee
+    }));
 };

@@ -56,12 +56,15 @@ export const getAttendance = async (req: Request, res: Response) => {
 
         const filters: any = {};
 
-        if (startDate) filters.startDate = new Date(String(startDate));
+        // Parse dates using PHT timezone (UTC+8) to match how records are stored.
+        // Records are stored with date = midnight PHT (setHours(0,0,0,0) on the server).
+        // Using +08:00 offset ensures the filter covers the correct PHT calendar day.
+        if (startDate) {
+            filters.startDate = new Date(`${String(startDate)}T00:00:00+08:00`);
+        }
 
         if (endDate) {
-            const end = new Date(String(endDate));
-            end.setHours(23, 59, 59, 999);
-            filters.endDate = end;
+            filters.endDate = new Date(`${String(endDate)}T23:59:59+08:00`);
         }
         if (employeeId) filters.employeeId = parseInt(String(employeeId));
         if (status) filters.status = String(status);
