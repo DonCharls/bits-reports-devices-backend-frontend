@@ -6,10 +6,12 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import { Search, Plus, Edit2, Trash2, Eye, ChevronLeft, ChevronRight, Upload, AlertTriangle } from 'lucide-react'
+import { Search, Plus, Edit2, ChevronLeft, ChevronRight, Upload, AlertTriangle, AlertCircle, X as XIcon } from 'lucide-react'
+import { DEPARTMENTS } from '@/types/departments'
+import type { Branch } from '@/types/branches'
 
 type Employee = {
   id: number
@@ -39,6 +41,10 @@ export default function EmployeesPage() {
   const [importFile, setImportFile] = useState<File | null>(null)
   const [isImporting, setIsImporting] = useState(false)
 
+  // Edit employee
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
+  const [editForm, setEditForm] = useState<Partial<Employee>>({})
+
   // Confirm move-to-inactive dialog
   const [confirmDeactivate, setConfirmDeactivate] = useState<Employee | null>(null)
   const [isDeactivating, setIsDeactivating] = useState(false)
@@ -48,16 +54,29 @@ export default function EmployeesPage() {
     lastName: '',
     contactNumber: '',
     department: '',
-    position: '',
     branch: '',
     email: '',
+    hireDate: '',
   })
 
   const [currentPage, setCurrentPage] = useState(1)
   const rowsPerPage = 10
 
-  const departments = Array.from(new Set(employees.map(e => e.department).filter(Boolean))) as string[]
-  const branches = Array.from(new Set(employees.map(e => e.branch).filter(Boolean))) as string[]
+  const departments = [...DEPARTMENTS]
+  const [branches, setBranches] = useState<Branch[]>([])
+
+  const fetchBranches = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch('/api/branches', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const data = await res.json()
+      if (data.success) setBranches(data.branches)
+    } catch (error) {
+      console.error('Error fetching branches:', error)
+    }
+  }
 
   const fetchEmployees = async () => {
     setLoading(true)
@@ -85,6 +104,7 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     fetchEmployees()
+    fetchBranches()
   }, [])
 
   const filteredEmployees = employees.filter(emp => {
@@ -103,7 +123,7 @@ export default function EmployeesPage() {
   )
 
   const handleAddEmployee = async () => {
-    if (newEmployee.firstName && newEmployee.lastName && newEmployee.department && newEmployee.position && newEmployee.branch) {
+    if (newEmployee.firstName && newEmployee.lastName && newEmployee.department && newEmployee.branch) {
       try {
         const token = localStorage.getItem('token')
         const res = await fetch('/api/employees', {
@@ -117,15 +137,15 @@ export default function EmployeesPage() {
             lastName: newEmployee.lastName,
             contactNumber: newEmployee.contactNumber || undefined,
             department: newEmployee.department,
-            position: newEmployee.position,
             branch: newEmployee.branch,
             email: newEmployee.email || undefined,
+            hireDate: newEmployee.hireDate || undefined,
           })
         })
         const data = await res.json()
         if (data.success) {
           await fetchEmployees()
-          setNewEmployee({ firstName: '', lastName: '', contactNumber: '', department: '', position: '', branch: '', email: '' })
+          setNewEmployee({ firstName: '', lastName: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '' })
           setIsAddOpen(false)
         } else {
           alert('Failed to add employee: ' + (data.message || 'Unknown error'))
@@ -161,11 +181,138 @@ export default function EmployeesPage() {
     }
   }
 
+  const handleEdit = (employee: Employee) => {
+    setEditingEmployee(employee)
+    setEditForm({ ...employee })
+  }
+
+  const handleUpdateEmployee = async () => {
+    if (!editingEmployee || !editForm) return
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch(`/api/employees/${editingEmployee.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(editForm)
+      })
+      const data = await res.json()
+      if (data.success) {
+        await fetchEmployees()
+        setEditingEmployee(null)
+      } else {
+        alert('Failed to update employee: ' + (data.message || 'Unknown error'))
+      }
+    } catch (error) {
+      console.error('Error updating employee:', error)
+      alert('Failed to update employee')
+    }
+  }
+
   return (
     <div className="space-y-6">
+      {/* Edit Employee Modal */}
+      {editingEmployee && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-5 bg-red-600 text-white flex justify-between items-center shrink-0">
+              <div>
+                <h3 className="font-bold text-lg leading-tight tracking-tight">Edit Employee Profile</h3>
+                <p className="text-[10px] text-red-100 opacity-90 uppercase font-black tracking-widest mt-0.5">Update employee info</p>
+              </div>
+              <button onClick={() => setEditingEmployee(null)} className="text-white/80 hover:text-white transition-colors">
+                <XIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 overflow-y-auto">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">First Name</label>
+                  <input type="text" value={editForm.firstName || ''} onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Last Name</label>
+                  <input type="text" value={editForm.lastName || ''} onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Email Address</label>
+                  <input type="email" value={editForm.email || ''} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Contact Number</label>
+                  <input type="tel" value={editForm.contactNumber || ''} onChange={(e) => setEditForm({ ...editForm, contactNumber: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Department</label>
+                  <select value={editForm.department || ''} onChange={(e) => setEditForm({ ...editForm, department: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20">
+                    <option value="" disabled>Select Department</option>
+                    {departments.map(d => (<option key={d} value={d}>{d}</option>))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Branch</label>
+                  <select value={editForm.branch || ''} onChange={(e) => setEditForm({ ...editForm, branch: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20">
+                    <option value="" disabled>Select Branch</option>
+                    {branches.map(b => (<option key={b.id} value={b.name}>{b.name}</option>))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Date Hired</label>
+                  <input type="date" value={editForm.hireDate || ''} onChange={(e) => setEditForm({ ...editForm, hireDate: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                </div>
+                <div className="space-y-3 px-6">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Status</label>
+                  <div className="flex items-center gap-6 px-1 py-1">
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <div className="relative flex items-center justify-center">
+                        <input type="radio" name="status" value="ACTIVE" checked={editForm.employmentStatus === 'ACTIVE'} onChange={(e) => setEditForm({ ...editForm, employmentStatus: e.target.value as Employee['employmentStatus'] })} className="peer appearance-none w-4 h-4 border-2 border-slate-300 rounded-full checked:border-red-600 transition-all cursor-pointer" />
+                        <div className="absolute w-2 h-2 bg-red-600 rounded-full opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-600 group-hover:text-slate-900 transition-colors">Active</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <div className="relative flex items-center justify-center">
+                        <input type="radio" name="status" value="INACTIVE" checked={editForm.employmentStatus === 'INACTIVE'} onChange={(e) => setEditForm({ ...editForm, employmentStatus: e.target.value as Employee['employmentStatus'] })} className="peer appearance-none w-4 h-4 border-2 border-slate-300 rounded-full checked:border-red-600 transition-all cursor-pointer" />
+                        <div className="absolute w-2 h-2 bg-red-600 rounded-full opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-600 group-hover:text-slate-900 transition-colors">Inactive</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-100 p-3 rounded-xl flex gap-3 shadow-sm shadow-amber-600/5">
+                <AlertCircle size={18} className="text-amber-600 shrink-0" />
+                <div className="text-[10px] text-amber-800 leading-relaxed font-medium">
+                  <strong className="block mb-0.5 tracking-tight uppercase">Audit Log Notice</strong>
+                  <strong>Warning:</strong> These changes will be logged under your account for audit purposes.
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5 bg-slate-50 flex gap-3 shrink-0">
+              <button onClick={() => setEditingEmployee(null)} className="flex-1 px-4 py-3.5 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">Cancel</button>
+              <button onClick={handleUpdateEmployee} className="flex-1 px-4 py-3.5 bg-red-600 text-white rounded-xl text-sm font-black shadow-lg shadow-red-600/30 hover:bg-red-700 transition-all active:scale-95">Update</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Confirm Move-to-Inactive Dialog */}
       {confirmDeactivate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
           <div className="bg-card border border-border rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
@@ -215,18 +362,24 @@ export default function EmployeesPage() {
                 <span className="hidden xs:inline">Import</span> Excel
               </Button>
             </DialogTrigger>
-            <DialogContent className="bg-card border-border max-w-md">
-              <DialogHeader>
-                <DialogTitle className="text-foreground">Import Employees from Excel</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
+            <DialogContent showCloseButton={false} className="bg-white border-0 max-w-md p-0 rounded-2xl overflow-hidden shadow-xl">
+              <div className="bg-red-600 px-6 py-4 flex items-center justify-between">
+                <div>
+                  <DialogTitle className="text-white font-bold text-lg">Import Employees</DialogTitle>
+                  <DialogDescription className="text-white/80 text-[10px] uppercase tracking-widest font-bold mt-1">Upload from Excel or CSV</DialogDescription>
+                </div>
+                <button onClick={() => { setIsImportOpen(false); setImportFile(null); }} className="text-white/80 hover:text-white transition-colors">
+                  <XIcon className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="px-6 py-5 space-y-4">
+                <p className="text-sm text-slate-500 font-medium">
                   Upload an Excel file (.xlsx, .xls) or CSV (.csv) to bulk import employee records.
                 </p>
-                <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors">
-                  <Upload className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
+                <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-red-300 transition-colors">
+                  <Upload className="w-8 h-8 mx-auto text-slate-300 mb-2" />
                   <label htmlFor="excel-upload" className="cursor-pointer">
-                    <span className="text-sm text-primary font-medium hover:underline">Click to select file</span>
+                    <span className="text-sm text-red-500 font-bold hover:underline">Click to select file</span>
                     <input
                       id="excel-upload"
                       type="file"
@@ -238,38 +391,37 @@ export default function EmployeesPage() {
                       }}
                     />
                   </label>
-                  <p className="text-xs text-muted-foreground mt-1">Supports .xlsx, .xls, .csv</p>
+                  <p className="text-xs text-slate-400 mt-1">Supports .xlsx, .xls, .csv</p>
                 </div>
                 {importFile && (
-                  <div className="flex items-center gap-2 p-3 bg-secondary/50 rounded-lg">
-                    <Upload className="w-4 h-4 text-primary" />
-                    <span className="text-sm text-foreground flex-1 truncate">{importFile.name}</span>
-                    <span className="text-xs text-muted-foreground">{(importFile.size / 1024).toFixed(1)} KB</span>
+                  <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl">
+                    <Upload className="w-4 h-4 text-red-500" />
+                    <span className="text-sm text-slate-700 font-medium flex-1 truncate">{importFile.name}</span>
+                    <span className="text-xs text-slate-400">{(importFile.size / 1024).toFixed(1)} KB</span>
                   </div>
                 )}
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    className="flex-1 border-border text-foreground hover:bg-secondary"
-                    onClick={() => { setIsImportOpen(false); setImportFile(null); }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    className="flex-1 bg-primary hover:bg-primary/90"
-                    disabled={!importFile || isImporting}
-                    onClick={() => {
-                      setIsImporting(true)
-                      setTimeout(() => {
-                        setIsImporting(false)
-                        setIsImportOpen(false)
-                        setImportFile(null)
-                      }, 1500)
-                    }}
-                  >
-                    {isImporting ? 'Importing...' : 'Upload & Import'}
-                  </Button>
-                </div>
+              </div>
+              <div className="flex items-center justify-center gap-6 px-6 py-4 border-t border-slate-100">
+                <button
+                  className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                  onClick={() => { setIsImportOpen(false); setImportFile(null); }}
+                >
+                  Discard
+                </button>
+                <button
+                  className="px-8 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-50"
+                  disabled={!importFile || isImporting}
+                  onClick={() => {
+                    setIsImporting(true)
+                    setTimeout(() => {
+                      setIsImporting(false)
+                      setIsImportOpen(false)
+                      setImportFile(null)
+                    }, 1500)
+                  }}
+                >
+                  {isImporting ? 'Importing...' : 'Upload & Import'}
+                </button>
               </div>
             </DialogContent>
           </Dialog>
@@ -282,81 +434,112 @@ export default function EmployeesPage() {
                 Add Employee
               </Button>
             </DialogTrigger>
-            <DialogContent className="bg-card border-border max-w-md">
-              <DialogHeader>
-                <DialogTitle className="text-foreground">Register New Employee</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+            <DialogContent showCloseButton={false} className="bg-white border-0 max-w-lg p-0 rounded-2xl overflow-hidden shadow-xl">
+              <div className="bg-red-600 px-6 py-4 flex items-center justify-between">
+                <div>
+                  <DialogTitle className="text-white font-bold text-lg">New Employee Registration</DialogTitle>
+                  <DialogDescription className="text-white/80 text-[10px] uppercase tracking-widest font-bold mt-1">Add to employee directory</DialogDescription>
+                </div>
+                <button onClick={() => setIsAddOpen(false)} className="text-white/80 hover:text-white transition-colors">
+                  <XIcon className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="px-6 py-5 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-foreground">First Name</Label>
-                    <Input
-                      placeholder="John"
-                      className="mt-1 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">First Name *</label>
+                    <input
+                      placeholder="First Name"
+                      className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
                       value={newEmployee.firstName}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEmployee({ ...newEmployee, firstName: e.target.value })}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, firstName: e.target.value })}
                     />
                   </div>
                   <div>
-                    <Label className="text-foreground">Last Name</Label>
-                    <Input
-                      placeholder="Doe"
-                      className="mt-1 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Last Name *</label>
+                    <input
+                      placeholder="Last Name"
+                      className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
                       value={newEmployee.lastName}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEmployee({ ...newEmployee, lastName: e.target.value })}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, lastName: e.target.value })}
                     />
                   </div>
                 </div>
-                <div>
-                  <Label className="text-foreground">Email</Label>
-                  <Input
-                    type="email"
-                    placeholder="john@company.com"
-                    className="mt-1 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
-                    value={newEmployee.email}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEmployee({ ...newEmployee, email: e.target.value })}
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Email Address</label>
+                    <input
+                      type="email"
+                      placeholder="Email Address"
+                      className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+                      value={newEmployee.email}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, email: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Contact Number</label>
+                    <input
+                      type="tel"
+                      placeholder="+63-912-345-6780"
+                      className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+                      value={newEmployee.contactNumber}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, contactNumber: e.target.value })}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-foreground">Contact Number</Label>
-                  <Input
-                    type="tel"
-                    placeholder="+63-934-567-8900"
-                    className="mt-1 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
-                    value={newEmployee.contactNumber}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEmployee({ ...newEmployee, contactNumber: e.target.value })}
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Department</label>
+                    <select
+                      className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none cursor-pointer transition-all appearance-none"
+                      value={newEmployee.department}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, department: e.target.value })}
+                    >
+                      <option value="" disabled>e.g. Human Resources</option>
+                      {departments.map(dept => (
+                        <option key={dept} value={dept}>{dept}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Branch</label>
+                    <select
+                      className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none cursor-pointer transition-all appearance-none"
+                      value={newEmployee.branch}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, branch: e.target.value })}
+                    >
+                      <option value="" disabled>e.g. Cebu City</option>
+                      {branches.map(branch => (
+                        <option key={branch.id} value={branch.name}>{branch.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-foreground">Department</Label>
-                  <Input
-                    placeholder="Engineering"
-                    className="mt-1 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
-                    value={newEmployee.department}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEmployee({ ...newEmployee, department: e.target.value })}
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Date Hired</label>
+                    <input
+                      type="date"
+                      className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+                      value={newEmployee.hireDate}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, hireDate: e.target.value })}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-foreground">Position</Label>
-                  <Input
-                    placeholder="Job Title"
-                    className="mt-1 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
-                    value={newEmployee.position}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEmployee({ ...newEmployee, position: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <Label className="text-foreground">Branch</Label>
-                  <Input
-                    placeholder="MAIN OFFICE"
-                    className="mt-1 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
-                    value={newEmployee.branch}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEmployee({ ...newEmployee, branch: e.target.value })}
-                  />
-                </div>
-                <Button onClick={handleAddEmployee} className="w-full bg-primary hover:bg-primary/90">
-                  Add Employee
-                </Button>
+              </div>
+              <div className="flex items-center justify-center gap-6 px-6 py-4 border-t border-slate-100">
+                <button
+                  className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                  onClick={() => {
+                  setNewEmployee({ firstName: '', lastName: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '' })
+                    setIsAddOpen(false)
+                  }}
+                >
+                  Discard
+                </button>
+                <button onClick={handleAddEmployee} className="px-8 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-colors">
+                  Register Employee
+                </button>
               </div>
             </DialogContent>
           </Dialog>
@@ -396,7 +579,7 @@ export default function EmployeesPage() {
               <SelectContent className="bg-secondary border-border">
                 <SelectItem value="all">All Branches</SelectItem>
                 {branches.map(branch => (
-                  <SelectItem key={branch} value={branch}>{branch}</SelectItem>
+                  <SelectItem key={branch.id} value={branch.name}>{branch.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -405,128 +588,106 @@ export default function EmployeesPage() {
       </Card>
 
       {/* Employees Table */}
-      <Card className="bg-card border-border overflow-hidden rounded-2xl shadow-lg">
-        <div className="p-4 border-b border-border bg-secondary/20">
-          <p className="text-sm text-muted-foreground">Showing {paginatedEmployees.length} of {filteredEmployees.length} active employees</p>
-        </div>
-        <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-          <table className="w-full">
-            <thead className="sticky top-0 z-10">
-              <tr className="border-b border-border bg-secondary/50 backdrop-blur-sm">
-                <th className="px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">ID</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Name</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Contact</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Department</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Position</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Joined</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Actions</th>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
+            <tr>
+              <th className="px-6 py-4 w-16">#</th>
+              <th className="px-6 py-4">Employee</th>
+              <th className="px-6 py-4">Department</th>
+              <th className="px-6 py-4">Branch</th>
+              <th className="px-6 py-4">Contact</th>
+              <th className="px-6 py-4">Joined</th>
+              <th className="px-6 py-4">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {loading ? (
+              <tr>
+                <td colSpan={7} className="px-6 py-12 text-center text-slate-400 font-bold text-xs">
+                  Loading employees...
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {loading ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-muted-foreground">Loading employees...</td>
-                </tr>
-              ) : paginatedEmployees.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-muted-foreground">No active employees found.</td>
-                </tr>
-              ) : (
-                paginatedEmployees.map((employee, index) => {
-                  const fullName = `${employee.firstName} ${employee.lastName}`
-                  return (
-                    <tr
-                      key={employee.id}
-                      className={`hover:bg-primary/5 transition-colors ${index % 2 === 0 ? 'bg-transparent' : 'bg-secondary/10'}`}
+            ) : paginatedEmployees.length > 0 ? (
+              paginatedEmployees.map((employee, index) => (
+                <tr key={employee.id} className="hover:bg-red-50/50 transition-colors duration-200 group">
+                  <td className="px-6 py-4 text-xs font-bold text-slate-400">
+                    {String((currentPage - 1) * rowsPerPage + index + 1).padStart(2, '0')}
+                  </td>
+                  <td className="px-6 py-4">
+                    <p className="font-bold text-slate-700">{employee.firstName} {employee.lastName}</p>
+                    <p className="text-xs text-slate-400">{employee.email || '—'}</p>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-xs font-medium text-slate-500">{employee.department || '—'}</span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-xs font-medium text-slate-500">{employee.branch || '—'}</span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-xs font-medium text-slate-500">{employee.contactNumber || '—'}</span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-xs font-medium text-slate-500">
+                      {employee.hireDate ? new Date(employee.hireDate).toLocaleDateString('en-CA') : '—'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <button
+                      onClick={() => handleEdit(employee)}
+                      className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90"
                     >
-                      <td className="px-6 py-4 text-sm text-muted-foreground font-mono">#{employee.id.toString().padStart(3, '0')}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm">
-                            {employee.firstName.charAt(0)}
-                          </div>
-                          <span className="text-sm font-medium text-foreground">{fullName}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground font-mono">{employee.contactNumber || '-'}</td>
-                      <td className="px-6 py-4">
-                        <Badge variant="outline" className="bg-secondary/50 text-foreground border-border">
-                          {employee.department || '-'}
-                        </Badge>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-foreground">{employee.position || '-'}</td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">
-                        {employee.hireDate ? new Date(employee.hireDate).toLocaleDateString('en-CA') : '-'}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg">
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-blue-400 hover:bg-blue-500/10 rounded-lg">
-                            <Edit2 className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-amber-400 hover:bg-amber-500/10 rounded-lg"
-                            onClick={() => setConfirmDeactivate(employee)}
-                            title="Move to Inactive"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={7} className="px-6 py-20 text-center text-slate-400 font-bold uppercase text-xs tracking-widest">
+                  No matching employees found
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+
         {/* Pagination */}
-        <div className="px-4 sm:px-6 py-4 bg-secondary/20 border-t border-border flex items-center justify-between">
-          <span className="text-xs sm:text-sm text-muted-foreground">
-            Page {currentPage} of {totalPages || 1}
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+          <span className="text-xs text-slate-400 font-bold">
+            Showing {paginatedEmployees.length} of {filteredEmployees.length} employees · Page {currentPage} of {totalPages || 1}
           </span>
-          <div className="flex items-center gap-1 sm:gap-2">
-            <Button
-              variant="outline"
-              size="sm"
+          <div className="flex items-center gap-1">
+            <button
               onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
-              className="h-8 px-2 sm:px-3 border-border text-foreground hover:bg-secondary disabled:opacity-50"
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
             >
               <ChevronLeft className="w-4 h-4" />
-              <span className="hidden sm:inline ml-1">Previous</span>
-            </Button>
-            <div className="hidden sm:flex gap-1">
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(page => (
-                <Button
-                  key={page}
-                  variant={currentPage === page ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setCurrentPage(page)}
-                  className={`h-8 w-8 p-0 ${currentPage === page ? 'bg-primary text-white' : 'border-border text-foreground hover:bg-secondary'}`}
-                >
-                  {page}
-                </Button>
-              ))}
-            </div>
-            <span className="sm:hidden text-xs text-muted-foreground px-2">{currentPage}/{totalPages || 1}</span>
-            <Button
-              variant="outline"
-              size="sm"
+            </button>
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(page => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${
+                  currentPage === page
+                    ? 'bg-red-600 text-white'
+                    : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
               onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages || totalPages === 0}
-              className="h-8 px-2 sm:px-3 border-border text-foreground hover:bg-secondary disabled:opacity-50"
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
             >
-              <span className="hidden sm:inline mr-1">Next</span>
               <ChevronRight className="w-4 h-4" />
-            </Button>
+            </button>
           </div>
         </div>
-      </Card>
+      </div>
     </div>
   )
 }

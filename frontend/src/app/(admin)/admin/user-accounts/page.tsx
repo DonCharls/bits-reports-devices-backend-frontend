@@ -4,22 +4,22 @@ import React, { useState, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Search,
   Plus,
   Edit2,
-  Trash2,
   UserCog,
   Shield,
   ChevronLeft,
   ChevronRight,
   Mail,
   Eye,
-  EyeOff
+  EyeOff,
+  Users,
+  X as XIcon
 } from 'lucide-react'
 
 interface UserAccount {
@@ -30,6 +30,20 @@ interface UserAccount {
   role: string
   status: 'active' | 'inactive'
   createdAt: string
+}
+
+// Password strength helper
+const getPasswordStrength = (pw: string) => {
+  if (!pw) return { label: '', color: '', width: '0%' }
+  let score = 0
+  if (pw.length >= 8) score++
+  if (/[A-Z]/.test(pw)) score++
+  if (/[0-9]/.test(pw)) score++
+  if (/[^A-Za-z0-9]/.test(pw)) score++
+  if (score <= 1) return { label: 'Weak', color: 'bg-red-500', textColor: 'text-red-500', width: '25%' }
+  if (score === 2) return { label: 'Fair', color: 'bg-yellow-500', textColor: 'text-yellow-500', width: '50%' }
+  if (score === 3) return { label: 'Good', color: 'bg-blue-500', textColor: 'text-blue-500', width: '75%' }
+  return { label: 'Strong', color: 'bg-green-500', textColor: 'text-green-500', width: '100%' }
 }
 
 export default function UserAccountsPage() {
@@ -104,7 +118,6 @@ export default function UserAccountsPage() {
   const totalUsers = users.length
   const adminCount = users.filter(u => u.role === 'ADMIN').length
   const hrCount = users.filter(u => u.role === 'HR').length
-  const activeCount = users.filter(u => u.status === 'active').length
 
   const openAddDialog = () => {
     setEditingUser(null)
@@ -197,217 +210,214 @@ export default function UserAccountsPage() {
     }
   }
 
-  const deleteUser = async (id: number) => {
-    try {
-      const token = localStorage.getItem('token')
-      const res = await fetch(`/api/users/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      const data = await res.json()
-      if (data.success) {
-        await fetchUsers()
-      } else {
-        alert(data.message || 'Failed to delete user')
-      }
-    } catch (error) {
-      console.error('Error deleting user:', error)
-    }
-  }
+  const strength = getPasswordStrength(formData.password)
 
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-foreground">User Accounts</h2>
-          <p className="text-muted-foreground text-sm mt-1">Manage admin and HR user accounts</p>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-red-600/10 flex items-center justify-center">
+            <UserCog className="w-5 h-5 text-red-600" />
+          </div>
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-bold text-foreground">User Accounts</h2>
+            <p className="text-muted-foreground text-sm mt-0.5">Manage admin and HR user accounts</p>
+          </div>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={openAddDialog} className="bg-primary hover:bg-primary/90 gap-2 w-full sm:w-auto">
+            <Button onClick={openAddDialog} className="bg-red-600 hover:bg-red-700 gap-2 text-white shadow-lg shadow-red-600/20 w-full sm:w-auto">
               <Plus className="w-4 h-4" />
               Add User
             </Button>
           </DialogTrigger>
-          <DialogContent className="bg-card border-border text-foreground max-w-md mx-4">
-            <DialogHeader>
-              <DialogTitle className="text-foreground">{editingUser ? 'Edit User' : 'Add New User'}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 mt-2">
-              <div className="grid grid-cols-2 gap-3">
+          <DialogContent showCloseButton={false} className="bg-white border-0 max-w-md mx-4 p-0 rounded-2xl overflow-hidden shadow-xl">
+            <div className="bg-red-600 px-6 py-4 flex items-center justify-between">
+              <div>
+                <DialogTitle className="text-white font-bold text-lg">{editingUser ? 'Edit User Account' : 'Add New User'}</DialogTitle>
+                <DialogDescription className="text-white/80 text-[10px] uppercase tracking-widest font-bold mt-1">{editingUser ? 'Update user details' : 'Create a new user account'}</DialogDescription>
+              </div>
+              <button onClick={() => setIsDialogOpen(false)} className="text-white/80 hover:text-white transition-colors">
+                <XIcon className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-foreground text-sm">First Name</Label>
-                  <Input
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">First Name</label>
+                  <input
                     placeholder="First name"
-                    className="mt-1 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                    className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
                     value={formData.firstName}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, firstName: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
                   />
                 </div>
                 <div>
-                  <Label className="text-foreground text-sm">Last Name</Label>
-                  <Input
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Last Name</label>
+                  <input
                     placeholder="Last name"
-                    className="mt-1 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                    className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
                     value={formData.lastName}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, lastName: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                   />
                 </div>
               </div>
 
               <div>
-                <Label className="text-foreground text-sm">Email</Label>
-                <div className="relative mt-1">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
+                <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Email</label>
+                <div className="relative mt-1.5">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                  <input
                     type="email"
                     placeholder="user@avega.com"
-                    className="pl-10 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
                     value={formData.email}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, email: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   />
                 </div>
               </div>
 
               <div>
-                <Label className="text-foreground text-sm">Role</Label>
-                <Select value={formData.role} onValueChange={(v: string) => setFormData({ ...formData, role: v })}>
-                  <SelectTrigger className="mt-1 bg-secondary border-border text-foreground">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-card border-border">
-                    <SelectItem value="ADMIN">Administrator</SelectItem>
-                    <SelectItem value="HR">HR</SelectItem>
-                  </SelectContent>
-                </Select>
+                <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Role</label>
+                <select
+                  className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none cursor-pointer transition-all appearance-none"
+                  value={formData.role}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                >
+                  <option value="ADMIN">Administrator</option>
+                  <option value="HR">HR</option>
+                </select>
               </div>
 
               <div>
-                <Label className="text-foreground text-sm">{editingUser ? 'New Password (leave blank to keep)' : 'Password'}</Label>
-                <div className="relative mt-1">
-                  <Input
+                <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">{editingUser ? 'New Password (leave blank to keep)' : 'Password'}</label>
+                <div className="relative mt-1.5">
+                  <input
                     type={showPassword ? 'text' : 'password'}
                     placeholder={editingUser ? 'Leave blank to keep current' : 'Min. 8 characters'}
-                    className="pr-10 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                    className="w-full px-3 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
                     value={formData.password}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, password: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {/* Password Strength Meter */}
+                {formData.password && (
+                  <div className="mt-2">
+                    <div className="w-full bg-slate-100 rounded-full h-1.5">
+                      <div className={`h-1.5 rounded-full transition-all duration-300 ${strength.color}`} style={{ width: strength.width }} />
+                    </div>
+                    <p className={`text-[10px] mt-1 font-bold ${strength.textColor}`}>
+                      Password strength: {strength.label}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div>
-                <Label className="text-foreground text-sm">Confirm Password</Label>
-                <Input
+                <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Confirm Password</label>
+                <input
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Confirm password"
-                  className="mt-1 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                  className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
                   value={formData.confirmPassword}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                 />
               </div>
 
               {formError && (
-                <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-lg p-3">{formError}</p>
+                <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-xl p-3 font-medium">{formError}</p>
               )}
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="border-border text-foreground hover:bg-secondary">Cancel</Button>
-                <Button onClick={handleSave} className="bg-primary hover:bg-primary/90">
-                  {editingUser ? 'Save Changes' : 'Create User'}
-                </Button>
-              </div>
+            </div>
+            <div className="flex items-center justify-center gap-6 px-6 py-4 border-t border-slate-100">
+              <button
+                className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                onClick={() => setIsDialogOpen(false)}
+              >
+                Discard
+              </button>
+              <button onClick={handleSave} className="px-8 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-colors">
+                {editingUser ? 'Save Changes' : 'Create User'}
+              </button>
             </div>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <Card className="bg-card border-border p-4 sm:p-6 hover:shadow-lg transition-shadow">
+      {/* Stat Cards — 3 cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card className="bg-white border-slate-200 p-5">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-muted-foreground text-xs sm:text-sm font-medium">Total Users</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground mt-1 sm:mt-2">{totalUsers}</p>
-              <p className="text-xs text-green-400 mt-1">{activeCount} active</p>
+              <p className="text-sm text-slate-400 font-medium">Total Users</p>
+              <p className="text-3xl font-bold text-slate-800 mt-1">{totalUsers}</p>
+              <p className="text-xs text-slate-400 mt-1">Registered accounts</p>
             </div>
-            <div className="bg-primary/20 p-2 sm:p-3 rounded-lg">
-              <UserCog className="w-4 h-4 sm:w-6 sm:h-6 text-primary" />
+            <div className="p-2.5 rounded-lg bg-red-50">
+              <Users className="w-5 h-5 text-red-600" />
             </div>
           </div>
         </Card>
-
-        <Card className="bg-card border-border p-4 sm:p-6 hover:shadow-lg transition-shadow">
+        <Card className="bg-white border-slate-200 p-5">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-muted-foreground text-xs sm:text-sm font-medium">Admins</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground mt-1 sm:mt-2">{adminCount}</p>
+              <p className="text-sm text-slate-400 font-medium">Administrators</p>
+              <p className="text-3xl font-bold text-slate-800 mt-1">{adminCount}</p>
+              <p className="text-xs text-slate-400 mt-1">Admin role accounts</p>
             </div>
-            <div className="bg-blue-500/20 p-2 sm:p-3 rounded-lg">
-              <Shield className="w-4 h-4 sm:w-6 sm:h-6 text-blue-400" />
+            <div className="p-2.5 rounded-lg bg-blue-50">
+              <Shield className="w-5 h-5 text-blue-600" />
             </div>
           </div>
         </Card>
-
-        <Card className="bg-card border-border p-4 sm:p-6 hover:shadow-lg transition-shadow">
+        <Card className="bg-white border-slate-200 p-5">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-muted-foreground text-xs sm:text-sm font-medium">HR Users</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground mt-1 sm:mt-2">{hrCount}</p>
+              <p className="text-sm text-slate-400 font-medium">HR Users</p>
+              <p className="text-3xl font-bold text-slate-800 mt-1">{hrCount}</p>
+              <p className="text-xs text-slate-400 mt-1">HR role accounts</p>
             </div>
-            <div className="bg-green-500/20 p-2 sm:p-3 rounded-lg">
-              <UserCog className="w-4 h-4 sm:w-6 sm:h-6 text-green-400" />
-            </div>
-          </div>
-        </Card>
-
-        <Card className="bg-card border-border p-4 sm:p-6 hover:shadow-lg transition-shadow">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-muted-foreground text-xs sm:text-sm font-medium">Active Rate</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground mt-1 sm:mt-2">{totalUsers > 0 ? Math.round((activeCount / totalUsers) * 100) : 0}%</p>
-            </div>
-            <div className="bg-yellow-500/20 p-2 sm:p-3 rounded-lg">
-              <Shield className="w-4 h-4 sm:w-6 sm:h-6 text-yellow-400" />
+            <div className="p-2.5 rounded-lg bg-emerald-50">
+              <UserCog className="w-5 h-5 text-emerald-600" />
             </div>
           </div>
         </Card>
       </div>
 
       {/* Filter Bar */}
-      <Card className="bg-card border-border p-3 sm:p-4">
+      <Card className="bg-white border-slate-200 p-4">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
             <Input
               placeholder="Search by name or email..."
-              className="pl-10 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+              className="pl-10 bg-slate-50 border-slate-200 text-slate-700 placeholder:text-slate-300"
               value={searchTerm}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setSearchTerm(e.target.value); setCurrentPage(1) }}
             />
           </div>
           <Select value={roleFilter} onValueChange={(v: string) => { setRoleFilter(v); setCurrentPage(1) }}>
-            <SelectTrigger className="w-full sm:w-40 bg-secondary border-border text-foreground">
+            <SelectTrigger className="w-full sm:w-40 bg-slate-50 border-slate-200 text-slate-700">
               <SelectValue placeholder="Role" />
             </SelectTrigger>
-            <SelectContent className="bg-card border-border">
+            <SelectContent className="bg-white border-slate-200">
               <SelectItem value="all">All Roles</SelectItem>
               <SelectItem value="admin">Admin</SelectItem>
               <SelectItem value="hr">HR</SelectItem>
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={(v: string) => { setStatusFilter(v); setCurrentPage(1) }}>
-            <SelectTrigger className="w-full sm:w-40 bg-secondary border-border text-foreground">
+            <SelectTrigger className="w-full sm:w-40 bg-slate-50 border-slate-200 text-slate-700">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
-            <SelectContent className="bg-card border-border">
+            <SelectContent className="bg-white border-slate-200">
               <SelectItem value="all">All Status</SelectItem>
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="inactive">Inactive</SelectItem>
@@ -417,93 +427,81 @@ export default function UserAccountsPage() {
       </Card>
 
       {/* Table */}
-      <Card className="bg-card border-border overflow-hidden rounded-2xl shadow-lg">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-border bg-secondary/50">
-                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-muted-foreground uppercase tracking-wider">User</th>
-                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-muted-foreground uppercase tracking-wider hidden md:table-cell">Email</th>
-                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-muted-foreground uppercase tracking-wider">Role</th>
-                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Status</th>
-                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-muted-foreground uppercase tracking-wider hidden lg:table-cell">Created</th>
-                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-muted-foreground uppercase tracking-wider text-right">Actions</th>
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
+              <tr>
+                <th className="px-6 py-4">User</th>
+                <th className="px-6 py-4 hidden md:table-cell">Email</th>
+                <th className="px-6 py-4">Role</th>
+                <th className="px-6 py-4 hidden sm:table-cell">Status</th>
+                <th className="px-6 py-4 hidden lg:table-cell">Created</th>
+                <th className="px-6 py-4">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">Loading users...</td>
+                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-bold text-xs">Loading users...</td>
                 </tr>
               ) : paginatedUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">No users found</td>
+                  <td colSpan={6} className="px-6 py-20 text-center text-slate-400 font-bold uppercase text-xs tracking-widest">No users found</td>
                 </tr>
               ) : (
-                paginatedUsers.map((user, index) => (
-                  <tr key={user.id} className={`hover:bg-primary/5 transition-colors ${index % 2 === 0 ? 'bg-transparent' : 'bg-secondary/10'}`}>
-                    <td className="px-4 sm:px-6 py-3">
+                paginatedUsers.map((user) => (
+                  <tr key={user.id} className="hover:bg-red-50/50 transition-colors duration-200 group">
+                    <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 ${user.role === 'ADMIN' ? 'bg-blue-500' : 'bg-green-500'}`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 ${user.role === 'ADMIN' ? 'bg-blue-500' : 'bg-emerald-500'}`}>
                           {user.firstName.charAt(0)}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">{user.firstName} {user.lastName}</p>
-                          <p className="text-xs text-muted-foreground md:hidden truncate">{user.email}</p>
+                          <p className="font-bold text-slate-700 truncate">{user.firstName} {user.lastName}</p>
+                          <p className="text-xs text-slate-400 md:hidden truncate">{user.email}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 sm:px-6 py-3 hidden md:table-cell">
-                      <span className="text-sm text-muted-foreground">{user.email}</span>
+                    <td className="px-6 py-4 hidden md:table-cell">
+                      <span className="text-xs font-medium text-slate-500">{user.email}</span>
                     </td>
-                    <td className="px-4 sm:px-6 py-3">
+                    <td className="px-6 py-4">
                       <Badge
                         variant="outline"
                         className={user.role === 'ADMIN'
-                          ? 'bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs'
-                          : 'bg-green-500/20 text-green-400 border-green-500/30 text-xs'
+                          ? 'bg-blue-50 text-blue-600 border-blue-200 text-xs'
+                          : 'bg-emerald-50 text-emerald-600 border-emerald-200 text-xs'
                         }
                       >
                         {user.role === 'ADMIN' ? 'Admin' : 'HR'}
                       </Badge>
                     </td>
-                    <td className="px-4 sm:px-6 py-3 hidden sm:table-cell">
+                    <td className="px-6 py-4 hidden sm:table-cell">
                       <button onClick={() => toggleStatus(user.id)}>
                         <Badge
                           variant="outline"
                           className={`cursor-pointer ${user.status === 'active'
-                            ? 'bg-green-500/20 text-green-400 border-green-500/30 text-xs'
-                            : 'bg-red-500/20 text-red-400 border-red-500/30 text-xs'
+                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200 text-xs'
+                            : 'bg-red-50 text-red-600 border-red-200 text-xs'
                             }`}
                         >
                           {user.status === 'active' ? 'Active' : 'Inactive'}
                         </Badge>
                       </button>
                     </td>
-                    <td className="px-4 sm:px-6 py-3 hidden lg:table-cell">
-                      <span className="text-sm text-muted-foreground font-mono">
+                    <td className="px-6 py-4 hidden lg:table-cell">
+                      <span className="text-xs font-medium text-slate-500">
                         {new Date(user.createdAt).toLocaleDateString('en-CA')}
                       </span>
                     </td>
-                    <td className="px-4 sm:px-6 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-muted-foreground hover:text-primary hover:bg-primary/10 h-8 w-8 p-0"
-                          onClick={() => openEditDialog(user)}
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-muted-foreground hover:text-red-400 hover:bg-red-500/10 h-8 w-8 p-0"
-                          onClick={() => deleteUser(user.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
+                    <td className="px-6 py-4">
+                      <button
+                        onClick={() => openEditDialog(user)}
+                        className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -513,35 +511,41 @@ export default function UserAccountsPage() {
         </div>
 
         {/* Pagination */}
-        <div className="px-4 sm:px-6 py-3 border-t border-border bg-secondary/20 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p className="text-xs text-muted-foreground">
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+          <span className="text-xs text-slate-400 font-bold">
             Showing {filteredUsers.length > 0 ? (currentPage - 1) * rowsPerPage + 1 : 0} to {Math.min(currentPage * rowsPerPage, filteredUsers.length)} of {filteredUsers.length} users
-          </p>
+          </span>
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={currentPage === 1}
+            <button
               onClick={() => setCurrentPage(p => p - 1)}
-              className="text-muted-foreground hover:text-foreground hover:bg-secondary h-8 w-8 p-0"
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
             >
               <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <span className="text-sm text-foreground font-medium px-2">
-              {currentPage} / {totalPages}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={currentPage === totalPages}
+            </button>
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(page => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${
+                  currentPage === page
+                    ? 'bg-red-600 text-white'
+                    : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
               onClick={() => setCurrentPage(p => p + 1)}
-              className="text-muted-foreground hover:text-foreground hover:bg-secondary h-8 w-8 p-0"
+              disabled={currentPage === totalPages}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
             >
               <ChevronRight className="w-4 h-4" />
-            </Button>
+            </button>
           </div>
         </div>
-      </Card>
+      </div>
     </div>
   )
 }

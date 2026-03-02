@@ -1,9 +1,9 @@
 "use client"
 import React from 'react';
-import { 
-  Users, 
-  UserCheck, 
-  MapPin, 
+import {
+  Users,
+  UserCheck,
+  MapPin,
   Fingerprint,
   Activity,
   AlertCircle,
@@ -21,20 +21,20 @@ export default function HRDashboard() {
   ];
 
   const branchPresence = [
-    { name: "Cebu City Branch", percentage: 94, color: "bg-emerald-500" },
+    { name: "Main Office", percentage: 94, color: "bg-emerald-500" },
     { name: "Tayud Branch", percentage: 88, color: "bg-red-500" },
     { name: "Makati Branch", percentage: 91, color: "bg-emerald-500" },
   ];
 
   return (
     <div className="space-y-6">
-    
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h1 className="text-3xl font-black text-slate-800 tracking-tighter uppercase">Dashboard</h1>
-        
+        <h1 className="text-3xl font-black text-slate-800 tracking-tighter">Dashboard</h1>
+
       </div>
 
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat) => (
           <div key={stat.label} className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm relative overflow-hidden group hover:border-red-500 transition-all cursor-default">
@@ -51,11 +51,11 @@ export default function HRDashboard() {
         ))}
       </div>
 
-      
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          
-          
+
+
           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-8">
             <div className="relative shrink-0">
               <div className="w-32 h-32 rounded-full border-[12px] border-slate-50 flex items-center justify-center relative">
@@ -70,26 +70,23 @@ export default function HRDashboard() {
                   An overview of workforce clock-in trends and biometric compliance for the current shift.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2 justify-center md:justify-start">
-                <span className="px-3 py-1.5 bg-slate-50 text-[9px] font-black uppercase text-slate-500 rounded-xl border border-slate-100">138 Present</span>
-                <span className="px-3 py-1.5 bg-slate-50 text-[9px] font-black uppercase text-red-500 rounded-xl border border-slate-100">12 Late</span>
-              </div>
+
             </div>
             <div className="hidden xl:block">
-               <Fingerprint size={48} className="text-slate-100" />
+              <Fingerprint size={48} className="text-slate-100" />
             </div>
           </div>
 
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {branchPresence.map((branch) => (
               <div key={branch.name} className="bg-slate-900 p-6 rounded-[2.5rem] text-white flex flex-col justify-between h-44 shadow-xl">
                 <div className="flex justify-between items-center">
                   <div className="flex justify-between items-center">
-                  <div className="p-2.5 bg-white/10 rounded-2xl">
-                    <MapPin size={18} className="text-red-400" />
+                    <div className="p-2.5 bg-white/10 rounded-2xl">
+                      <MapPin size={18} className="text-red-400" />
+                    </div>
                   </div>
-                </div>
                 </div>
                 <div>
                   <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-1">{branch.name}</p>
@@ -106,13 +103,13 @@ export default function HRDashboard() {
           </div>
         </div>
 
-        
+
         <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm p-6 flex flex-col">
           <div className="flex items-center gap-2 mb-6">
             <Zap size={18} className="text-amber-500 fill-amber-500" />
             <h3 className="font-black text-[10px] text-slate-800 uppercase tracking-[0.2em]">Live Logs</h3>
           </div>
-          
+
           <div className="space-y-4 flex-1 overflow-hidden">
             {[
               { label: "Mark Anthony", action: "Clocked In", time: "2m ago" },
@@ -133,10 +130,10 @@ export default function HRDashboard() {
           </div>
 
           <div className="mt-6 p-4 bg-emerald-50 rounded-3xl border border-emerald-100 flex items-center gap-3">
-             <ShieldCheck size={20} className="text-emerald-500" />
-             <p className="text-[9px] text-emerald-700 font-black uppercase leading-tight tracking-wider">
-               Secure Connection<br/>Active
-             </p>
+            <ShieldCheck size={20} className="text-emerald-500" />
+            <p className="text-[9px] text-emerald-700 font-black uppercase leading-tight tracking-wider">
+              Secure Connection Active
+            </p>
           </div>
         </div>
       </div>

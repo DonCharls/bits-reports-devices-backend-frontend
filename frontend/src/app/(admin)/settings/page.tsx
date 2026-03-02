@@ -15,8 +15,7 @@ import {
   Eye,
   EyeOff,
   CheckCircle2,
-  AlertCircle,
-  Camera
+  AlertCircle
 } from 'lucide-react'
 
 export default function SettingsPage() {
@@ -80,7 +79,6 @@ export default function SettingsPage() {
 
       const data = await res.json()
       if (data.success) {
-        // Update localStorage with new profile data
         const employee = localStorage.getItem('employee')
         if (employee) {
           const parsed = JSON.parse(employee)
@@ -102,7 +100,7 @@ export default function SettingsPage() {
   }
 
   const handleChangePassword = async () => {
-    setPasswordError('')
+     setPasswordError('')
     setPasswordSaved(false)
 
     if (!currentPassword) {
@@ -170,37 +168,37 @@ export default function SettingsPage() {
   return (
     <div className="space-y-4 sm:space-y-6 w-full max-w-3xl mx-auto">
       {/* Header */}
-      <div>
-        <h2 className="text-2xl sm:text-3xl font-bold text-foreground">Account Settings</h2>
-        <p className="text-muted-foreground text-sm mt-1">Manage your profile and security preferences</p>
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-red-600/10 flex items-center justify-center">
+          <User className="w-5 h-5 text-red-600" />
+        </div>
+        <div>
+          <h2 className="text-2xl sm:text-3xl font-bold text-foreground">Account Settings</h2>
+          <p className="text-muted-foreground text-sm mt-0.5">Manage your profile and security preferences</p>
+        </div>
       </div>
 
       {/* ─── Profile Card ──────────────────────────────────── */}
-      <Card className="bg-card border-border p-4 sm:p-6">
+      <Card className="bg-white border-slate-200 p-4 sm:p-6">
         <div className="flex items-center gap-3 mb-6">
-          <div className="bg-primary/20 p-2 rounded-lg">
-            <User className="w-5 h-5 text-primary" />
+          <div className="bg-red-50 p-2 rounded-lg">
+            <User className="w-5 h-5 text-red-600" />
           </div>
           <div>
-            <h3 className="text-base font-semibold text-foreground">Profile Information</h3>
-            <p className="text-xs text-muted-foreground">Update your personal details</p>
+            <h3 className="text-base font-semibold text-slate-800">Profile Information</h3>
+            <p className="text-xs text-slate-400">Update your personal details</p>
           </div>
         </div>
 
-        {/* Avatar */}
+        {/* Avatar — clean, no camera button */}
         <div className="flex flex-col sm:flex-row items-center gap-4 mb-6">
-          <div className="relative shrink-0">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-lg sm:text-xl border-2 border-primary/30">
-              {firstName ? firstName.charAt(0).toUpperCase() : 'A'}
-            </div>
-            <button className="absolute -bottom-1 -right-1 w-6 h-6 sm:w-7 sm:h-7 bg-primary rounded-full flex items-center justify-center text-white shadow-lg hover:bg-primary/90 transition-colors">
-              <Camera className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-            </button>
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-red-600 flex items-center justify-center text-white font-bold text-lg sm:text-xl border-2 border-red-500/30 shadow-lg shadow-red-600/20">
+            {firstName ? firstName.charAt(0).toUpperCase() : 'A'}
           </div>
           <div className="text-center sm:text-left">
-            <p className="text-sm font-semibold text-foreground">{userName}</p>
-            <p className="text-xs text-muted-foreground">{userEmail}</p>
-            <Badge variant="outline" className="mt-1 bg-primary/20 text-primary border-primary/30 text-[10px]">
+            <p className="text-sm font-bold text-slate-800">{userName}</p>
+            <p className="text-xs text-slate-400">{userEmail}</p>
+            <Badge variant="outline" className="mt-1 bg-red-50 text-red-600 border-red-200 text-[10px]">
               <Shield className="w-3 h-3 mr-1" />{userRole === 'ADMIN' ? 'Administrator' : 'HR'}
             </Badge>
           </div>
@@ -208,44 +206,44 @@ export default function SettingsPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <Label className="text-foreground text-sm">First Name</Label>
+            <Label className="text-slate-600 text-sm font-medium">First Name</Label>
             <Input
               placeholder="First name"
-              className="mt-1.5 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+              className="mt-1.5 bg-slate-50 border-slate-200 text-slate-700 placeholder:text-slate-300"
               value={firstName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFirstName(e.target.value)}
             />
           </div>
           <div>
-            <Label className="text-foreground text-sm">Last Name</Label>
+            <Label className="text-slate-600 text-sm font-medium">Last Name</Label>
             <Input
               placeholder="Last name"
-              className="mt-1.5 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+              className="mt-1.5 bg-slate-50 border-slate-200 text-slate-700 placeholder:text-slate-300"
               value={lastName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLastName(e.target.value)}
             />
           </div>
           <div>
-            <Label className="text-foreground text-sm">Email</Label>
+            <Label className="text-slate-600 text-sm font-medium">Email</Label>
             <div className="relative mt-1.5">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
               <Input
                 type="email"
-                className="pl-10 bg-secondary border-border text-foreground placeholder:text-muted-foreground opacity-60"
+                className="pl-10 bg-slate-50 border-slate-200 text-slate-700 opacity-60"
                 value={userEmail}
                 readOnly
               />
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Email cannot be changed</p>
+            <p className="text-[10px] text-slate-400 mt-1">Email cannot be changed</p>
           </div>
           <div>
-            <Label className="text-foreground text-sm">Phone</Label>
+            <Label className="text-slate-600 text-sm font-medium">Phone</Label>
             <div className="relative mt-1.5">
-              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
               <Input
                 type="tel"
                 placeholder="+63-000-000-0000"
-                className="pl-10 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                className="pl-10 bg-slate-50 border-slate-200 text-slate-700 placeholder:text-slate-300"
                 value={phone}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhone(e.target.value)}
               />
@@ -254,53 +252,53 @@ export default function SettingsPage() {
         </div>
 
         {profileError && (
-          <div className="flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-lg p-3 mt-4">
+          <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg p-3 mt-4">
             <AlertCircle className="w-4 h-4 shrink-0" />
             {profileError}
           </div>
         )}
 
-        <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-3 mt-6 pt-4 border-t border-border">
+        <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
           {profileSaved && (
-            <span className="flex items-center gap-1 text-green-400 text-sm font-medium animate-in fade-in">
+            <span className="flex items-center gap-1 text-emerald-600 text-sm font-medium">
               <CheckCircle2 className="w-4 h-4" /> Saved
             </span>
           )}
-          <Button onClick={handleSaveProfile} className="bg-primary hover:bg-primary/90 w-full sm:w-auto">
+          <Button onClick={handleSaveProfile} className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto">
             Save Changes
           </Button>
         </div>
       </Card>
 
       {/* ─── Change Password Card ──────────────────────────── */}
-      <Card className="bg-card border-border p-4 sm:p-6">
+      <Card className="bg-white border-slate-200 p-4 sm:p-6">
         <div className="flex items-center gap-3 mb-6">
-          <div className="bg-yellow-500/20 p-2 rounded-lg">
-            <Lock className="w-5 h-5 text-yellow-400" />
+          <div className="bg-amber-50 p-2 rounded-lg">
+            <Lock className="w-5 h-5 text-amber-600" />
           </div>
           <div>
-            <h3 className="text-base font-semibold text-foreground">Change Password</h3>
-            <p className="text-xs text-muted-foreground">Update your password to keep your account secure</p>
+            <h3 className="text-base font-semibold text-slate-800">Change Password</h3>
+            <p className="text-xs text-slate-400">Update your password to keep your account secure</p>
           </div>
         </div>
 
         <div className="space-y-4">
           {/* Current Password */}
           <div>
-            <Label className="text-foreground text-sm">Current Password</Label>
+            <Label className="text-slate-600 text-sm font-medium">Current Password</Label>
             <div className="relative mt-1.5">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
               <Input
                 type={showCurrent ? 'text' : 'password'}
                 placeholder="Enter current password"
-                className="pl-10 pr-10 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                className="pl-10 pr-10 bg-slate-50 border-slate-200 text-slate-700 placeholder:text-slate-300"
                 value={currentPassword}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrentPassword(e.target.value)}
               />
               <button
                 type="button"
                 onClick={() => setShowCurrent(!showCurrent)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
               >
                 {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -309,20 +307,20 @@ export default function SettingsPage() {
 
           {/* New Password */}
           <div>
-            <Label className="text-foreground text-sm">New Password</Label>
+            <Label className="text-slate-600 text-sm font-medium">New Password</Label>
             <div className="relative mt-1.5">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
               <Input
                 type={showNew ? 'text' : 'password'}
                 placeholder="Enter new password"
-                className="pl-10 pr-10 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                className="pl-10 pr-10 bg-slate-50 border-slate-200 text-slate-700 placeholder:text-slate-300"
                 value={newPassword}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setNewPassword(e.target.value); setPasswordError('') }}
               />
               <button
                 type="button"
                 onClick={() => setShowNew(!showNew)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
               >
                 {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -330,12 +328,12 @@ export default function SettingsPage() {
             {/* Strength meter */}
             {newPassword && (
               <div className="mt-2">
-                <div className="w-full bg-secondary rounded-full h-1.5">
+                <div className="w-full bg-slate-100 rounded-full h-1.5">
                   <div className={`h-1.5 rounded-full transition-all duration-300 ${strength.color}`} style={{ width: strength.width }} />
                 </div>
-                <p className={`text-[10px] mt-1 font-medium ${strength.label === 'Weak' ? 'text-red-400' :
-                    strength.label === 'Fair' ? 'text-yellow-400' :
-                      strength.label === 'Good' ? 'text-blue-400' : 'text-green-400'
+                <p className={`text-[10px] mt-1 font-bold ${strength.label === 'Weak' ? 'text-red-500' :
+                    strength.label === 'Fair' ? 'text-yellow-500' :
+                      strength.label === 'Good' ? 'text-blue-500' : 'text-green-500'
                   }`}>
                   Password strength: {strength.label}
                 </p>
@@ -345,20 +343,20 @@ export default function SettingsPage() {
 
           {/* Confirm Password */}
           <div>
-            <Label className="text-foreground text-sm">Confirm New Password</Label>
+            <Label className="text-slate-600 text-sm font-medium">Confirm New Password</Label>
             <div className="relative mt-1.5">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
               <Input
                 type={showConfirm ? 'text' : 'password'}
                 placeholder="Confirm new password"
-                className="pl-10 pr-10 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                className="pl-10 pr-10 bg-slate-50 border-slate-200 text-slate-700 placeholder:text-slate-300"
                 value={confirmPassword}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setConfirmPassword(e.target.value); setPasswordError('') }}
               />
               <button
                 type="button"
                 onClick={() => setShowConfirm(!showConfirm)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
               >
                 {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -367,53 +365,22 @@ export default function SettingsPage() {
 
           {/* Error / Success */}
           {passwordError && (
-            <div className="flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+            <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg p-3">
               <AlertCircle className="w-4 h-4 shrink-0" />
               {passwordError}
             </div>
           )}
         </div>
 
-        <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-3 mt-6 pt-4 border-t border-border">
+        <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
           {passwordSaved && (
-            <span className="flex items-center gap-1 text-green-400 text-sm font-medium animate-in fade-in">
+            <span className="flex items-center gap-1 text-emerald-600 text-sm font-medium">
               <CheckCircle2 className="w-4 h-4" /> Password updated
             </span>
           )}
-          <Button onClick={handleChangePassword} className="bg-primary hover:bg-primary/90 w-full sm:w-auto">
+          <Button onClick={handleChangePassword} className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto">
             Update Password
           </Button>
-        </div>
-      </Card>
-
-      {/* ─── Security Info ──────────────────────────────────── */}
-      <Card className="bg-card border-border p-4 sm:p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="bg-green-500/20 p-2 rounded-lg">
-            <Shield className="w-5 h-5 text-green-400" />
-          </div>
-          <div>
-            <h3 className="text-base font-semibold text-foreground">Security</h3>
-            <p className="text-xs text-muted-foreground">Account security overview</p>
-          </div>
-        </div>
-        <div className="space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-0 py-2 border-b border-border">
-            <span className="text-sm text-foreground">Role</span>
-            <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30 text-xs w-fit">
-              {userRole === 'ADMIN' ? 'Administrator' : 'HR'}
-            </Badge>
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-0 py-2 border-b border-border">
-            <span className="text-sm text-foreground">Two-Factor Authentication</span>
-            <Badge variant="outline" className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30 text-xs w-fit">Not Enabled</Badge>
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-0 py-2">
-            <span className="text-sm text-foreground">Last Login</span>
-            <span className="text-xs text-muted-foreground font-mono">
-              {new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })} — {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          </div>
         </div>
       </Card>
     </div>

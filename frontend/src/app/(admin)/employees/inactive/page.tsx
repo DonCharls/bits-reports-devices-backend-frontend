@@ -128,7 +128,7 @@ export default function InactiveEmployeesPage() {
 
       {/* Confirm Restore Dialog */}
       {confirmRestore && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
           <div className="bg-card border border-border rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
@@ -156,7 +156,7 @@ export default function InactiveEmployeesPage() {
 
       {/* Confirm Permanent Delete Dialog */}
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
           <div className="bg-card border border-border rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center shrink-0">
@@ -215,33 +215,28 @@ export default function InactiveEmployeesPage() {
       </Card>
 
       {/* Table */}
-      <Card className="bg-card border-border overflow-hidden rounded-2xl shadow-lg">
-        <div className="p-4 border-b border-border bg-secondary/20">
-          <p className="text-sm text-muted-foreground">{filteredEmployees.length} inactive employee{filteredEmployees.length !== 1 ? 's' : ''}</p>
-        </div>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-          <table className="w-full">
-            <thead className="sticky top-0 z-10">
-              <tr className="border-b border-border bg-secondary/50 backdrop-blur-sm">
-                <th className="px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">ID</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Name</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Contact</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Department</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Position</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Actions</th>
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100 sticky top-0 z-10">
+              <tr>
+                <th className="px-6 py-4 w-16">#</th>
+                <th className="px-6 py-4">Name</th>
+                <th className="px-6 py-4">Contact</th>
+                <th className="px-6 py-4">Department</th>
+                <th className="px-6 py-4">Branch</th>
+                <th className="px-6 py-4">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-8 text-center text-muted-foreground">Loading...</td>
                 </tr>
               ) : paginatedEmployees.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-16 text-center">
-                    <UserX className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
-                    <p className="text-muted-foreground">No inactive employees</p>
-                    <p className="text-xs text-muted-foreground/60 mt-1">Employees moved to inactive will appear here</p>
+                  <td colSpan={6} className="px-6 py-20 text-center text-slate-400 font-bold uppercase text-xs tracking-widest">
+                    No inactive employees found
                   </td>
                 </tr>
               ) : (
@@ -250,47 +245,40 @@ export default function InactiveEmployeesPage() {
                   return (
                     <tr
                       key={employee.id}
-                      className={`hover:bg-secondary/20 transition-colors opacity-80 ${index % 2 === 0 ? 'bg-transparent' : 'bg-secondary/10'}`}
+                      className="hover:bg-red-50/50 transition-colors duration-200 group"
                     >
-                      <td className="px-6 py-4 text-sm text-muted-foreground font-mono">#{employee.id.toString().padStart(3, '0')}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gray-500/20 flex items-center justify-center text-gray-400 font-bold text-sm">
-                            {employee.firstName.charAt(0)}
-                          </div>
-                          <div>
-                            <span className="text-sm font-medium text-foreground line-through decoration-muted-foreground/40">{fullName}</span>
-                            <Badge className="ml-2 bg-gray-500/20 text-gray-400 border-gray-500/30 text-xs">Inactive</Badge>
-                          </div>
-                        </div>
+                      <td className="px-6 py-4 text-xs font-bold text-slate-400">
+                        {String((currentPage - 1) * rowsPerPage + index + 1).padStart(2, '0')}
                       </td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground font-mono">{employee.contactNumber || '-'}</td>
                       <td className="px-6 py-4">
-                        <Badge variant="outline" className="bg-secondary/50 text-muted-foreground border-border">
-                          {employee.department || '-'}
-                        </Badge>
+                        <p className="font-bold text-slate-700">{fullName}</p>
+                        <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30 text-xs mt-1">Inactive</Badge>
                       </td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">{employee.position || '-'}</td>
+                      <td className="px-6 py-4">
+                        <span className="text-xs font-medium text-slate-500">{employee.contactNumber || '—'}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-xs font-medium text-slate-500">{employee.department || '—'}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-xs font-medium text-slate-500">{employee.branch || '—'}</span>
+                      </td>
                       <td className="px-6 py-4">
                         <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-green-400 hover:bg-green-500/10 rounded-lg"
+                          <button
                             onClick={() => setConfirmRestore(employee)}
                             title="Restore to Active"
+                            className="p-2.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-xl transition-all active:scale-90"
                           >
                             <RotateCcw className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 rounded-lg"
+                          </button>
+                          <button
                             onClick={() => setConfirmDelete(employee)}
                             title="Delete Permanently"
+                            className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90"
                           >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                            <UserX className="w-4 h-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -301,34 +289,41 @@ export default function InactiveEmployeesPage() {
           </table>
         </div>
         {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="px-4 sm:px-6 py-4 bg-secondary/20 border-t border-border flex items-center justify-between">
-            <span className="text-xs sm:text-sm text-muted-foreground">Page {currentPage} of {totalPages}</span>
-            <div className="flex items-center gap-1 sm:gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className="h-8 px-2 sm:px-3 border-border text-foreground hover:bg-secondary disabled:opacity-50"
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+          <span className="text-xs text-slate-400 font-bold">
+            Showing {paginatedEmployees.length} of {filteredEmployees.length} employees · Page {currentPage} of {totalPages || 1}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(page => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${
+                  currentPage === page
+                    ? 'bg-red-600 text-white'
+                    : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
+                }`}
               >
-                <ChevronLeft className="w-4 h-4" />
-                <span className="hidden sm:inline ml-1">Previous</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                disabled={currentPage === totalPages}
-                className="h-8 px-2 sm:px-3 border-border text-foreground hover:bg-secondary disabled:opacity-50"
-              >
-                <span className="hidden sm:inline mr-1">Next</span>
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
+                {page}
+              </button>
+            ))}
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages || totalPages === 0}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
-        )}
-      </Card>
+        </div>
+      </div>
     </div>
   )
 }

@@ -7,10 +7,9 @@ import Image from 'next/image'
 
 interface AdminTopbarProps {
   onMenuClick: () => void
-  isCollapsed?: boolean
 }
 
-export function AdminTopbar({ onMenuClick, isCollapsed = false }: AdminTopbarProps) {
+export function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
   const router = useRouter()
   const [time, setTime] = useState<Date | null>(null)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
@@ -52,30 +51,29 @@ export function AdminTopbar({ onMenuClick, isCollapsed = false }: AdminTopbarPro
   }
 
   return (
-    <header className={`fixed top-0 right-0 h-16 bg-gray-50 border-b border-gray-200 flex items-center justify-between px-4 md:px-8 z-40 transition-all duration-300 ${isCollapsed ? 'md:left-20' : 'md:left-60'
-      } left-0`}>
-      <div className="flex items-center gap-3 flex-1">
-        {/* Mobile Menu Button + Logo */}
-        <div className="flex items-center gap-3 md:hidden">
-          <button
-            onClick={onMenuClick}
-            className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <Menu size={20} />
-          </button>
-          <div className="flex items-center gap-2">
-            <Image
-              src="/images/av.jpg"
-              alt="Logo"
-              width={32}
-              height={32}
-              className="object-contain"
-              onError={(e) => {
-                e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="32" height="32"%3E%3Crect fill="%23E60000" width="32" height="32" rx="8"/%3E%3Ctext x="50%" y="50%" fontSize="14" fill="white" textAnchor="middle" dominantBaseline="middle" fontWeight="bold"%3EB%3C/text%3E%3C/svg%3E'
-              }}
-            />
-            <span className="text-[#E60000] font-bold text-lg tracking-tight uppercase">BITS</span>
-          </div>
+    <header className="h-16 bg-gray-50 border-b border-gray-200 flex items-center justify-between px-4 md:px-8 fixed top-0 left-0 right-0 z-70">
+      <div className="flex items-center gap-4 flex-1">
+        {/* Mobile Menu Button */}
+        <button
+          onClick={onMenuClick}
+          className="lg:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          <Menu size={24} />
+        </button>
+        {/* Logo */}
+        <div className="flex items-center gap-3">
+          <Image
+            src="/images/av.jpg"
+            alt="Logo"
+            width={52}
+            height={52}
+            className="object-contain rounded-md border border-red-700"
+            onError={(e) => {
+              e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="44" height="44"%3E%3Crect fill="%23E60000" width="44" height="44" rx="6"/%3E%3Ctext x="50%25" y="50%25" fontSize="16" fill="white" textAnchor="middle" dominantBaseline="middle" fontWeight="bold"%3EB%3C/text%3E%3C/svg%3E'
+            }}
+          />
+          <h1 className="text-[#E60000] font-black text-2xl tracking-tighter uppercase whitespace-nowrap">BITS</h1>
+          <span className="hidden md:inline text-gray-400 text-xs font-semibold tracking-wide whitespace-nowrap border-l border-gray-200 pl-3 ml-1">Biometric Integrated Timekeeping System</span>
         </div>
       </div>
 
@@ -99,7 +97,7 @@ export function AdminTopbar({ onMenuClick, isCollapsed = false }: AdminTopbarPro
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setIsProfileOpen(!isProfileOpen)}
-            className="flex items-center gap-2 group p-1 rounded-full hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-2 group p-1 rounded-full hover:bg-gray-100 transition-colors"
           >
             <div className="h-9 w-9 rounded-full bg-red-600 flex items-center justify-center text-white shadow-lg shadow-red-200 group-hover:scale-105 transition-transform overflow-hidden">
               {profileImage ? (

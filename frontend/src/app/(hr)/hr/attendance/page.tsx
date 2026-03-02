@@ -1,19 +1,14 @@
 "use client"
 
 import React, { useState, useRef, useEffect } from 'react';
-import * as XLSX from 'xlsx';
 import { 
   Search, 
   Calendar as CalendarIcon, 
-  CheckCircle, 
-  XCircle, 
   Clock, 
   Edit2, 
-  X, 
   AlertCircle,
-  MapPin,
-  Briefcase,
-  Download
+  Download,
+  AlertTriangle
 } from 'lucide-react';
 
 export default function AttendancePage() {
@@ -28,6 +23,7 @@ export default function AttendancePage() {
   const [deptFilter, setDeptFilter] = useState("All Departments");
   const [branchFilter, setBranchFilter] = useState("All Branches");
   const [editingLog, setEditingLog] = useState<any>(null);
+  const [showCancelModal, setShowCancelModal] = useState(false);
   const [showSuccessToast, setShowSuccessToast] = useState(false); 
   const dateInputRef = useRef<HTMLInputElement>(null);
 
@@ -48,16 +44,16 @@ export default function AttendancePage() {
 
   const branches = [
     "All Branches", 
-    "Cebu City", 
-    "Tayud", 
-    "Manila"
+    "Main Office", 
+    "Tayud Branch", 
+    "Manila Branch"
   ];
 
   const attendanceData = [
-    { id: "EMP001", name: "Mark Anthony", branch: "Cebu City", dept: "Purchasing", date: getTodayDate(), in: "07:45 AM", out: "05:00 PM", status: "Present", day: "Monday", remarks: "On Time" },
-    { id: "EMP002", name: "Sarah Jenkins", branch: "Manila", dept: "Human Resources", date: getTodayDate(), in: "08:15 AM", out: "05:30 PM", status: "Present", day: "Monday", remarks: "Late (15 mins)" },
-    { id: "EMP003", name: "John Doe", branch: "Tayud", dept: "I.T.", date: "2024-05-21", in: "---", out: "---", status: "Absent", day: "Tuesday", remarks: "Absent" },
-    { id: "EMP004", name: "Ariadne Arsolon", branch: "Cebu City", dept: "Engineering", date: "2024-05-22", in: "07:50 AM", out: "12:00 PM", status: "Present", day: "Wednesday", remarks: "Half-day" },
+    { id: "EMP001", name: "Mark Anthony", branch: "Main Office", dept: "Purchasing", date: getTodayDate(), in: "07:45 AM", out: "05:00 PM", status: "Present", day: "Monday", remarks: "On Time" },
+    { id: "EMP002", name: "Sarah Jenkins", branch: "Makati Branch", dept: "Human Resources", date: getTodayDate(), in: "08:15 AM", out: "05:30 PM", status: "Present", day: "Monday", remarks: "Late (15 mins)" },
+    { id: "EMP003", name: "John Doe", branch: "Tayud Branch", dept: "I.T.", date: "2024-05-21", in: "---", out: "---", status: "Absent", day: "Tuesday", remarks: "Absent" },
+    { id: "EMP004", name: "Ariadne Arsolon", branch: "Main Office", dept: "Engineering", date: "2024-05-22", in: "07:50 AM", out: "12:00 PM", status: "Present", day: "Wednesday", remarks: "Half-day" },
   ];
 
   const filteredData = attendanceData.filter(row => {
@@ -82,29 +78,25 @@ export default function AttendancePage() {
   });
 
   const exportToExcel = () => {
-    const excelData = filteredData.map(row => ({
-      'ID': row.id, 
-      'Employee Name': row.name, 
-      'Branch': row.branch, 
-      'Department': row.dept, 
-      'Date': row.date, 
-      'Clock In': row.in, 
-      'Clock Out': row.out, 
-      'Status': row.status, 
-      'Remarks': row.remarks
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(excelData);
-    const workbook = XLSX.utils.book_new();
-    
-    const wscols = [
-      {wch: 10}, {wch: 25}, {wch: 15}, {wch: 20}, 
-      {wch: 12}, {wch: 12}, {wch: 12}, {wch: 12}, {wch: 20}
+    const headers = ['Employee Name', 'Department', 'Branch', 'Date', 'Clock In', 'Clock Out', 'Status', 'Remarks'];
+    const escapeCSV = (val: any) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+    const rows = [
+      headers,
+      ...filteredData.map(row => [row.name, row.dept, row.branch, row.date, row.in, row.out, row.status, row.remarks]),
     ];
-    worksheet['!cols'] = wscols;
+    const csv = rows.map(r => r.map(escapeCSV).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Attendance_Report_${selectedDate}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance Logs");
-    XLSX.writeFile(workbook, `Attendance_Report_${selectedDate}.xlsx`);
+  const confirmCancel = () => {
+    setEditingLog(null);
+    setShowCancelModal(false);
   };
 
   return (
@@ -126,7 +118,7 @@ export default function AttendancePage() {
           
           <button 
             onClick={() => dateInputRef.current?.showPicker()} 
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 hover:border-red-200 transition-all shadow-sm w-full sm:w-auto"
+            className="flex items-center justify-center gap-2 px-6 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 hover:border-red-200 transition-all shadow-sm w-full sm:w-auto"
           >
             <CalendarIcon size={16} className="text-red-500" />
             <span>
@@ -138,15 +130,15 @@ export default function AttendancePage() {
 
           <button 
             onClick={exportToExcel} 
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-600/20 hover:bg-red-700 transition-all active:scale-95 w-full sm:w-auto"
+            className="flex items-center justify-center gap-2 px-6 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-600/20 hover:bg-red-700 transition-all active:scale-95 w-full sm:w-auto"
           >
-            <Download size={16} /> 
+            <Download size={16} />
             <span>Export Log</span>
           </button>
         </div>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+      <div className="flex flex-col md:flex-row gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input 
@@ -154,17 +146,16 @@ export default function AttendancePage() {
             placeholder="Search employees..." 
             value={searchQuery} 
             onChange={(e) => setSearchQuery(e.target.value)} 
-            className="w-60 pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500/20 outline-none" 
+            className="w-60 pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500/20 outline-none" 
           />
         </div>
         
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            
             <select 
               value={branchFilter} 
               onChange={(e) => setBranchFilter(e.target.value)} 
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none cursor-pointer hover:border-red-200 transition-colors"
+              className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none cursor-pointer hover:border-red-200 transition-colors"
             >
               {branches.map(branch => (
                 <option key={branch} value={branch}>{branch}</option>
@@ -173,11 +164,10 @@ export default function AttendancePage() {
           </div>
 
           <div className="flex items-center gap-2">
-            
             <select 
               value={deptFilter} 
               onChange={(e) => setDeptFilter(e.target.value)} 
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none cursor-pointer hover:border-red-200 transition-colors"
+              className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none cursor-pointer hover:border-red-200 transition-colors"
             >
               {departments.map(dept => (
                 <option key={dept} value={dept}>{dept}</option>
@@ -188,7 +178,7 @@ export default function AttendancePage() {
           <select 
             value={statusFilter} 
             onChange={(e) => setStatusFilter(e.target.value)} 
-            className="px-6 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 outline-none cursor-pointer hover:border-red-200 transition-colors"
+            className="px-6 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 outline-none cursor-pointer hover:border-red-200 transition-colors"
           >
             <option value="All Status">All Status</option>
             <option value="Present">Present</option>
@@ -202,31 +192,39 @@ export default function AttendancePage() {
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <table className="w-full text-left text-sm border-collapse">
           <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
-            <tr><th className="px-6 py-4 w-16">ID</th><th className="px-6 py-4">Employee</th><th className="px-6 py-4">Branch</th><th className="px-6 py-4">Department</th><th className="px-6 py-4">Clock In</th><th className="px-6 py-4">Clock Out</th><th className="px-6 py-4 text-center">Status</th><th className="px-6 py-4 text-center">Remarks</th><th className="px-6 py-4 text-right">Actions</th></tr>
+            <tr>
+              <th className="px-6 py-4">Employee</th>
+              <th className="px-6 py-4">Department</th>
+              <th className="px-6 py-4">Branch</th>
+              <th className="px-6 py-4">Clock In</th>
+              <th className="px-6 py-4">Clock Out</th>
+              <th className="px-6 py-4 text-center">Status</th>
+              <th className="px-6 py-4 text-center">Remarks</th>
+              <th className="px-6 py-4 text-right">Actions</th>
+            </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filteredData.length > 0 ? (
               filteredData.map((row) => (
                 <tr key={row.id} className="hover:bg-red-100 transition-colors duration-200 group cursor-default">
-                  <td className="px-6 py-4 font-bold text-slate-400 uppercase text-[10px] tracking-widest">{row.id}</td>
                   <td className="px-6 py-4">
                     <p className="font-bold text-slate-700 underline decoration-red-100 underline-offset-4">{row.name}</p>
                   </td>
-                  <td className="px-6 py-4 text-xs font-medium text-slate-500">{row.branch}</td>
                   <td className="px-6 py-4 text-xs font-medium text-slate-500">{row.dept}</td>
+                  <td className="px-6 py-4 text-xs font-medium text-slate-500">{row.branch}</td>
                   <td className="px-6 py-4 font-mono text-emerald-600 font-bold">{row.in}</td>
                   <td className="px-6 py-4 font-mono text-slate-600 font-bold">{row.out}</td>
                   <td className="px-6 py-4 text-center">
                     <div className="flex justify-center">
-                      <span className={`flex items-center gap-1.5 font-black text-[10px] uppercase px-3 py-1 rounded-full border ${
+                      <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border ${
                         row.status === 'Present' ? 'text-emerald-600 bg-emerald-50 border-emerald-100' : 'text-red-600 bg-red-50 border-red-100'
                       }`}>
-                        {row.status === 'Present' ? <CheckCircle size={12} /> : <XCircle size={12} />} {row.status}
+                        {row.status}
                       </span>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-center">
-                    <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-md border ${row.remarks.includes("Late") || row.remarks === "Absent" ? "bg-red-50 text-red-700 border-red-100" : row.remarks === "Half-day" ? "bg-amber-50 text-amber-700 border-amber-100" : "bg-slate-50 text-slate-600 border-slate-100"}`}>{row.remarks}</span>
+                    <span className={`text-[11px] font-bold tracking-tight ${row.remarks.includes("Late") || row.remarks === "Absent" ? "text-red-600" : row.remarks === "Half-day" ? "text-amber-600" : "text-slate-500"}`}>{row.remarks}</span>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <button onClick={() => setEditingLog(row)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
@@ -236,7 +234,7 @@ export default function AttendancePage() {
                 </tr>
               ))
             ) : (
-              <tr><td colSpan={9} className="px-6 py-12 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">No matching logs found</td></tr>
+              <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">No matching logs found</td></tr>
             )}
           </tbody>
         </table>
@@ -248,9 +246,8 @@ export default function AttendancePage() {
             <div className="p-5 bg-red-600 text-white flex justify-between items-center shrink-0">
               <div>
                 <h3 className="font-bold text-lg leading-tight tracking-tight">Manual Time Changes</h3>
-                <p className="text-[10px] text-red-100 opacity-90 uppercase font-black tracking-widest mt-0.5">Adjusting Record: {editingLog.id}</p>
               </div>
-                          </div>
+            </div>
             
             <div className="p-6 space-y-4">
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
@@ -264,7 +261,7 @@ export default function AttendancePage() {
                   <select className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20"><option value="Present">Present</option><option value="Absent">Absent</option></select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Remarks Type</label>
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Remarks</label>
                   <select className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20"><option value="On Time">On Time</option><option value="Late">Late</option><option value="Half-day">Half-day</option></select>
                 </div>
               </div>
@@ -295,8 +292,36 @@ export default function AttendancePage() {
             </div>
 
             <div className="p-5 bg-slate-50 flex gap-3 shrink-0">
-              <button onClick={() => setEditingLog(null)} className="flex-1 px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800">Discard</button>
-              <button onClick={() => { setShowSuccessToast(true); setEditingLog(null); }} className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl text-xs font-black shadow-lg shadow-red-600/30 hover:bg-red-700 transition-all active:scale-95">Apply Changes</button>
+              <button onClick={() => setShowCancelModal(true)} className="flex-1 px-4 py-3.5 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">Cancel</button>
+              <button onClick={() => { setShowSuccessToast(true); setEditingLog(null); }} className="flex-1 px-4 py-3.5 bg-red-600 text-white rounded-xl text-sm font-black shadow-lg shadow-red-600/30 hover:bg-red-700 transition-all active:scale-95">Apply Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCancelModal && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 text-center space-y-4">
+              
+              <div>
+                <h3 className="text-lg font-black text-slate-800 tracking-tight">Discard changes?</h3>
+                <p className="text-sm font-medium text-slate-500 mt-1">Your unsaved modifications will be lost.</p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => setShowCancelModal(false)}
+                  className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={confirmCancel}
+                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200 active:scale-95"
+                >
+                  Yes
+                </button>
+              </div>
             </div>
           </div>
         </div>

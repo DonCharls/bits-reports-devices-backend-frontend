@@ -1,21 +1,14 @@
 "use client"
 import React, { useState, useEffect } from 'react';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import {
   Download,
   Calendar,
   Search,
   ChevronRight,
   FileText,
-  Users,
-  Clock,
-  TrendingUp,
   ChevronLeft,
-  Building2
+  X as XIcon,
+  Eye,
 } from 'lucide-react';
 
 // Types matching backend response
@@ -23,7 +16,9 @@ type Employee = {
   id: number
   firstName: string
   lastName: string
+  role?: string
   department: string | null
+  Department?: { name: string } | null
   branch: string | null
   position: string | null
   employmentStatus: string
@@ -46,13 +41,17 @@ type ReportRow = {
   branch: string
   totalDays: number
   present: number
+  leave: number
   late: number
   absent: number
+  overtime: number
+  undertime: number
   totalHours: number
 }
 
 export default function ReportsPage() {
   const [reportData, setReportData] = useState<ReportRow[]>([]);
+  const [allRecords, setAllRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('all');
@@ -67,18 +66,20 @@ export default function ReportsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
 
+  // Individual employee report
+  const [selectedEmployee, setSelectedEmployee] = useState<ReportRow | null>(null);
+
   // Derive filter options from data
   const departments = Array.from(new Set(reportData.map(e => e.department).filter(Boolean)));
   const branches = Array.from(new Set(reportData.map(e => e.branch).filter(Boolean)));
 
-  // Fetch report data: employees + attendance records for the date range
+  // Fetch report data
   const fetchReportData = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
       const headers = { 'Authorization': `Bearer ${token}` };
 
-      // Fetch employees and attendance in parallel
       const [empRes, attRes] = await Promise.all([
         fetch('/api/employees', { headers }),
         fetch(`/api/attendance?startDate=${startDate}&endDate=${endDate}&limit=10000`, { headers })
@@ -119,29 +120,38 @@ export default function ReportsPage() {
         attendanceByEmployee.set(rec.employeeId, existing);
       });
 
+      // Standard work hours: 8 hours per day
+      const STANDARD_HOURS = 8;
+
       // Build report rows
       const rows: ReportRow[] = employees
-        .filter((emp: Employee) => emp.employmentStatus === 'ACTIVE')
+        .filter((emp: Employee) => emp.employmentStatus === 'ACTIVE' && (!emp.role || emp.role === 'USER'))
         .map((emp: Employee) => {
           const empRecords = attendanceByEmployee.get(emp.id) || [];
 
-          // Count statuses
           let present = 0;
           let late = 0;
           let totalHours = 0;
+          let overtimeHours = 0;
+          let undertimeHours = 0;
 
           empRecords.forEach((rec: AttendanceRecord) => {
             const isLate = rec.status === 'late' || new Date(rec.checkInTime).getHours() >= 9;
-            if (isLate) {
-              late++;
-            }
+            if (isLate) late++;
             present++;
 
             // Calculate hours worked
             if (rec.checkOutTime) {
               const checkIn = new Date(rec.checkInTime).getTime();
               const checkOut = new Date(rec.checkOutTime).getTime();
-              totalHours += (checkOut - checkIn) / (1000 * 60 * 60);
+              const hoursWorked = (checkOut - checkIn) / (1000 * 60 * 60);
+              totalHours += hoursWorked;
+
+              if (hoursWorked > STANDARD_HOURS) {
+                overtimeHours += hoursWorked - STANDARD_HOURS;
+              } else if (hoursWorked < STANDARD_HOURS) {
+                undertimeHours += STANDARD_HOURS - hoursWorked;
+              }
             }
           });
 
@@ -150,17 +160,21 @@ export default function ReportsPage() {
           return {
             id: emp.id,
             name: `${emp.firstName} ${emp.lastName}`,
-            department: emp.department || '-',
+            department: emp.Department?.name || emp.department || '-',
             branch: emp.branch || '-',
             totalDays: totalWorkingDays,
             present,
+            leave: 0, // placeholder — leave tracking not yet implemented
             late,
             absent,
+            overtime: parseFloat(overtimeHours.toFixed(1)),
+            undertime: parseFloat(undertimeHours.toFixed(1)),
             totalHours: parseFloat(totalHours.toFixed(2))
           };
         });
 
       setReportData(rows);
+      setAllRecords(records);
     } catch (error) {
       console.error('Error fetching report data:', error);
     } finally {
@@ -185,249 +199,381 @@ export default function ReportsPage() {
     currentPage * rowsPerPage
   );
 
-  // Summary stats
-  const totalRecords = filteredData.length;
-  const avgAttendance = filteredData.length > 0
-    ? Math.round(filteredData.reduce((sum, e) => sum + (e.totalDays > 0 ? (e.present / e.totalDays) * 100 : 0), 0) / filteredData.length)
-    : 0;
-  const totalLate = filteredData.reduce((sum, e) => sum + e.late, 0);
-  const totalAbsent = filteredData.reduce((sum, e) => sum + e.absent, 0);
-  const totalHoursRendered = filteredData.reduce((sum, e) => sum + e.totalHours, 0);
-
   const handleExport = () => {
-    const headers = ['Employee', 'Department', 'Branch', 'Total Days', 'Present', 'Late', 'Absent', 'Total Hours'];
+    const headers = ['Employee', 'Leave', 'Absents', 'Lates', 'Overtime', 'Undertime', 'Total (Hrs)'];
     const rows = filteredData.map(e => [
       e.name,
-      e.department,
-      e.branch,
-      e.totalDays,
-      e.present,
-      e.late,
+      e.leave,
       e.absent,
+      e.late,
+      `+${e.overtime}h`,
+      `-${e.undertime}h`,
       e.totalHours.toFixed(2)
     ]);
 
-    // Append summary row
     rows.push([]);
     rows.push(['--- SUMMARY ---']);
-    rows.push(['Total Employees', totalRecords]);
-    rows.push(['Avg. Attendance', `${avgAttendance}%`]);
-    rows.push(['Total Late', totalLate]);
-    rows.push(['Total Absent', totalAbsent]);
-    rows.push(['Total Hours', totalHoursRendered.toFixed(2)]);
+    rows.push(['Total Employees', filteredData.length]);
+    rows.push(['Period', `${formatDateShort(startDate)} to ${formatDateShort(endDate)}`]);
 
     const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-
-    const branchLabel = selectedBranch === 'all' ? 'All-Branches' : selectedBranch.replace(/\s+/g, '-');
-    const deptLabel = selectedDept === 'all' ? 'All-Depts' : selectedDept;
-    link.download = `Report_${branchLabel}_${deptLabel}_${startDate}_to_${endDate}.csv`;
+    link.download = `Attendance_Report_${formatDateShort(startDate)}_${formatDateShort(endDate)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
+  // Get individual employee's attendance records
+  const getEmployeeRecords = (employeeId: number) => {
+    return allRecords
+      .filter(r => r.employeeId === employeeId)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  };
+
+  // Export individual employee report
+  const handleExportIndividual = (emp: ReportRow) => {
+    const records = getEmployeeRecords(emp.id);
+    const headers = ['Date', 'Check In', 'Check Out', 'Hours Worked', 'Status'];
+    const rows = records.map(r => {
+      const checkIn = new Date(r.checkInTime);
+      const checkOut = r.checkOutTime ? new Date(r.checkOutTime) : null;
+      const hours = checkOut ? ((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60)).toFixed(2) : '—';
+      const status = r.status === 'late' || checkIn.getHours() >= 9 ? 'Late' : 'On Time';
+      return [
+        new Date(r.date).toLocaleDateString('en-CA'),
+        checkIn.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        checkOut ? checkOut.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—',
+        hours,
+        status
+      ];
+    });
+
+    rows.push([]);
+    rows.push(['--- SUMMARY ---']);
+    rows.push(['Employee', emp.name]);
+    rows.push(['Department', emp.department]);
+    rows.push(['Branch', emp.branch]);
+    rows.push(['Period', `${startDate} to ${endDate}`]);
+    rows.push(['Days Present', String(emp.present)]);
+    rows.push(['Days Late', String(emp.late)]);
+    rows.push(['Days Absent', String(emp.absent)]);
+    rows.push(['Overtime', `+${emp.overtime}h`]);
+    rows.push(['Undertime', `-${emp.undertime}h`]);
+    rows.push(['Total Hours', emp.totalHours.toFixed(2)]);
+
+    const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Report_${emp.name.replace(/\s+/g, '_')}_${startDate}_to_${endDate}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const formatDateShort = (d: string) => {
+    const date = new Date(d + 'T00:00:00');
+    return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+  };
+
+  // Compute individual report data for modal
+  const empRecords = selectedEmployee ? getEmployeeRecords(selectedEmployee.id) : [];
+  const attendanceRate = selectedEmployee && selectedEmployee.totalDays > 0 ? Math.round((selectedEmployee.present / selectedEmployee.totalDays) * 100) : 0;
+
   return (
     <div className="space-y-6">
+      {/* Individual Employee Report Modal */}
+      {selectedEmployee && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-100 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-5 bg-red-600 text-white flex justify-between items-center shrink-0">
+              <div>
+                <h3 className="font-bold text-lg leading-tight tracking-tight">{selectedEmployee.name}</h3>
+                <p className="text-[10px] text-red-100 opacity-90 uppercase font-black tracking-widest mt-0.5">
+                  {selectedEmployee.department} · {selectedEmployee.branch}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleExportIndividual(selectedEmployee)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export
+                </button>
+                <button onClick={() => setSelectedEmployee(null)} className="text-white/80 hover:text-white transition-colors">
+                  <XIcon className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="overflow-y-auto flex-1 min-h-0">
+              {/* Summary Stats */}
+              <div className="grid grid-cols-5 divide-x divide-slate-100 border-b border-slate-100">
+                <div className="p-4 text-center">
+                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Rate</p>
+                  <p className="text-xl font-black text-slate-800 mt-1">{attendanceRate}%</p>
+                </div>
+                <div className="p-4 text-center">
+                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Present</p>
+                  <p className="text-xl font-black text-green-500 mt-1">{selectedEmployee.present}</p>
+                </div>
+                <div className="p-4 text-center">
+                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Late</p>
+                  <p className="text-xl font-black text-yellow-500 mt-1">{selectedEmployee.late}</p>
+                </div>
+                <div className="p-4 text-center">
+                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Absent</p>
+                  <p className="text-xl font-black text-red-500 mt-1">{selectedEmployee.absent}</p>
+                </div>
+                <div className="p-4 text-center">
+                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Hours</p>
+                  <p className="text-xl font-black text-slate-800 mt-1">{selectedEmployee.totalHours.toFixed(1)}</p>
+                </div>
+              </div>
+
+              {/* Date range */}
+              <div className="flex items-center gap-2 px-5 py-3 bg-slate-50 border-b border-slate-100">
+                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  {new Date(startDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} — {new Date(endDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+              </div>
+
+              {/* Daily Attendance Table */}
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100 sticky top-0">
+                  <tr>
+                    <th className="px-5 py-3">Date</th>
+                    <th className="px-5 py-3">Check In</th>
+                    <th className="px-5 py-3">Check Out</th>
+                    <th className="px-5 py-3">Hours</th>
+                    <th className="px-5 py-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {empRecords.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-16 text-center text-slate-400 font-bold uppercase text-xs tracking-widest">
+                        No attendance records found
+                      </td>
+                    </tr>
+                  ) : (
+                    empRecords.map((record) => {
+                      const checkIn = new Date(record.checkInTime);
+                      const checkOut = record.checkOutTime ? new Date(record.checkOutTime) : null;
+                      const hoursWorked = checkOut ? ((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60)) : 0;
+                      const isLate = record.status === 'late' || checkIn.getHours() >= 9;
+                      const recordDate = new Date(record.date);
+
+                      return (
+                        <tr key={record.id} className="hover:bg-red-50/50 transition-colors duration-200">
+                          <td className="px-5 py-3.5">
+                            <p className="font-bold text-slate-700 text-xs">
+                              {recordDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                            </p>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className="text-xs font-bold text-slate-700">
+                              {checkIn.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className="text-xs font-bold text-slate-700">
+                              {checkOut ? checkOut.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className="text-xs font-bold text-slate-600">
+                              {hoursWorked > 0 ? `${hoursWorked.toFixed(2)}` : '—'}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                              isLate
+                                ? 'bg-yellow-50 text-yellow-600 border border-yellow-200'
+                                : 'bg-green-50 text-green-600 border border-green-200'
+                            }`}>
+                              {isLate ? 'Late' : 'On Time'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 shrink-0">
+              <span className="text-[10px] text-slate-400 font-bold">
+                {empRecords.length} record{empRecords.length !== 1 ? 's' : ''} · {selectedEmployee.totalDays} working days
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-foreground">Reports</h2>
-          <p className="text-muted-foreground text-sm mt-1">Generate and export attendance reports</p>
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-800">Attendance Reports</h2>
+          <p className="text-slate-400 text-sm mt-0.5">Export overall attendance records</p>
         </div>
-        <Button onClick={handleExport} className="bg-primary hover:bg-primary/90 gap-2 w-full sm:w-auto">
+        <button
+          onClick={handleExport}
+          className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl transition-colors shadow-lg shadow-red-600/20"
+        >
           <Download className="w-4 h-4" />
-          Export Report
-        </Button>
+          Attendance Report: {formatDateShort(startDate)} – {formatDateShort(endDate)}
+        </button>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <Card className="bg-card border-border p-4 sm:p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-muted-foreground text-xs sm:text-sm font-medium">Total Employees</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground mt-1 sm:mt-2">{totalRecords}</p>
-            </div>
-            <div className="bg-primary/20 p-2 sm:p-3 rounded-lg">
-              <FileText className="w-4 h-4 sm:w-6 sm:h-6 text-primary" />
-            </div>
-          </div>
-        </Card>
-
-        <Card className="bg-card border-border p-4 sm:p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-muted-foreground text-xs sm:text-sm font-medium">Avg. Attendance</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground mt-1 sm:mt-2">{avgAttendance}%</p>
-            </div>
-            <div className="bg-green-500/20 p-2 sm:p-3 rounded-lg">
-              <Users className="w-4 h-4 sm:w-6 sm:h-6 text-green-400" />
-            </div>
-          </div>
-        </Card>
-
-        <Card className="bg-card border-border p-4 sm:p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-muted-foreground text-xs sm:text-sm font-medium">Total Late</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground mt-1 sm:mt-2">{totalLate}</p>
-            </div>
-            <div className="bg-yellow-500/20 p-2 sm:p-3 rounded-lg">
-              <Clock className="w-4 h-4 sm:w-6 sm:h-6 text-yellow-400" />
-            </div>
-          </div>
-        </Card>
-
-        <Card className="bg-card border-border p-4 sm:p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-muted-foreground text-xs sm:text-sm font-medium">Hours Rendered</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground mt-1 sm:mt-2">{totalHoursRendered.toLocaleString()}</p>
-            </div>
-            <div className="bg-primary/20 p-2 sm:p-3 rounded-lg">
-              <TrendingUp className="w-4 h-4 sm:w-6 sm:h-6 text-primary" />
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <Card className="bg-card border-border p-4">
-        <div className="flex flex-col lg:flex-row gap-3">
-          {/* Search */}
+      {/* Filter Bar */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5">
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* FROM */}
           <div className="flex-1 min-w-0">
+            <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold block mb-1.5">From</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+            />
+          </div>
+          {/* TO */}
+          <div className="flex-1 min-w-0">
+            <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold block mb-1.5">To</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+            />
+          </div>
+          {/* BRANCH */}
+          <div className="flex-1 min-w-0">
+            <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold block mb-1.5">Branch</label>
+            <select
+              value={selectedBranch}
+              onChange={(e) => { setSelectedBranch(e.target.value); setCurrentPage(1); }}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none transition-all appearance-none cursor-pointer"
+            >
+              <option value="all">All Branches</option>
+              {branches.map(branch => (
+                <option key={branch} value={branch}>{branch}</option>
+              ))}
+            </select>
+          </div>
+          {/* DEPARTMENT */}
+          <div className="flex-1 min-w-0">
+            <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold block mb-1.5">Department</label>
+            <select
+              value={selectedDept}
+              onChange={(e) => { setSelectedDept(e.target.value); setCurrentPage(1); }}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none transition-all appearance-none cursor-pointer"
+            >
+              <option value="all">All Departments</option>
+              {departments.map(dept => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
+            </select>
+          </div>
+          {/* SEARCH */}
+          <div className="flex-1 min-w-0">
+            <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold block mb-1.5">Search</label>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search employee..."
-                className="pl-10 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+              <input
+                placeholder="Search employees..."
+                className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
                 value={searchTerm}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
               />
             </div>
           </div>
-
-          {/* Date range + Branch + Department */}
-          <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
-            <div className="flex items-center gap-2">
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)}
-                className="bg-secondary border-border text-foreground w-full sm:w-36"
-              />
-              <span className="text-muted-foreground text-xs font-medium shrink-0">to</span>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)}
-                className="bg-secondary border-border text-foreground w-full sm:w-36"
-              />
-            </div>
-            <div className="flex gap-3">
-              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                <SelectTrigger className="flex-1 sm:w-40 bg-secondary border-border text-foreground">
-                  <SelectValue placeholder="Branch" />
-                </SelectTrigger>
-                <SelectContent className="bg-secondary border-border">
-                  <SelectItem value="all">All Branches</SelectItem>
-                  {branches.map(branch => (
-                    <SelectItem key={branch} value={branch}>{branch}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={selectedDept} onValueChange={setSelectedDept}>
-                <SelectTrigger className="flex-1 sm:w-40 bg-secondary border-border text-foreground">
-                  <SelectValue placeholder="Department" />
-                </SelectTrigger>
-                <SelectContent className="bg-secondary border-border">
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {departments.map(dept => (
-                    <SelectItem key={dept} value={dept}>{dept}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
         </div>
-      </Card>
+      </div>
 
-      {/* Report Table */}
-      <Card className="bg-card border-border overflow-hidden rounded-2xl shadow-lg">
-        <div className="px-4 sm:px-6 py-4 border-b border-border bg-secondary/20 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-          <p className="text-sm text-muted-foreground">
-            Showing {paginatedData.length} of {filteredData.length} records
-          </p>
-          <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30 w-fit text-xs">
-            {new Date(startDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })} – {new Date(endDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })}
-          </Badge>
+      {/* Preview Records Table */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* Section label */}
+        <div className="px-6 py-4 border-b border-slate-100">
+          <h3 className="text-sm font-bold text-slate-700 uppercase tracking-widest">Preview Records</h3>
         </div>
+
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="sticky top-0 z-10">
-              <tr className="border-b border-border bg-secondary/50 backdrop-blur-sm">
-                <th className="px-4 sm:px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Employee</th>
-                <th className="px-4 sm:px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Department</th>
-                <th className="px-4 sm:px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Present</th>
-                <th className="px-4 sm:px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Late</th>
-                <th className="px-4 sm:px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider hidden md:table-cell">Absent</th>
-                <th className="px-4 sm:px-6 py-4 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">Hours</th>
-                <th className="px-4 sm:px-6 py-4 text-right text-xs font-bold text-muted-foreground uppercase tracking-wider">Action</th>
+          <table className="w-full text-left text-sm">
+            <thead className="text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
+              <tr>
+                <th className="px-6 py-4">Employee</th>
+                <th className="px-6 py-4">Leave</th>
+                <th className="px-6 py-4">Absents</th>
+                <th className="px-6 py-4">Lates</th>
+                <th className="px-6 py-4">Overtime</th>
+                <th className="px-6 py-4">Undertime</th>
+                <th className="px-6 py-4">Total (Hrs)</th>
+                <th className="px-6 py-4">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-muted-foreground">Loading report data...</td>
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-400 font-bold text-xs">Loading report data...</td>
                 </tr>
               ) : paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-muted-foreground">No records found.</td>
+                  <td colSpan={8} className="px-6 py-20 text-center text-slate-400 font-bold uppercase text-xs tracking-widest">No records found</td>
                 </tr>
               ) : (
-                paginatedData.map((employee, index) => (
+                paginatedData.map((employee) => (
                   <tr
                     key={employee.id}
-                    className={`hover:bg-primary/5 transition-colors cursor-pointer ${index % 2 === 0 ? 'bg-transparent' : 'bg-secondary/10'}`}
+                    className="hover:bg-red-50/30 transition-colors duration-200"
                   >
-                    <td className="px-4 sm:px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm shrink-0">
-                          {employee.name.charAt(0)}
-                        </div>
-                        <div className="min-w-0">
-                          <span className="text-sm font-medium text-foreground block truncate">{employee.name}</span>
-                          <span className="text-xs text-muted-foreground sm:hidden">{employee.department}</span>
-                        </div>
-                      </div>
+                    <td className="px-6 py-5">
+                      <span className="font-bold text-slate-800">{employee.name}</span>
                     </td>
-                    <td className="px-4 sm:px-6 py-4 hidden sm:table-cell">
-                      <Badge variant="outline" className="bg-secondary/50 text-foreground border-border">
-                        {employee.department}
-                      </Badge>
+                    <td className="px-6 py-5">
+                      <span className="text-sm font-medium text-slate-700">{employee.leave}</span>
                     </td>
-                    <td className="px-4 sm:px-6 py-4">
-                      <span className="text-sm text-green-400 font-bold">{employee.present}</span>
-                      <span className="text-xs text-muted-foreground">/{employee.totalDays}</span>
-                    </td>
-                    <td className="px-4 sm:px-6 py-4">
-                      <span className={`text-sm font-medium ${employee.late > 0 ? 'text-yellow-400' : 'text-muted-foreground'}`}>
-                        {employee.late}
-                      </span>
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 hidden md:table-cell">
-                      <span className={`text-sm font-medium ${employee.absent > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                    <td className="px-6 py-5">
+                      <span className={`text-sm font-bold ${employee.absent > 0 ? 'text-red-500' : 'text-slate-700'}`}>
                         {employee.absent}
                       </span>
                     </td>
-                    <td className="px-4 sm:px-6 py-4 text-sm font-mono text-foreground">{employee.totalHours.toFixed(2)}</td>
-                    <td className="px-4 sm:px-6 py-4 text-right">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg">
-                        <ChevronRight className="w-4 h-4" />
-                      </Button>
+                    <td className="px-6 py-5">
+                      <span className={`text-sm font-bold ${employee.late > 0 ? 'text-red-500' : 'text-slate-700'}`}>
+                        {employee.late}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5">
+                      <span className={`text-sm font-bold ${employee.overtime > 0 ? 'text-blue-600' : 'text-slate-700'}`}>
+                        +{employee.overtime}h
+                      </span>
+                    </td>
+                    <td className="px-6 py-5">
+                      <span className={`text-sm font-bold ${employee.undertime > 0 ? 'text-red-500' : 'text-slate-700'}`}>
+                        -{employee.undertime}h
+                      </span>
+                    </td>
+                    <td className="px-6 py-5">
+                      <span className="text-sm font-bold text-slate-800 font-mono">{employee.totalHours.toFixed(2)}</span>
+                    </td>
+                    <td className="px-6 py-5">
+                      <button
+                        onClick={() => setSelectedEmployee(employee)}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-full transition-colors shadow-sm"
+                      >
+                        View History
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -437,48 +583,41 @@ export default function ReportsPage() {
         </div>
 
         {/* Pagination */}
-        <div className="px-4 sm:px-6 py-4 bg-secondary/20 border-t border-border flex items-center justify-between">
-          <span className="text-xs sm:text-sm text-muted-foreground">
-            Page {currentPage} of {totalPages}
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+          <span className="text-xs text-slate-400 font-bold">
+            Showing {paginatedData.length} of {filteredData.length} records · Page {currentPage} of {totalPages}
           </span>
-          <div className="flex items-center gap-1 sm:gap-2">
-            <Button
-              variant="outline"
-              size="sm"
+          <div className="flex items-center gap-1">
+            <button
               onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
-              className="h-8 px-2 sm:px-3 border-border text-foreground hover:bg-secondary disabled:opacity-50"
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
             >
               <ChevronLeft className="w-4 h-4" />
-              <span className="hidden sm:inline ml-1">Previous</span>
-            </Button>
-            <div className="hidden sm:flex gap-1">
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(page => (
-                <Button
-                  key={page}
-                  variant={currentPage === page ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setCurrentPage(page)}
-                  className={`h-8 w-8 p-0 ${currentPage === page ? 'bg-primary text-white' : 'border-border text-foreground hover:bg-secondary'}`}
-                >
-                  {page}
-                </Button>
-              ))}
-            </div>
-            <span className="sm:hidden text-xs text-muted-foreground px-2">{currentPage}/{totalPages}</span>
-            <Button
-              variant="outline"
-              size="sm"
+            </button>
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(page => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${
+                  currentPage === page
+                    ? 'bg-red-600 text-white'
+                    : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
               onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
-              className="h-8 px-2 sm:px-3 border-border text-foreground hover:bg-secondary disabled:opacity-50"
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
             >
-              <span className="hidden sm:inline mr-1">Next</span>
               <ChevronRight className="w-4 h-4" />
-            </Button>
+            </button>
           </div>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

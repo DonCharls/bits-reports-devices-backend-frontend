@@ -21,7 +21,6 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 const branches = ['MAIN OFFICE', 'CEBU BRANCH', 'MAKATI BRANCH']
-const departments = ['Engineering', 'Design', 'HR', 'Finance', 'Marketing', 'Operations']
 
 export default function AttendancePage() {
   const [searchTerm, setSearchTerm] = useState('')
@@ -44,6 +43,23 @@ export default function AttendancePage() {
   const [totalPages, setTotalPages] = useState(1)
   const rowsPerPage = 10
 
+  // Dynamic departments from API
+  const [departments, setDepartments] = useState<string[]>([])
+
+  // Helper to extract PHT hour and minute from a Date
+  const getPHTTime = (date: Date) => {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Manila',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false
+    })
+    const parts = formatter.formatToParts(date)
+    const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0')
+    const minute = parseInt(parts.find(p => p.type === 'minute')?.value || '0')
+    return { hour, minute }
+  }
+
   // Debounce search term to prevent too many API calls
   const [debouncedSearch, setDebouncedSearch] = useState(searchTerm)
   useEffect(() => {
@@ -54,6 +70,23 @@ export default function AttendancePage() {
   useEffect(() => {
     fetchAttendance()
   }, [attendanceDate, currentPage, selectedBranch, selectedDept, selectedStatus, debouncedSearch])
+
+  // Fetch departments dynamically
+  useEffect(() => {
+    const fetchDepts = async () => {
+      try {
+        const token = localStorage.getItem('token')
+        const res = await fetch('/api/departments', { headers: { 'Authorization': `Bearer ${token}` } })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.success && data.departments) {
+            setDepartments(data.departments.map((d: any) => d.name))
+          }
+        }
+      } catch (e) { /* ignore */ }
+    }
+    fetchDepts()
+  }, [])
 
   // Simple stats state
   const [stats, setStats] = useState({
@@ -100,8 +133,14 @@ export default function AttendancePage() {
       const data = await res.json()
 
       if (data.success) {
+        // Filter out ADMIN and HR role employees — they should only appear in User Accounts tab
+        const userRecords = data.data.filter((log: any) => {
+          const emp = log.employee || log.Employee || {}
+          return emp.role === 'USER' || !emp.role
+        })
+
         // Map and Calculate Hours
-        const mapped = data.data.map((log: any) => {
+        const mapped = userRecords.map((log: any) => {
           const checkIn = new Date(log.checkInTime)
           const checkOut = log.checkOutTime ? new Date(log.checkOutTime) : null
           let hours = 0
@@ -116,24 +155,26 @@ export default function AttendancePage() {
           const overtime = hours > requiredHours ? hours - requiredHours : 0
           const undertime = (hours > 0 && hours < requiredHours) ? requiredHours - hours : 0
 
-          const isLate = log.status === 'late' || checkIn.getHours() >= 9;
+          // Use PHT hours for late detection (consistent with dashboard)
+          const { hour: ciHourPHT, minute: ciMinPHT } = getPHTTime(checkIn)
+          const isLate = (ciHourPHT > 8 || (ciHourPHT === 8 && ciMinPHT > 30));
 
           const emp = log.employee || log.Employee || {};
 
           return {
+            ...log, // keep original data for debug — MUST be first so computed fields below take priority
             id: log.id,
             employeeId: log.employeeId,
             employeeName: emp.firstName ? `${emp.firstName} ${emp.lastName}` : 'Unknown Employee',
             branch: emp.branch || 'MAIN OFFICE', // Fallback
-            department: emp.department || 'General',
-            date: new Date(log.date).toISOString().split('T')[0],
-            checkIn: log.checkInTimePH || checkIn.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            checkOut: log.checkOutTime ? (log.checkOutTimePH || checkOut?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : '-',
+            department: emp.Department?.name || emp.department || 'General',
+            date: new Date(log.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }),
+            checkIn: log.checkInTimePH || checkIn.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }),
+            checkOut: log.checkOutTime ? (log.checkOutTimePH || checkOut?.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })) : '-',
             status: isLate ? 'late' : (log.status || 'present'),
             hours: hours,
             overtime: overtime,
             undertime: undertime,
-            ...log // keep original data for debug
           }
         })
 
@@ -179,8 +220,13 @@ export default function AttendancePage() {
     }
   }
 
-  // Removed client-side filtering logic since backend handles it
-  const paginatedRecords = attendanceRecords;
+  // Apply client-side filters for department, branch, and search (backend doesn't support these yet)
+  const paginatedRecords = attendanceRecords.filter((r: any) => {
+    if (selectedDept !== 'all' && r.department !== selectedDept) return false
+    if (selectedBranch !== 'all' && r.branch !== selectedBranch) return false
+    if (debouncedSearch && !r.employeeName.toLowerCase().includes(debouncedSearch.toLowerCase())) return false
+    return true
+  });
 
 
 

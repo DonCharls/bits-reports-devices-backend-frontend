@@ -12,6 +12,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
   const [isLoading, setIsLoading] = useState(false)
+  const [showLoading, setShowLoading] = useState(false)
+  const [redirectPath, setRedirectPath] = useState('')
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
@@ -74,14 +76,20 @@ export default function LoginPage() {
       localStorage.setItem('token', data.accessToken)
       localStorage.setItem('employee', JSON.stringify(data.employee))
 
-      // Role-based redirect
+      // Determine redirect path
+      let path = '/login'
       if (data.employee.role === 'HR') {
-        router.push('/hr')
+        path = '/hr'
       } else if (data.employee.role === 'ADMIN') {
-        router.push('/dashboard')
-      } else {
-        router.push('/login')
+        path = '/dashboard'
       }
+
+      // Show loading screen then redirect
+      setRedirectPath(path)
+      setShowLoading(true)
+      setTimeout(() => {
+        router.push(path)
+      }, 2500)
     } catch (error: any) {
       setValidationErrors({
         ...validationErrors,
@@ -91,14 +99,61 @@ export default function LoginPage() {
     }
   }
 
-  const handleDemoLogin = async () => {
-    // Remove demo login or update it to use real credentials
-    setEmail('admin@bits.com')
-    setPassword('admin123')
+  // const handleDemoLogin = async () => {
+  //   // Remove demo login or update it to use real credentials
+  //   setEmail('admin@bits.com')
+  //   setPassword('admin123')
 
-    // Trigger form submission
-    const event = { preventDefault: () => { } } as React.FormEvent
-    await handleSubmit(event)
+  //   // Trigger form submission
+  //   const event = { preventDefault: () => { } } as React.FormEvent
+  //   await handleSubmit(event)
+  // }
+
+  // Fullscreen loading overlay
+  if (showLoading) {
+    return (
+      <div className="fixed inset-0 z-100 flex flex-col items-center justify-center bg-linear-to-br from-gray-900 via-gray-800 to-gray-900">
+        <div className="flex flex-col items-center gap-8 animate-fadeIn">
+          {/* wait.png image */}
+          <div className="relative">
+            <div className="absolute -inset-4 bg-red-600/20 rounded-full blur-2xl animate-pulse" />
+            <img
+              src="/images/wait.png"
+              alt="Loading"
+              className="relative w-48 h-auto drop-shadow-2xl"
+            />
+          </div>
+
+          {/* Loading text */}
+          <div className="text-center space-y-3">
+            <h2 className="text-xl font-bold text-white tracking-wide">Wait...</h2>
+            <p className="text-sm text-gray-400">Preparing your workspace...</p>
+          </div>
+
+          {/* Loading bar */}
+          <div className="w-48 h-1 bg-gray-700 rounded-full overflow-hidden">
+            <div className="h-full bg-red-600 rounded-full animate-loadingBar" />
+          </div>
+        </div>
+
+        <style jsx>{`
+          @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          @keyframes loadingBar {
+            0% { width: 0%; }
+            100% { width: 100%; }
+          }
+          .animate-fadeIn {
+            animation: fadeIn 0.5s ease-out;
+          }
+          .animate-loadingBar {
+            animation: loadingBar 2.3s ease-in-out;
+          }
+        `}</style>
+      </div>
+    )
   }
 
   return (

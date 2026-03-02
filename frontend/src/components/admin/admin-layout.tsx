@@ -20,17 +20,33 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="h-screen bg-gray-50 overflow-hidden relative">
+
+            {/* Top Bar - full width, above everything */}
+            <AdminTopbar onMenuClick={() => setSidebarOpen(true)} />
+
+            {/* Mobile Overlay */}
+            {sidebarOpen && (
+                <div
+                    className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden backdrop-blur-sm transition-opacity"
+                    onClick={() => setSidebarOpen(false)}
+                />
+            )}
+
+            {/* Sidebar */}
             <AdminSidebar
                 isOpen={sidebarOpen}
                 isCollapsed={sidebarCollapsed}
                 onClose={() => setSidebarOpen(false)}
                 onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
             />
-            <AdminTopbar onMenuClick={() => setSidebarOpen(true)} isCollapsed={sidebarCollapsed} />
-            <main className={`mt-16 p-4 transition-all duration-300 ${sidebarCollapsed ? 'md:ml-20' : 'md:ml-60'} ml-0`}>
-                {children}
-            </main>
+
+            {/* Main Content Area */}
+            <div className={`h-[calc(100vh-4rem)] mt-16 transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-72'}`}>
+                <main className="h-full overflow-y-auto p-4 md:p-8">
+                    {children}
+                </main>
+            </div>
         </div>
     )
 }

@@ -1,538 +1,371 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts'
-import {
-  Users,
-  Clock,
-  AlertCircle,
-  TrendingUp,
-  ArrowRight,
-  Building2,
-  FileText,
-  CalendarDays
-} from 'lucide-react'
+import { Users, Clock, AlertCircle, TrendingUp, Building2, FileText, ArrowRight } from 'lucide-react'
+import { DEPARTMENTS } from '@/types/departments'
+import { BRANCHES } from '@/types/branches'
 
-interface EmpStats {
-  total: number;
-  active: number;
-}
+// ─── Color tokens ────────────────────────────────────────
+const RED    = '#C8102E'
+const ORANGE = '#F26522'
+const GOLD   = '#D4A84B'
 
-interface AttStats {
-  totalPresent: number;
-  totalLate: number;
-  totalAbsent: number;
-  totalOvertime: number;
-  totalUndertime: number;
-}
-
-interface DeptBreakdown {
-  department: string;
-  employeeCount: number;
-  attendanceRate: number;
-}
-
-interface WeeklyDay {
-  day: string;
-  present: number;
-  late: number;
-  absent: number;
-}
-
-interface RecentAct {
-  id: number;
-  employee: string;
-  department: string;
-  action: string;
-  time: string;
-  status: string;
+interface EmpStats   { total: number; active: number }
+interface AttStats   { present: number; late: number; absent: number; overtime: number; undertime: number }
+interface WeekDay    { day: string; present: number; late: number; absent: number }
+interface DeptStat   { name: string; total: number; present: number; rate: number }
+interface Activity   {
+  id: number | string
+  employee: string
+  department: string
+  branch: string
+  action: string
+  time: string
+  status: 'on-time' | 'late' | 'absent'
 }
 
 export default function Dashboard() {
   const router = useRouter()
-  const [isLoading, setIsLoading] = useState(true)
-  const [empStats, setEmpStats] = useState<EmpStats>({ total: 0, active: 0 })
-  const [attStats, setAttStats] = useState<AttStats>({ totalPresent: 0, totalLate: 0, totalAbsent: 0, totalOvertime: 0, totalUndertime: 0 })
-  const [deptBreakdown, setDeptBreakdown] = useState<DeptBreakdown[]>([])
-  const [weeklyTrend, setWeeklyTrend] = useState<WeeklyDay[]>([])
-  const [recentActivity, setRecentActivity] = useState<RecentAct[]>([])
-  const [attendanceRate, setAttendanceRate] = useState(0)
+  const [loading, setLoading]           = useState(true)
+  const [empStats, setEmpStats]         = useState<EmpStats>({ total: 0, active: 0 })
+  const [attStats, setAttStats]         = useState<AttStats>({ present: 0, late: 0, absent: 0, overtime: 0, undertime: 0 })
+  const [rate, setRate]                 = useState(0)
+  const [weekly, setWeekly]             = useState<WeekDay[]>([])
+  const [deptStats, setDeptStats]       = useState<DeptStat[]>([])
+  const [activity, setActivity]         = useState<Activity[]>([])
+  const [updatedAt, setUpdatedAt]       = useState('')
 
-  useEffect(() => {
-    const token = typeof window !== 'undefined' && localStorage.getItem('token')
-    const employee = typeof window !== 'undefined' && localStorage.getItem('employee')
-    if (!token || !employee) {
-      router.replace('/login')
-    } else {
-      fetchDashboardData()
+  const load = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) { router.replace('/login'); return }
+
+      const today    = new Date()
+      const offset   = today.getTimezoneOffset()
+      const local    = new Date(today.getTime() - offset * 60000)
+      const todayStr = local.toISOString().split('T')[0]
+      const dow      = local.getDay()
+      const monOff   = dow === 0 ? 6 : dow - 1
+      const monday   = new Date(local); monday.setDate(monday.getDate() - monOff)
+      const monStr   = monday.toISOString().split('T')[0]
+
+      setUpdatedAt(local.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+
+      const [eRes, aRes] = await Promise.all([
+        fetch('/api/employees',   { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`/api/attendance?startDate=${monStr}&endDate=${todayStr}&limit=5000`,
+              { headers: { Authorization: `Bearer ${token}` } }),
+      ])
+      if (eRes.status === 401) { localStorage.removeItem('token'); router.replace('/login'); return }
+
+      const ed = await eRes.json()
+      const ad = await aRes.json()
+      const emps: any[] = ed.success ? (ed.employees || ed.data || []) : []
+      const atts: any[] = ad.success ? (ad.data || []) : []
+
+      setEmpStats({ total: emps.length, active: emps.filter((e: any) => e.employmentStatus === 'ACTIVE').length })
+
+      const todayRecs = atts.filter((r: any) => new Date(r.date).toISOString().split('T')[0] === todayStr)
+
+      let present = 0, late = 0, ot = 0, ut = 0
+      todayRecs.forEach((r: any) => {
+        const ci = r.checkInTime  ? new Date(r.checkInTime)  : null
+        const co = r.checkOutTime ? new Date(r.checkOutTime) : null
+        const isLate = r.status === 'late' || (ci && (ci.getHours() > 8 || (ci.getHours() === 8 && ci.getMinutes() > 0)))
+        if (isLate) late++; else if (ci) present++
+        if (ci && co) {
+          const h = (co.getTime() - ci.getTime()) / 3600000
+          h > 8 ? (ot += h - 8) : (ut += 8 - h)
+        }
+      })
+      const absent = Math.max(0, emps.length - present - late)
+      setAttStats({ present, late, absent, overtime: Math.round(ot), undertime: Math.round(ut) })
+      setRate(emps.length > 0 ? Math.round(((present + late) / emps.length) * 100) : 0)
+
+      // ── Weekly trend ──────────────────────────────────
+      const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+      const trend: WeekDay[] = []
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(monday); d.setDate(d.getDate() + i)
+        if (d > local) break
+        const ds = d.toISOString().split('T')[0]
+        const recs = atts.filter((r: any) => new Date(r.date).toISOString().split('T')[0] === ds)
+        let p = 0, l = 0
+        recs.forEach((r: any) => {
+          const ci = r.checkInTime ? new Date(r.checkInTime) : null
+          ;(r.status === 'late' || (ci && (ci.getHours() > 8 || (ci.getHours() === 8 && ci.getMinutes() > 0)))) ? l++ : ci ? p++ : void 0
+        })
+        trend.push({ day: days[i], present: p, late: l, absent: Math.max(0, emps.length - p - l) })
+      }
+      setWeekly(trend)
+
+      // ── Department breakdown ──────────────────────────
+      const dmap = new Map<string, { total: number; present: number }>()
+      DEPARTMENTS.forEach(d => dmap.set(d, { total: 0, present: 0 }))
+      emps.forEach((e: any) => { if (e.department && dmap.has(e.department)) dmap.get(e.department)!.total++ })
+      todayRecs.forEach((r: any) => {
+        const e = r.employee || emps.find((x: any) => x.id === r.employeeId)
+        if (e?.department && dmap.has(e.department)) dmap.get(e.department)!.present++
+      })
+      const dArr: DeptStat[] = []
+      dmap.forEach((v, name) => {
+        if (v.total > 0) dArr.push({ name, total: v.total, present: v.present, rate: Math.round((v.present / v.total) * 100) })
+      })
+      dArr.sort((a, b) => b.total - a.total)
+      setDeptStats(dArr)
+
+      // ── Today's Activity ──────────────────────────────
+      const sorted = [...todayRecs]
+        .filter((r: any) => r.checkInTime || r.checkOutTime)
+        .sort((a: any, b: any) => {
+          const ta = new Date(b.checkOutTime || b.checkInTime).getTime()
+          const tb = new Date(a.checkOutTime || a.checkInTime).getTime()
+          return ta - tb
+        })
+        .slice(0, 5)
+
+      setActivity(sorted.map((r: any, i: number) => {
+        const e    = r.employee || emps.find((x: any) => x.id === r.employeeId) || {}
+        const name = `${e.firstName || ''} ${e.lastName || ''}`.trim() || `Employee #${r.employeeId}`
+        const isOut = !!r.checkOutTime
+        const ts    = new Date(isOut ? r.checkOutTime : r.checkInTime)
+        const ci    = r.checkInTime ? new Date(r.checkInTime) : null
+        const isLate = r.status === 'late' || (ci && (ci.getHours() > 8 || (ci.getHours() === 8 && ci.getMinutes() > 0)))
+        return {
+          id: r.id || i,
+          employee: name,
+          department: e.department || e.dept || '—',
+          branch: e.branch || '—',
+          action: isOut ? 'Out' : 'In',
+          time: ts.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          status: isLate ? 'late' as const : 'on-time' as const,
+        }
+      }))
+
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
     }
   }, [router])
 
-  const fetchDashboardData = async () => {
-    setIsLoading(true)
-    try {
-      const token = localStorage.getItem('token')
-      if (!token) return
+  useEffect(() => {
+    const token    = localStorage.getItem('token')
+    const employee = localStorage.getItem('employee')
+    if (!token || !employee) { router.replace('/login'); return }
+    load()
+    // auto-refresh every 30s
+    const t = setInterval(load, 30000)
+    return () => clearInterval(t)
+  }, [load, router])
 
-      const today = new Date()
-      const offset = today.getTimezoneOffset()
-      const localDate = new Date(today.getTime() - (offset * 60 * 1000))
-      const todayStr = localDate.toISOString().split('T')[0]
-
-      // Get start of week (Monday)
-      const dayOfWeek = localDate.getDay()
-      const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1
-      const monday = new Date(localDate)
-      monday.setDate(monday.getDate() - mondayOffset)
-      const mondayStr = monday.toISOString().split('T')[0]
-
-      // Fetch employees and this week's attendance in parallel
-      const [empRes, attRes] = await Promise.all([
-        fetch('/api/employees', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`/api/attendance?startDate=${mondayStr}&endDate=${todayStr}&limit=5000`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
-      ])
-
-      if (empRes.status === 401 || attRes.status === 401) {
-        localStorage.removeItem('token')
-        window.location.href = '/login'
-        return
-      }
-
-      const empData = await empRes.json()
-      const attData = await attRes.json()
-
-      const employees = empData.success ? (empData.employees || empData.data || []) : []
-      const attendance = attData.success ? (attData.data || []) : []
-
-      // --- Employee stats ---
-      const totalEmp = employees.length
-      const activeEmp = employees.filter((e: any) => e.employmentStatus === 'ACTIVE').length
-      setEmpStats({ total: totalEmp, active: activeEmp })
-
-      // --- Today's attendance stats ---
-      const todayRecords = attendance.filter((r: any) => {
-        const recDate = new Date(r.date).toISOString().split('T')[0]
-        return recDate === todayStr
-      })
-
-      let presentCount = 0
-      let lateCount = 0
-      let totalOT = 0
-      let totalUT = 0
-      const requiredHours = 8
-
-      todayRecords.forEach((r: any) => {
-        const checkIn = r.checkInTime ? new Date(r.checkInTime) : null
-        const checkOut = r.checkOutTime ? new Date(r.checkOutTime) : null
-        const isLate = r.status === 'late' || (checkIn && (checkIn.getHours() > 8 || (checkIn.getHours() === 8 && checkIn.getMinutes() > 0)))
-
-        if (isLate) {
-          lateCount++
-        } else if (checkIn) {
-          presentCount++
-        }
-
-        if (checkIn && checkOut) {
-          const hours = (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60)
-          if (hours > requiredHours) totalOT += Math.round(hours - requiredHours)
-          else if (hours < requiredHours) totalUT += Math.round(requiredHours - hours)
-        }
-      })
-
-      const absentCount = totalEmp - presentCount - lateCount
-      setAttStats({
-        totalPresent: presentCount,
-        totalLate: lateCount,
-        totalAbsent: absentCount > 0 ? absentCount : 0,
-        totalOvertime: totalOT,
-        totalUndertime: totalUT
-      })
-
-      const rate = totalEmp > 0 ? Math.round(((presentCount + lateCount) / totalEmp) * 100) : 0
-      setAttendanceRate(rate)
-
-      // --- Department breakdown ---
-      const deptMap = new Map<string, { count: number; present: number }>()
-      employees.forEach((e: any) => {
-        const dept = e.department || 'Unassigned'
-        if (!deptMap.has(dept)) deptMap.set(dept, { count: 0, present: 0 })
-        deptMap.get(dept)!.count++
-      })
-
-      todayRecords.forEach((r: any) => {
-        const emp = employees.find((e: any) => e.id === r.employeeId)
-        const dept = emp?.department || 'Unassigned'
-        if (deptMap.has(dept)) {
-          deptMap.get(dept)!.present++
-        }
-      })
-
-      const deptArr: DeptBreakdown[] = []
-      deptMap.forEach((val, dept) => {
-        deptArr.push({
-          department: dept,
-          employeeCount: val.count,
-          attendanceRate: val.count > 0 ? Math.round((val.present / val.count) * 100) : 0
-        })
-      })
-      setDeptBreakdown(deptArr)
-
-      // --- Weekly trend ---
-      const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-      const weekly: WeeklyDay[] = []
-      for (let i = 0; i < 7; i++) {
-        const d = new Date(monday)
-        d.setDate(d.getDate() + i)
-        const dateStr = d.toISOString().split('T')[0]
-        if (d > localDate) break // don't include future days
-
-        const dayRecords = attendance.filter((r: any) => {
-          return new Date(r.date).toISOString().split('T')[0] === dateStr
-        })
-
-        let dayPresent = 0, dayLate = 0
-        dayRecords.forEach((r: any) => {
-          const ci = r.checkInTime ? new Date(r.checkInTime) : null
-          const isLateDay = r.status === 'late' || (ci && (ci.getHours() > 8 || (ci.getHours() === 8 && ci.getMinutes() > 0)))
-          if (isLateDay) dayLate++
-          else if (ci) dayPresent++
-        })
-
-        weekly.push({
-          day: dayNames[i],
-          present: dayPresent,
-          late: dayLate,
-          absent: Math.max(0, totalEmp - dayPresent - dayLate)
-        })
-      }
-      setWeeklyTrend(weekly)
-
-      // --- Recent activity (today's check-ins) ---
-      const recent: RecentAct[] = todayRecords.slice(0, 5).map((r: any, idx: number) => {
-        const emp = r.employee || employees.find((e: any) => e.id === r.employeeId) || {}
-        const checkIn = r.checkInTime ? new Date(r.checkInTime) : null
-        const isLate = r.status === 'late' || (checkIn && (checkIn.getHours() > 8 || (checkIn.getHours() === 8 && checkIn.getMinutes() > 0)))
-
-        return {
-          id: r.id || idx,
-          employee: `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || `Employee #${r.employeeId}`,
-          department: emp.department || 'General',
-          action: 'Clock In',
-          time: checkIn ? checkIn.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '---',
-          status: isLate ? 'late' : 'on-time'
-        }
-      })
-      setRecentActivity(recent)
-
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // Color palette for department bars
-  const deptColors: Record<string, string> = {
-    Engineering: '#6366f1',
-    Design: '#f472b6',
-    HR: '#34d399',
-    Finance: '#fbbf24',
-    Marketing: '#60a5fa',
-    Operations: '#a78bfa',
-  }
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-primary rounded-full animate-spin mb-4">
-            <div className="w-8 h-8 bg-background rounded-full"></div>
-          </div>
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-10 h-10 rounded-full border-4 border-t-transparent animate-spin"
+          style={{ borderColor: `${RED} transparent ${RED} ${RED}` }} />
+        <p className="text-sm text-muted-foreground">Loading dashboard...</p>
       </div>
-    )
-  }
+    </div>
+  )
+
+  const statCards = [
+    { label: 'Total Employees', value: empStats.total,  sub: `${empStats.active} active`,     icon: Users,        color: '#6366f1', bg: '#6366f115' },
+    { label: 'On time',   value: attStats.present, sub: `${rate}% rate`,                icon: Clock,        color: '#22c55e', bg: '#22c55e15' },
+    { label: 'Late',            value: attStats.late,   sub: `+${attStats.overtime}h overtime`,icon: TrendingUp,   color: GOLD,      bg: `${GOLD}20`  },
+    { label: 'Absent',          value: attStats.absent, sub: `${attStats.undertime}h undertime`,icon: AlertCircle, color: RED,       bg: `${RED}15`   },
+  ]
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-5">
+
+      {/* ── Header ─────────────────────────────────────── */}
+      <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-foreground">Dashboard</h2>
-          <p className="text-muted-foreground text-sm mt-1">Welcome to BITS Admin Panel — here&apos;s today&apos;s overview</p>
+          <h2 className="text-2xl font-bold text-foreground">Dashboard</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Welcome to BITS Admin Panel — here&apos;s today&apos;s overview
+          </p>
         </div>
-        <Button className="bg-primary hover:bg-primary/90 gap-2 w-full sm:w-auto" onClick={() => router.push('/admin/reports')}>
+        <Button style={{ backgroundColor: RED }} className="gap-2 text-white hover:opacity-90">
           <FileText className="w-4 h-4" />
           Generate Report
         </Button>
       </div>
 
-      {/* ─── Stat Cards ───────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Total Employees */}
-        <Card className="bg-card border-border p-4 sm:p-6 hover:shadow-lg transition-shadow">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-muted-foreground text-xs sm:text-sm font-medium">Total Employees</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground mt-1 sm:mt-2">{empStats.total}</p>
-              <p className="text-xs text-green-400 mt-1">{empStats.active} active</p>
+      {/* ── 4 Stat Cards ───────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {statCards.map(({ label, value, sub, icon: Icon, color, bg }) => (
+          <Card key={label} className="bg-card border-border p-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">{label}</p>
+                <p className="text-3xl font-bold text-foreground mt-1">{value}</p>
+                <p className="text-xs mt-1" style={{ color }}>{sub}</p>
+              </div>
+              <div className="p-2.5 rounded-lg" style={{ backgroundColor: bg }}>
+                <Icon className="w-5 h-5" style={{ color }} />
+              </div>
             </div>
-            <div className="bg-primary/20 p-2 sm:p-3 rounded-lg">
-              <Users className="w-4 h-4 sm:w-6 sm:h-6 text-primary" />
-            </div>
-          </div>
-        </Card>
-
-        {/* Present Today */}
-        <Card className="bg-card border-border p-4 sm:p-6 hover:shadow-lg transition-shadow">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-muted-foreground text-xs sm:text-sm font-medium">Present Today</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground mt-1 sm:mt-2">{attStats.totalPresent}</p>
-              <p className="text-xs text-muted-foreground mt-1">{attendanceRate}% rate</p>
-            </div>
-            <div className="bg-green-500/20 p-2 sm:p-3 rounded-lg">
-              <Clock className="w-4 h-4 sm:w-6 sm:h-6 text-green-400" />
-            </div>
-          </div>
-        </Card>
-
-        {/* Late */}
-        <Card className="bg-card border-border p-4 sm:p-6 hover:shadow-lg transition-shadow">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-muted-foreground text-xs sm:text-sm font-medium">Late</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground mt-1 sm:mt-2">{attStats.totalLate}</p>
-              <p className="text-xs text-yellow-400 mt-1">+{attStats.totalOvertime}h overtime</p>
-            </div>
-            <div className="bg-yellow-500/20 p-2 sm:p-3 rounded-lg">
-              <TrendingUp className="w-4 h-4 sm:w-6 sm:h-6 text-yellow-400" />
-            </div>
-          </div>
-        </Card>
-
-        {/* Absent */}
-        <Card className="bg-card border-border p-4 sm:p-6 hover:shadow-lg transition-shadow">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-muted-foreground text-xs sm:text-sm font-medium">Absent</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground mt-1 sm:mt-2">{attStats.totalAbsent}</p>
-              <p className="text-xs text-red-400 mt-1">{attStats.totalUndertime}h undertime</p>
-            </div>
-            <div className="bg-red-500/20 p-2 sm:p-3 rounded-lg">
-              <AlertCircle className="w-4 h-4 sm:w-6 sm:h-6 text-red-400" />
-            </div>
-          </div>
-        </Card>
+          </Card>
+        ))}
       </div>
 
-      {/* ─── Two-Column: Chart + Department Breakdown ─────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6">
-        {/* Weekly Attendance Chart — takes 3/5 width */}
-        <Card className="lg:col-span-3 bg-card border-border p-4 sm:p-6">
+      {/* ── Chart + Departments ─────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* Weekly Attendance Chart */}
+        <Card className="bg-card border-border p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base sm:text-lg font-semibold text-foreground">Weekly Attendance</h3>
-            <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30 text-xs">This Week</Badge>
+            <h3 className="text-base font-semibold text-foreground">Weekly Attendance</h3>
+            <Badge variant="outline" className="text-xs" style={{ backgroundColor: `${RED}10`, color: RED, borderColor: `${RED}40` }}>
+              This Week
+            </Badge>
           </div>
           <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={weeklyTrend} barGap={2}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="day" stroke="rgba(255,255,255,0.4)" fontSize={12} />
-              <YAxis stroke="rgba(255,255,255,0.4)" fontSize={12} allowDecimals={false} />
+            <BarChart data={weekly} barCategoryGap="35%" barGap={2}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+              <XAxis dataKey="day" tick={{ fill: '#6b7280', fontSize: 12 }} tickLine={false} axisLine={false} />
+              <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} />
               <Tooltip
-                contentStyle={{
-                  backgroundColor: 'rgba(22, 28, 45, 0.95)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '10px',
-                  fontSize: '12px',
-                }}
-                labelStyle={{ color: 'rgba(255,255,255,0.8)' }}
+                cursor={{ fill: 'rgba(0,0,0,0.03)' }}
+                contentStyle={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 12, boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}
+                labelStyle={{ color: '#374151', fontWeight: 600 }}
               />
-              <Bar dataKey="present" fill="#34d399" radius={[4, 4, 0, 0]} name="Present" />
-              <Bar dataKey="late" fill="#fbbf24" radius={[4, 4, 0, 0]} name="Late" />
-              <Bar dataKey="absent" fill="#f87171" radius={[4, 4, 0, 0]} name="Absent" />
+              <Bar dataKey="present" name="Present" fill="#22c55e" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="late"    name="Late"    fill={GOLD}      radius={[4, 4, 0, 0]} />
+              <Bar dataKey="absent"  name="Absent"  fill={RED}       radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Card>
 
-        {/* Department Breakdown — takes 2/5 width */}
-        <Card className="lg:col-span-2 bg-card border-border p-4 sm:p-6">
+        {/* Departments Breakdown */}
+        <Card className="bg-card border-border p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base sm:text-lg font-semibold text-foreground">Departments</h3>
+            <h3 className="text-base font-semibold text-foreground">Departments</h3>
             <Building2 className="w-4 h-4 text-muted-foreground" />
           </div>
-          <div className="space-y-3">
-            {deptBreakdown.length > 0 ? deptBreakdown.map(dept => (
-              <div key={dept.department}>
-                <div className="flex items-center justify-between text-sm mb-1.5">
-                  <span className="text-foreground font-medium truncate">{dept.department}</span>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs text-muted-foreground">{dept.employeeCount} emp</span>
-                    <Badge
-                      variant="outline"
-                      className={
-                        dept.attendanceRate >= 80
-                          ? 'bg-green-500/20 text-green-400 border-green-500/30 text-[10px] px-1.5'
-                          : dept.attendanceRate >= 50
-                            ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30 text-[10px] px-1.5'
-                            : 'bg-red-500/20 text-red-400 border-red-500/30 text-[10px] px-1.5'
-                      }
-                    >
-                      {dept.attendanceRate}%
-                    </Badge>
+          <div className="space-y-4 overflow-y-auto" style={{ maxHeight: 280 }}>
+            {deptStats.length > 0 ? deptStats.map((dept, i) => {
+              const cols = [RED, ORANGE, GOLD, '#6366f1', '#22c55e']
+              const col  = cols[i % cols.length]
+              return (
+                <div key={dept.name}>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-sm font-medium text-foreground">{dept.name}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">{dept.total} emp</span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                        style={{ backgroundColor: `${col}15`, color: col }}>
+                        {dept.rate}%
+                      </span>
+                    </div>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="h-2 rounded-full bg-gray-100">
+                    <div
+                      className="h-2 rounded-full transition-all duration-500"
+                      style={{ width: `${dept.rate}%`, backgroundColor: col }}
+                    />
                   </div>
                 </div>
-                <div className="w-full bg-secondary rounded-full h-2">
-                  <div
-                    className="h-2 rounded-full transition-all duration-500"
-                    style={{
-                      width: `${dept.attendanceRate}%`,
-                      backgroundColor: deptColors[dept.department] || '#6366f1',
-                    }}
-                  />
-                </div>
-              </div>
-            )) : (
-              <p className="text-sm text-muted-foreground">No department data available</p>
+              )
+            }) : (
+              <p className="text-sm text-muted-foreground text-center py-10">No department data yet</p>
             )}
           </div>
         </Card>
       </div>
 
-      {/* ─── Recent Activity ──────────────────────────────── */}
-      <Card className="bg-card border-border overflow-hidden rounded-2xl shadow-lg">
-        <div className="px-4 sm:px-6 py-4 border-b border-border bg-secondary/20 flex items-center justify-between">
-          <h3 className="text-base sm:text-lg font-semibold text-foreground">Recent Activity</h3>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-primary hover:bg-primary/10 gap-1 text-xs"
-            onClick={() => router.push('/attendance')}
-          >
-            View All <ArrowRight className="w-3 h-3" />
-          </Button>
+      {/* ── Today's Activity Table ──────────────────────── */}
+      <Card className="bg-card border-border p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-semibold text-foreground">Today&apos;s Activity</h3>
+            <span className="flex items-center gap-1 text-xs font-medium text-green-600">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              Live
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">Updated {updatedAt}</span>
+            <button className="flex items-center gap-1 text-xs font-medium hover:opacity-80 transition-opacity"
+              style={{ color: RED }}>
+              View All <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-border bg-secondary/50">
-                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-muted-foreground uppercase tracking-wider">Employee</th>
-                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Department</th>
-                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-muted-foreground uppercase tracking-wider">Action</th>
-                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-muted-foreground uppercase tracking-wider hidden md:table-cell">Time</th>
-                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-muted-foreground uppercase tracking-wider">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {recentActivity.length > 0 ? recentActivity.map((activity, index) => (
-                <tr
-                  key={activity.id}
-                  className={`hover:bg-primary/5 transition-colors ${index % 2 === 0 ? 'bg-transparent' : 'bg-secondary/10'}`}
-                >
-                  <td className="px-4 sm:px-6 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm shrink-0">
-                        {activity.employee.charAt(0)}
-                      </div>
-                      <div className="min-w-0">
-                        <span className="text-sm font-medium text-foreground block truncate">{activity.employee}</span>
-                        <span className="text-xs text-muted-foreground sm:hidden">{activity.department}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 sm:px-6 py-3 hidden sm:table-cell">
-                    <Badge variant="outline" className="bg-secondary/50 text-foreground border-border text-xs">
-                      {activity.department}
-                    </Badge>
-                  </td>
-                  <td className="px-4 sm:px-6 py-3 text-sm text-foreground">{activity.action}</td>
-                  <td className="px-4 sm:px-6 py-3 text-sm text-muted-foreground font-mono hidden md:table-cell">{activity.time}</td>
-                  <td className="px-4 sm:px-6 py-3">
-                    <Badge
-                      variant="outline"
-                      className={
-                        activity.status === 'on-time'
-                          ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                          : activity.status === 'late'
-                            ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-                            : 'bg-red-500/20 text-red-400 border-red-500/30'
-                      }
-                    >
-                      {activity.status === 'on-time' ? 'On Time' : activity.status === 'late' ? 'Late' : 'Absent'}
-                    </Badge>
-                  </td>
+
+        {activity.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employee</th>
+                  <th className="text-left py-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Branch</th>
+                  <th className="text-left py-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Action</th>
+                  <th className="text-left py-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Time</th>
+                  <th className="text-left py-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</th>
                 </tr>
-              )) : (
-                <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-muted-foreground text-sm">
-                    No activity recorded today
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {activity.map((row) => (
+                  <tr key={row.id} className="border-b border-border/50 hover:bg-secondary/30 transition-colors">
+                    <td className="py-3 px-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                          style={{ backgroundColor: row.status === 'late' ? RED : '#6366f1' }}>
+                          {row.employee.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground">{row.employee}</p>
+                          <p className="text-[11px] text-muted-foreground">{row.department}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3 px-3">
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-secondary text-muted-foreground">
+                        {row.branch}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3">
+                      <span className="flex items-center gap-1 text-sm font-medium"
+                        style={{ color: row.action === 'In' ? '#22c55e' : '#6366f1' }}>
+                        {row.action === 'In' ? '→' : '←'} {row.action}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 font-mono text-muted-foreground text-xs">{row.time}</td>
+                    <td className="py-3 px-3">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                        style={{
+                          backgroundColor: row.status === 'late'    ? `${RED}15`      :
+                                           row.status === 'absent'  ? '#6b728015'     :
+                                           `${GOLD}20`,
+                          color:           row.status === 'late'    ? RED             :
+                                           row.status === 'absent'  ? '#6b7280'       :
+                                           GOLD,
+                        }}>
+                        {row.status === 'on-time' ? 'On Time' : row.status === 'late' ? 'Late' : 'Absent'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="py-12 text-center">
+            <p className="text-sm text-muted-foreground">No activity recorded today</p>
+          </div>
+        )}
       </Card>
-
-      {/* ─── Quick Actions ────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-        <Card
-          className="bg-card border-border p-4 sm:p-5 hover:border-primary/40 hover:shadow-lg transition-all cursor-pointer group"
-          onClick={() => router.push('/employees')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="bg-primary/20 p-2.5 rounded-lg group-hover:bg-primary/30 transition-colors">
-              <Users className="w-5 h-5 text-primary" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-foreground">Employees</p>
-              <p className="text-xs text-muted-foreground truncate">Manage {empStats.total} employees</p>
-            </div>
-            <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-          </div>
-        </Card>
-
-        <Card
-          className="bg-card border-border p-4 sm:p-5 hover:border-primary/40 hover:shadow-lg transition-all cursor-pointer group"
-          onClick={() => router.push('/attendance')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="bg-green-500/20 p-2.5 rounded-lg group-hover:bg-green-500/30 transition-colors">
-              <CalendarDays className="w-5 h-5 text-green-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-foreground">Attendance</p>
-              <p className="text-xs text-muted-foreground truncate">Today: {attStats.totalPresent + attStats.totalLate} checked in</p>
-            </div>
-            <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-green-400 transition-colors" />
-          </div>
-        </Card>
-
-        <Card
-          className="bg-card border-border p-4 sm:p-5 hover:border-primary/40 hover:shadow-lg transition-all cursor-pointer group"
-          onClick={() => router.push('/admin/reports')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="bg-yellow-500/20 p-2.5 rounded-lg group-hover:bg-yellow-500/30 transition-colors">
-              <FileText className="w-5 h-5 text-yellow-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-foreground">Reports</p>
-              <p className="text-xs text-muted-foreground truncate">Generate & export reports</p>
-            </div>
-            <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-yellow-400 transition-colors" />
-          </div>
-        </Card>
-      </div>
     </div>
   )
 }
