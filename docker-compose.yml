@@ -31,9 +31,9 @@ services:
       DB_PASSWORD: root
       JWT_SECRET: your-secret-key-change-this-in-production
     volumes:
-      - ./backend:/app
-      - /app/node_modules
-      - /app/dist
+      # - ./backend:/app
+      # - /app/node_modules
+      # - /app/dist
     command: npm run dev:watch
     ports:
       - "4010:3001"
@@ -53,9 +53,9 @@ services:
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
     volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
+      # - ./frontend:/app
+      # - /app/node_modules
+      # - /app/.next
     command: npm run dev -- --webpack
     ports:
       - "3010:3000"
