@@ -25,7 +25,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
 
   const navItems = [
     { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { label: 'Departments', href: '/departments', icon: Building2 },
+    { label: 'Organization', href: '/departments', icon: Building2 },
     { label: 'Attendance', href: '/attendance', icon: Clock },
     { label: 'Reports', href: '/admin/reports', icon: FileText },
     { label: 'User Accounts', href: '/admin/user-accounts', icon: UserCog },

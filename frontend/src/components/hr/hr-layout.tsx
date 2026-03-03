@@ -8,6 +8,7 @@ import TopBar from './hr-topbar';
 export default function HRLayout({ children }: { children: React.ReactNode }) {
     const { isLoading, isAuthenticated } = useAuth('HR');
     const [isMobileOpen, setIsMobileOpen] = useState(false);
+    const [isCollapsed, setIsCollapsed] = useState(false);
     const pathname = usePathname();
 
     // Show loading state while checking auth
@@ -20,7 +21,10 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
     }
 
     return (
-        <div className="flex h-screen bg-white overflow-hidden relative">
+        <div className="h-screen bg-white overflow-hidden relative">
+
+            {/* Top Bar - full width, above everything */}
+            <TopBar setIsMobileOpen={setIsMobileOpen} />
 
             {/* Mobile Overlay */}
             {isMobileOpen && (
@@ -31,13 +35,11 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
             )}
 
             {/* Sidebar */}
-            <Sidebar isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen} />
+            <Sidebar isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} />
 
             {/* Main Content Area */}
-            <div className="flex-1 flex flex-col min-w-0 lg:ml-72 transition-all duration-300">
-                <TopBar setIsMobileOpen={setIsMobileOpen} />
-
-                <main className="flex-1 overflow-y-auto p-4 md:p-8">
+            <div className={`h-[calc(100vh-4rem)] mt-16 transition-all duration-300 ${isCollapsed ? 'lg:ml-20' : 'lg:ml-72'}`}>
+                <main className="h-full overflow-y-auto p-4 md:p-8">
                     {/* key={pathname} ensures the smooth page transition triggers on navigation */}
                     <div
                         key={pathname}

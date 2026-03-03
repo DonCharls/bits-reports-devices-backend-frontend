@@ -174,7 +174,8 @@ export default function InactiveEmployeesPage() {
               <Button variant="outline" className="flex-1 border-border text-foreground hover:bg-secondary" onClick={() => setConfirmDelete(null)} disabled={isDeleting}>
                 Cancel
               </Button>
-              <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" onClick={handlePermanentDelete} disabled={isDeleting}>{isDeleting ? 'Deleting...' : 'Delete Permanently'}
+              <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" onClick={handlePermanentDelete} disabled={isDeleting}>
+                {isDeleting ? 'Deleting...' : 'Delete Permanently'}
               </Button>
             </div>
           </div>
@@ -304,10 +305,11 @@ export default function InactiveEmployeesPage() {
               <button
                 key={page}
                 onClick={() => setCurrentPage(page)}
-                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${currentPage === page
-                  ? 'bg-red-600 text-white'
-                  : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
-                  }`}
+                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${
+                  currentPage === page
+                    ? 'bg-red-600 text-white'
+                    : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
+                }`}
               >
                 {page}
               </button>

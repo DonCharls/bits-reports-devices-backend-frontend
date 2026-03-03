@@ -1,91 +1,252 @@
 "use client";
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Users, Clock, FileText, X } from 'lucide-react';
-import Image from 'next/image';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { 
+  LayoutDashboard, 
+  Users, 
+  Clock, 
+  FileText, 
+  X, 
+  Menu,
+  ChevronDown,
+  UserX,
+  History,
+  LucideIcon
+} from 'lucide-react';
 
-export default function Sidebar({ isMobileOpen, setIsMobileOpen }: any) {
+
+interface SubmenuItem {
+  name: string;
+  icon: LucideIcon;
+  filter?: string; 
+  href?: string;  
+}
+
+interface MenuItem {
+  name: string;
+  href: string;
+  icon: LucideIcon;
+  hasSubmenu?: boolean;
+  submenu?: SubmenuItem[];
+}
+
+export default function Sidebar({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollapsed }: any) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [isEmployeesOpen, setIsEmployeesOpen] = useState(false);
+  const [isReportsOpen, setIsReportsOpen] = useState(false);
 
-  const menuItems = [
+  const menuItems: MenuItem[] = [
     { name: 'Dashboard', href: '/hr/dashboard', icon: LayoutDashboard },
     { name: 'Attendance', href: '/hr/attendance', icon: Clock },
-    { name: 'Employees', href: '/hr/employees', icon: Users },
-    { name: 'Reports', href: '/hr/reports', icon: FileText },
+    { 
+      name: 'Employees', 
+      href: '/hr/employees', 
+      icon: Users,
+      hasSubmenu: true,
+      submenu: [{ name: 'Inactive', filter: 'Inactive', icon: UserX }]
+    },
+    { 
+      name: 'Reports', 
+      href: '/hr/reports', 
+      icon: FileText,
+      hasSubmenu: true,
+      submenu: [{ name: 'Adjustment Logs', href: '/hr/adjusts', icon: History }]
+    },
   ];
 
-  // Calculate the active index to determine the glide position
-  const activeIndex = menuItems.findIndex(item => item.href === pathname);
+  const currentStatus = searchParams.get('status') || 'Active';
+  const isInactivePage = pathname === '/hr/employees' && currentStatus === 'Inactive';
+  const isAuditPage = pathname === '/hr/adjusts';
+
+  const activeIndex = menuItems.findIndex(item => {
+    if (item.href === '/hr/employees') {
+        return pathname === item.href && currentStatus === 'Active';
+    }
+    return pathname === item.href;
+  });
+
+  const getIndicatorStyles = () => {
+    const itemHeight = 60;
+    const submenuOffset = 52; 
+
+    const leftPos = isCollapsed ? '16px' : '14px'; 
+    const width = isCollapsed ? 'calc(100% - 16px)' : 'calc(100% - 14px)';
+    
+    if (isInactivePage) {
+      const topPos = (isCollapsed || !isEmployeesOpen) ? (2 * itemHeight) : ((2 * itemHeight) + 60);
+      const height = (isCollapsed || !isEmployeesOpen) ? '56px' : '44px';
+      const left = (isCollapsed || !isEmployeesOpen) ? leftPos : '35px';
+      const rad = (isCollapsed || !isEmployeesOpen) ? '30px 0 0 30px' : '22px 0 0 22px';
+
+      return { 
+        top: `${topPos}px`, 
+        height: height, 
+        left: left, 
+        width: isCollapsed ? width : `calc(100% - ${left})`,
+        borderRadius: rad 
+      };
+    }
+
+    if (isAuditPage) {
+      const employeesSubmenuHeight = (isEmployeesOpen && !isCollapsed) ? submenuOffset : 0;
+      const topPos = (isCollapsed || !isReportsOpen) ? (3 * itemHeight + employeesSubmenuHeight) : ((3 * itemHeight) + 60 + employeesSubmenuHeight);
+      const height = (isCollapsed || !isReportsOpen) ? '56px' : '44px';
+      const left = (isCollapsed || !isReportsOpen) ? leftPos : '35px';
+      const rad = (isCollapsed || !isReportsOpen) ? '30px 0 0 30px' : '22px 0 0 22px';
+
+      return { 
+        top: `${topPos}px`, 
+        height: height, 
+        left: left, 
+        width: isCollapsed ? width : `calc(100% - ${left})`,
+        borderRadius: rad 
+      };
+    }
+
+    let baseTop = activeIndex * itemHeight;
+   
+    if (activeIndex > 2 && isEmployeesOpen && !isCollapsed) {
+      baseTop += submenuOffset;
+    }
+
+    return { 
+      top: `${baseTop}px`, 
+      height: '56px', 
+      left: leftPos, 
+      width: width,
+      borderRadius: '30px 0 0 30px' 
+    };
+  };
+
+  const styles = getIndicatorStyles();
 
   return (
     <aside className={`
-      fixed top-0 left-0 z-50 w-72 h-screen bg-[#E60000] flex flex-col transition-transform duration-300 ease-in-out
-      ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} 
+      fixed top-24 bottom-4 left-4 z-[60] bg-[#E60000] flex flex-col transition-all duration-300 ease-in-out overflow-hidden
+      rounded-[20px]
+      ${isMobileOpen ? 'translate-x-0' : '-translate-x-[120%]'} 
       lg:translate-x-0
+      ${isCollapsed ? 'lg:w-20' : 'lg:w-63'}
     `}>
 
-      <div className="p-8 flex items-center justify-between">
-        <Link
-          href="/hr/dashboard"
-          onClick={() => setIsMobileOpen(false)}
-          className="flex items-center gap-3 active:scale-95 transition-transform duration-200"
-        >
-          <div className="rounded-2xl flex items-center justify-center shadow-lg overflow-hidden">
-            <Image src="/images/av.jpg" alt="Logo" width={70} height={24} className="object-contain" />
-          </div>
-          <h1 className="text-white font-bold text-2xl tracking-tight uppercase">
-            BITS
-          </h1>
-        </Link>
-
-        <button onClick={() => setIsMobileOpen(false)} className="lg:hidden text-white p-2">
+      <div className="flex items-center h-20 shrink-0 px-7 justify-start relative">
+        <div className="w-6 flex items-center justify-center shrink-0">
+          <button 
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="text-white hover:bg-white/10 p-2 rounded-xl transition-colors"
+          >
+            <Menu size={24} />
+          </button>
+        </div>
+        <button onClick={() => setIsMobileOpen(false)} className="lg:hidden absolute right-8 text-white p-2">
           <X size={24} />
         </button>
       </div>
 
-      <nav className="flex-1 mt-10 relative">
-        {/* The Gliding Background */}
-        {activeIndex !== -1 && (
+      <nav className="flex-1 mt-2 relative flex flex-col h-full">
+        {(activeIndex !== -1 || isInactivePage || isAuditPage) && (
           <div 
-            className="absolute left-6 right-0 bg-white rounded-l-[30px] transition-all duration-500 ease-in-out z-0"
+            className="absolute right-0 bg-slate-50 z-0 hidden lg:block"
             style={{ 
-              height: '52px', // Height of one menu item
-              top: `${activeIndex * 56}px`, // index * (height + space-y)
+              height: styles.height, 
+              top: styles.top, 
+              left: styles.left,
+              width: styles.width,
+              borderRadius: styles.borderRadius,
+              transition: 'all 450ms cubic-bezier(0.4, 0, 0.2, 1)'
             }}
           >
-            {/* Inverted Curve Top */}
-            <div className="absolute right-0 -top-10 w-10 h-10 bg-white pointer-events-none before:content-[''] before:absolute before:inset-0 before:bg-[#E60000] before:rounded-br-[30px]" />
-            {/* Inverted Curve Bottom */}
-            <div className="absolute right-0 -bottom-10 w-10 h-10 bg-white pointer-events-none before:content-[''] before:absolute before:inset-0 before:bg-[#E60000] before:rounded-tr-[30px]" />
+            <div className="absolute right-0 -top-10 w-10 h-10 bg-slate-50 pointer-events-none before:content-[''] before:absolute before:inset-0 before:bg-[#E60000] before:rounded-br-[30px]" />
+            <div className="absolute right-0 -bottom-10 w-10 h-10 bg-slate-50 pointer-events-none before:content-[''] before:absolute before:inset-0 before:bg-[#E60000] before:rounded-tr-[30px]" />
           </div>
         )}
 
         <ul className="space-y-1 relative z-10">
           {menuItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isEmployeeMain = item.href === '/hr/employees';
+            const isReportsMain = item.href === '/hr/reports';
+            
+            const isMainActive = (pathname === item.href && (isEmployeeMain ? currentStatus === 'Active' : true) && !isInactivePage && !isAuditPage) || 
+                                (isEmployeeMain && isInactivePage && !isEmployeesOpen) ||
+                                (isReportsMain && isAuditPage && !isReportsOpen);
+            
+            const IconToDisplay = (isCollapsed && isInactivePage && isEmployeeMain) ? UserX : (isCollapsed && isAuditPage && isReportsMain) ? History : item.icon;
 
             return (
-              <li key={item.name} className="pl-6">
-                <Link
-                  href={item.href}
-                  onClick={() => setIsMobileOpen(false)}
-                  className={`flex items-center gap-4 px-6 h-[52px] transition-colors duration-300 ${
-                    isActive ? 'text-[#E60000]' : 'text-white/60 hover:text-white'
-                  }`}
-                >
-                  <item.icon size={22} className="transition-transform duration-300" />
-                  <span className="font-bold text-lg">
-                    {item.name}
-                  </span>
-                </Link>
+              <li key={item.name} className="flex flex-col">
+                <div className="flex justify-start relative">
+                  <Link
+                    href={isEmployeeMain && isInactivePage && isCollapsed ? `${item.href}?status=Inactive` : isReportsMain && isAuditPage && isCollapsed ? `/hr/adjusts` : (isEmployeeMain ? `${item.href}?status=Active` : item.href)}
+                    className={`flex items-center h-[56px] w-full transition-all duration-300 rounded-l-[30px] px-7 gap-6
+                      ${isMainActive || (isCollapsed && isInactivePage && isEmployeeMain) || (isCollapsed && isAuditPage && isReportsMain) ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}
+                    `}
+                  >
+                    <div className="w-6 h-6 flex items-center justify-center shrink-0 relative">
+                      {(isMainActive || (isCollapsed && isInactivePage && isEmployeeMain) || (isCollapsed && isAuditPage && isReportsMain)) && (
+                        <div className="absolute inset-[-6px] bg-red-300/50 rounded-full animate-in fade-in zoom-in duration-300" />
+                      )}
+                      <IconToDisplay size={22} className="relative z-10" />
+                    </div>
+                    {!isCollapsed && (
+                      <div className="flex items-center justify-between w-full">
+                        <span className="font-bold text-lg tracking-tight whitespace-nowrap">
+                          {item.name}
+                        </span>
+                        {item.hasSubmenu && (
+                          <button 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if(isEmployeeMain) setIsEmployeesOpen(!isEmployeesOpen);
+                              if(isReportsMain) setIsReportsOpen(!isReportsOpen);
+                            }}
+                            className="p-1 hover:bg-white/10 rounded-lg transition-colors"
+                          >
+                            <ChevronDown 
+                              size={18} 
+                              className={`${isMainActive ? 'text-[#E60000]' : 'text-white'} transition-transform duration-300 ${(isEmployeeMain && isEmployeesOpen) || (isReportsMain && isReportsOpen) ? 'rotate-180' : ''}`} 
+                            />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </Link>
+                </div>
+
+                {item.hasSubmenu && ((isEmployeeMain && isEmployeesOpen) || (isReportsMain && isReportsOpen)) && !isCollapsed && (
+                  <ul className="mt-1 ml-0 space-y-1 animate-in slide-in-from-top-2 duration-300">
+                    {item.submenu?.map((sub) => {
+                      const isSubActive = sub.href ? pathname === sub.href : (pathname === item.href && currentStatus === sub.filter);
+                      return (
+                        <li key={sub.name}>
+                          <Link
+                            href={sub.href || `${item.href}?status=${sub.filter}`}
+                            className={`flex items-center h-[46px] w-full transition-all duration-300 rounded-l-[22px] px-7 gap-5
+                              ${isSubActive ? 'text-[#E60000]' : 'text-white/50 hover:text-white'}
+                            `}
+                          >
+                            <div className="w-6 h-6 flex items-center justify-center shrink-0 ml-5 relative">
+                                {isSubActive && (
+                                    <div className="absolute inset-[-5px] bg-red-400/40 rounded-full animate-in fade-in zoom-in duration-300" />
+                                )}
+                                <sub.icon size={18} className="relative z-10" />
+                            </div>
+                            <span className="font-bold text-md tracking-tight whitespace-nowrap">
+                              {sub.name}
+                            </span>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </li>
             );
           })}
         </ul>
       </nav>
-
-      <div className="p-8 mt-auto flex flex-col items-center" />
     </aside>
   );
 }

@@ -1,191 +1,168 @@
 "use client"
-import React, { useState, useEffect } from 'react';
-import { UserPlus, Search, MapPin, Briefcase } from 'lucide-react';
 
-interface Employee {
-  id: number;
-  employeeNumber: string | null;
-  firstName: string;
-  lastName: string;
-  email: string | null;
-  role: string;
-  department: string | null;
-  Department?: { name: string } | null;
-  branch: string | null;
-  position: string | null;
-  employmentStatus: 'ACTIVE' | 'INACTIVE' | 'TERMINATED';
-}
+import React, { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Edit2, UserPlus, AlertCircle, Search, AlertTriangle } from 'lucide-react';
 
-export default function EmployeesPage() {
+function EmployeeDirectoryContent() {
+  const searchParams = useSearchParams();
+  const statusFilter = searchParams.get('status') || "Active";
+  
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("Active");
   const [deptFilter, setDeptFilter] = useState("All Departments");
   const [branchFilter, setBranchFilter] = useState("All Branches");
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [editingEmployee, setEditingEmployee] = useState<any>(null);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
 
-  useEffect(() => {
-    fetchEmployees();
-  }, []);
+  const employees = [
+    { id: "EMP-001", firstName: "Mark", lastName: "Anthony", role: "Purchasing Officer", dept: "Purchasing", branch: "Main Office", email: "mark@biptip.com", phone: "0912-345-6789", hireDate: "2023-05-15", status: "Active" },
+    { id: "EMP-002", firstName: "Sarah", lastName: "Jenkins", role: "HR Specialist", dept: "Human Resources", branch: "Makati Branch", email: "sarah@biptip.com", phone: "0923-456-7890", hireDate: "2024-01-10", status: "Active" },
+    { id: "EMP-003", firstName: "John", lastName: "Doe", role: "IT Support", dept: "I.T.", branch: "Tayud Branch", email: "john@biptip.com", phone: "0934-567-8901", hireDate: "2023-11-20", status: "Inactive" },
+    { id: "EMP-004", firstName: "Jane", lastName: "Smith", role: "Accountant", dept: "Accounting", branch: "Main Office", email: "jane@biptip.com", phone: "0945-678-9012", hireDate: "2022-08-05", status: "Active" },
+    { id: "EMP-005", firstName: "Robert", lastName: "Lim", role: "Maintenance Lead", dept: "Engineering & Maintenance", branch: "Tayud Branch", email: "robert@biptip.com", phone: "0956-789-0123", hireDate: "2021-03-12", status: "Active" },
+  ];
 
-  const fetchEmployees = async () => {
-    setLoading(true);
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) { window.location.href = '/login'; return; }
-
-      const res = await fetch('/api/employees', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (res.status === 401) {
-        localStorage.removeItem('token');
-        window.location.href = '/login';
-        return;
-      }
-
-      const data = await res.json();
-      if (data.success) {
-        const empList = data.employees || data.data || [];
-        setEmployees(empList.filter((e: Employee) => e.role === 'USER'));
-      }
-    } catch (error) {
-      console.error('Error fetching employees:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Derive unique departments and branches from data
-  const departments = ["All Departments", ...Array.from(new Set(employees.map(e => e.Department?.name || e.department).filter(Boolean))) as string[]];
-  const branches = ["All Branches", ...Array.from(new Set(employees.map(e => e.branch).filter(Boolean))) as string[]];
+  const departments = [
+    "Purchasing", "Finance", "I.T.", "Accounting", 
+    "Human Resources", "Engineering & Maintenance", "Office of the SVP - Corporate Services", "Marketing and Operations"
+  ];
+  
+  const branches = ["Main Office Branch", "Tayud Branch", "Makati Branch"];
 
   const filteredEmployees = employees.filter((emp) => {
-    const matchesSearch = `${emp.firstName} ${emp.lastName} ${emp.employeeNumber || ''}`.toLowerCase().includes(searchQuery.toLowerCase());
-    const empStatus = emp.employmentStatus === 'ACTIVE' ? 'Active' : 'Inactive';
-    const matchesStatus = empStatus === statusFilter;
-    const empDept = emp.Department?.name || emp.department;
-    const matchesDept = deptFilter === "All Departments" || empDept === deptFilter;
+    const fullName = `${emp.firstName} ${emp.lastName}`.toLowerCase();
+    const matchesSearch = fullName.includes(searchQuery.toLowerCase()) || 
+                          emp.id.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = emp.status === statusFilter;
+    const matchesDept = deptFilter === "All Departments" || emp.dept === deptFilter;
     const matchesBranch = branchFilter === "All Branches" || emp.branch === branchFilter;
+
     return matchesSearch && matchesStatus && matchesDept && matchesBranch;
   });
 
+  useEffect(() => {
+    if (showSuccessToast) {
+      const timer = setTimeout(() => setShowSuccessToast(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [showSuccessToast]);
+
+  const handleUpdate = () => {
+    setToastMessage("Employee profile updated successfully!");
+    setShowSuccessToast(true);
+    setEditingEmployee(null);
+  };
+
+  const handleRegister = () => {
+    setToastMessage("New employee registered successfully!");
+    setShowSuccessToast(true);
+    setIsRegistering(false);
+  };
+
+  const confirmCancel = () => {
+    setEditingEmployee(null);
+    setShowCancelModal(false);
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight">Employee Directory</h1>
+          <h1 className="text-2xl font-black text-slate-800 tracking-tight">
+            {statusFilter} Employees
+          </h1>
           <p className="text-slate-500 text-sm font-medium">
-            {loading ? 'Loading...' : `${employees.length} employees total`}
+            {statusFilter === 'Active' 
+              ? "Register and organize active personnel." 
+              : "Review and manage records of offboarded personnel."}
           </p>
         </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-red-500 transition-colors" size={18} />
-            <input
-              type="text"
-              placeholder="Search employees..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:ring-2 focus:ring-red-500/20 outline-none w-64 transition-all"
-            />
-          </div>
-        </div>
+        
+        <button 
+          onClick={() => setIsRegistering(true)}
+          className="bg-red-600 text-white px-6 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-red-600/20 hover:bg-red-700 transition-all active:scale-95 flex items-center justify-center gap-2 self-start lg:self-center"
+        >
+          <UserPlus size={18} />
+          Register Employee
+        </button>
       </div>
 
-      <div className="flex flex-col md:flex-row justify-between items-center bg-white px-6 py-3 rounded-2xl border border-slate-200 shadow-sm gap-4">
-        <div className="flex items-center gap-8 h-12">
-          {["Active", "Inactive"].map((status) => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`relative h-full text-[11px] font-black uppercase tracking-widest transition-all ${statusFilter === status
-                ? 'text-slate-800'
-                : 'text-slate-400 hover:text-slate-600'
-                }`}
-            >
-              <div className="flex items-center gap-2">
-                {status}
-              </div>
-              {statusFilter === status && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-slate-800 rounded-t-full animate-in fade-in duration-300" />
-              )}
-            </button>
-          ))}
+      <div className="flex flex-col md:flex-row items-center bg-white px-6 py-3 rounded-2xl border border-slate-200 shadow-sm gap-4">
+        <div className="relative w-full md:w-64">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="text"
+            placeholder="Search employees..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none w-full focus:ring-2 focus:ring-red-500/10 focus:border-red-200 transition-all"
+          />
         </div>
 
-        <div className="flex flex-wrap items-center gap-6 w-full md:w-auto">
-          <div className="flex items-center gap-3">
-            <MapPin size={14} className="text-slate-400" />
-            <select
-              value={branchFilter}
-              onChange={(e) => setBranchFilter(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 outline-none cursor-pointer hover:border-red-200 transition-colors"
-            >
-              {branches.map(branch => (
-                <option key={branch} value={branch}>{branch}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Briefcase size={14} className="text-slate-400" />
-            <select
-              value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
-              className="px-1 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 outline-none cursor-pointer hover:border-red-200 transition-colors"
-            >
-              {departments.map(dept => (
-                <option key={dept} value={dept}>{dept}</option>
-              ))}
-            </select>
-          </div>
+        <div className="flex flex-wrap items-center gap-4 ml-auto">
+          <select 
+            value={branchFilter}
+            onChange={(e) => setBranchFilter(e.target.value)}
+            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none cursor-pointer hover:border-red-200 transition-colors"
+          >
+            <option value="All Branches">All Branches</option>
+            {branches.map(branch => (<option key={branch} value={branch}>{branch}</option>))}
+          </select>
+          
+          <select 
+            value={deptFilter}
+            onChange={(e) => setDeptFilter(e.target.value)}
+            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none cursor-pointer hover:border-red-200 transition-colors"
+          >
+            <option value="All Departments">All Departments</option>
+            {departments.map(dept => (
+              <option key={dept} value={dept}>{dept}</option>
+            ))}
+          </select>
         </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <table className="w-full text-left text-sm">
+        <table className="w-full text-left text-sm border-collapse">
           <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
             <tr>
-              <th className="px-6 py-4 w-16">#</th>
-              <th className="px-6 py-4">Employee</th>
-              <th className="px-6 py-4">Department</th>
-              <th className="px-6 py-4">Branch</th>
-              <th className="px-6 py-4">Position</th>
+              <th className="px-8 py-5">Employee</th>
+              <th className="px-8 py-5">Department</th>
+              <th className="px-8 py-5">Branch Location</th>
+              <th className="px-8 py-5">Email Address</th>
+              <th className="px-8 py-5">Contact Number</th>
+              <th className="px-8 py-5 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {loading ? (
-              <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-slate-400 font-bold text-xs">
-                  Loading employees...
-                </td>
-              </tr>
-            ) : filteredEmployees.length > 0 ? (
-              filteredEmployees.map((emp, index) => (
-                <tr key={emp.id} className="hover:bg-red-50/50 transition-colors duration-200 group">
-                  <td className="px-6 py-4 text-xs font-bold text-slate-400">
-                    {String(index + 1).padStart(2, '0')}
+            {filteredEmployees.length > 0 ? (
+              filteredEmployees.map((emp) => (
+                <tr key={emp.id} className="hover:bg-red-100 transition-colors duration-200 group cursor-default">
+                  <td className="px-8 py-5">
+                    <p className="font-bold text-slate-700 underline decoration-red-100 underline-offset-4 decoration-2">
+                        {emp.firstName} {emp.lastName}
+                    </p>
                   </td>
-                  <td className="px-6 py-4">
-                    <p className="font-bold text-slate-700">{emp.firstName} {emp.lastName}</p>
-                    <p className="text-xs text-slate-400">{emp.email || '—'}</p>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-xs font-medium text-slate-500">{emp.Department?.name || emp.department || '—'}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-xs font-medium text-slate-500">{emp.branch || '—'}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-xs font-medium text-slate-500">{emp.position || '—'}</span>
+                  <td className="px-8 py-5 font-medium text-slate-500 text-xs">{emp.dept}</td>
+                  <td className="px-8 py-5 font-medium text-slate-500 text-xs">{emp.branch}</td>
+                  <td className="px-8 py-5 font-medium text-slate-500 text-xs">{emp.email}</td>
+                  <td className="px-8 py-5 font-medium text-slate-500 text-xs">{emp.phone}</td>
+                  <td className="px-8 py-5 text-right">
+                    <button 
+                      onClick={() => setEditingEmployee(emp)} 
+                      className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90"
+                    >
+                      <Edit2 size={18} />
+                    </button>
                   </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="px-6 py-20 text-center text-slate-400 font-bold uppercase text-xs tracking-widest">
+                <td colSpan={6} className="px-8 py-24 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">
                   No matching employees found
                 </td>
               </tr>
@@ -193,6 +170,234 @@ export default function EmployeesPage() {
           </tbody>
         </table>
       </div>
+
+      {isRegistering && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-5 bg-red-600 text-white flex justify-between items-center shrink-0">
+              <div>
+                <h3 className="font-bold text-lg leading-tight tracking-tight">New Employee Registration</h3>
+                <p className="text-[10px] text-red-100 opacity-90 uppercase font-black tracking-widest mt-0.5">Add biometric profile</p>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-6 overflow-y-auto">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400">First Name</label>
+                  <input type="text" placeholder="First Name" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400">Last Name</label>
+                  <input type="text" placeholder="Last Name" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400">Email Address</label>
+                  <input type="email" placeholder="Email Address" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400">Phone Number</label>
+                  <input type="text" placeholder="Phone Number" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400">Department</label>
+                  <select defaultValue="" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none">
+                    <option value="" disabled>Department</option>
+                    {departments.map(d => (<option key={d} value={d}>{d}</option>))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400">Assigned Branch</label>
+                  <select defaultValue="" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none">
+                    <option value="" disabled>Assign Branch</option>
+                    {branches.map(b => (<option key={b} value={b}>{b}</option>))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400">Job Position</label>
+                  <input type="text" placeholder="Job Position" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400">Date Hired</label>
+                  <input type="date" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none" />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5 bg-slate-50 flex gap-3 shrink-0">
+              <button onClick={() => setIsRegistering(false)} className="flex-1 px-4 py-3.5 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">Discard</button>
+              <button onClick={handleRegister} className="flex-1 px-4 py-3.5 bg-red-600 text-white rounded-xl text-sm font-black shadow-lg shadow-red-600/30 hover:bg-red-700 transition-all active:scale-95">Register Employee</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingEmployee && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-5 bg-red-600 text-white flex justify-between items-center shrink-0">
+              <div>
+                <h3 className="font-bold text-lg leading-tight tracking-tight">Edit Employee Profile</h3>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-4 overflow-y-auto">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">First Name</label>
+                  <input type="text" defaultValue={editingEmployee.firstName} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Last Name</label>
+                  <input type="text" defaultValue={editingEmployee.lastName} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Email Address</label>
+                  <input type="email" defaultValue={editingEmployee.email} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Phone Number</label>
+                  <input type="text" defaultValue={editingEmployee.phone} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Department</label>
+                  <select defaultValue={editingEmployee.dept} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20">
+                    {departments.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Move to Branch</label>
+                  <select defaultValue={editingEmployee.branch} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20">
+                    {branches.map(b => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Position</label>
+                  <input type="text" defaultValue={editingEmployee.role} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Date Hired</label>
+                  <input type="date" defaultValue={editingEmployee.hireDate} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                </div>
+                <div className="space-y-3 px-6">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Status</label>
+                  <div className="flex items-center gap-6 px-1 py-1">
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <div className="relative flex items-center justify-center">
+                        <input 
+                          type="radio" 
+                          name="status"
+                          value="Active"
+                          checked={editingEmployee.status === "Active"}
+                          onChange={(e) => setEditingEmployee({ ...editingEmployee, status: e.target.value })}
+                          className="peer appearance-none w-4 h-4 border-2 border-slate-300 rounded-full checked:border-red-600 transition-all cursor-pointer"
+                        />
+                        <div className="absolute w-2 h-2 bg-red-600 rounded-full opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-600 group-hover:text-slate-900 transition-colors">Active</span>
+                    </label>
+
+                    <label className="flex items-center py-2 gap-3 cursor-pointer group">
+                      <div className="relative flex items-center justify-center">
+                        <input 
+                          type="radio" 
+                          name="status"
+                          value="Inactive"
+                          checked={editingEmployee.status === "Inactive"}
+                          onChange={(e) => setEditingEmployee({ ...editingEmployee, status: e.target.value })}
+                          className="peer appearance-none w-4 h-4 border-2 border-slate-300 rounded-full checked:border-red-600 transition-all cursor-pointer"
+                        />
+                        <div className="absolute w-2 h-2 bg-red-600 rounded-full opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-600 group-hover:text-slate-900 transition-colors">Inactive</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-100 p-3 rounded-xl flex gap-3 shadow-sm shadow-amber-600/5">
+                <AlertCircle size={18} className="text-amber-600 shrink-0" />
+                <div className="text-[10px] text-amber-800 leading-relaxed font-medium">
+                  <strong className="block mb-0.5 tracking-tight uppercase">Audit Log Notice</strong>
+                  <strong>Warning:</strong> These changes will be logged under your account (mwehehe) for audit purposes.
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5 bg-slate-50 flex gap-3 shrink-0">
+              <button onClick={() => setShowCancelModal(true)} className="flex-1 px-4 py-3.5 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">Cancel</button>
+              <button onClick={handleUpdate} className="flex-1 px-4 py-3.5 bg-red-600 text-white rounded-xl text-sm font-black shadow-lg shadow-red-600/30 hover:bg-red-700 transition-all active:scale-95">Update</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCancelModal && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 text-center space-y-4">
+              
+              <div>
+                <h3 className="text-lg font-black text-slate-800 tracking-tight">Discard changes?</h3>
+                <p className="text-sm font-medium text-slate-500 mt-1">Your unsaved modifications will be lost.</p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => setShowCancelModal(false)}
+                  className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={confirmCancel}
+                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200 active:scale-95"
+                >
+                  Yes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSuccessToast && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-500 text-white px-6 py-4 rounded-2xl shadow-2xl z-[110] animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <span className="text-sm font-bold tracking-tight">{toastMessage}</span>
+        </div>
+      )}
     </div>
+  );
+}
+
+export default function EmployeesPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center font-bold text-slate-400">LOADING DIRECTORY...</div>}>
+      <EmployeeDirectoryContent />
+    </Suspense>
   );
 }

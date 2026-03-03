@@ -3,33 +3,26 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts'
-import {
-  Users,
-  Clock,
-  AlertCircle,
-  TrendingUp,
-  ArrowRight,
-  Building2,
-  FileText,
-} from 'lucide-react'
+import { Users, Clock, AlertCircle, TrendingUp, Building2, FileText, ArrowRight } from 'lucide-react'
+import { DEPARTMENTS } from '@/types/departments'
 
-/* ── Brand palette ──────────────────────────────────── */
-const RED = '#dc2626'
-const GOLD = '#f59e0b'
-const ORANGE = '#ea580c'
 
-/* ── Types ──────────────────────────────────────────── */
+// ─── Color tokens ────────────────────────────────────────
+const RED = '#C8102E'
+const ORANGE = '#F26522'
+const GOLD = '#D4A84B'
+
 interface EmpStats { total: number; active: number }
 interface AttStats { present: number; late: number; absent: number; overtime: number; undertime: number }
-interface DeptStat { name: string; total: number; rate: number }
-interface WeeklyDay { day: string; present: number; late: number; absent: number }
-interface ActivityRow {
-  id: number
+interface WeekDay { day: string; present: number; late: number; absent: number }
+interface DeptStat { name: string; total: number; present: number; rate: number }
+interface Activity {
+  id: number | string
   employee: string
   department: string
   branch: string
@@ -43,195 +36,155 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [empStats, setEmpStats] = useState<EmpStats>({ total: 0, active: 0 })
   const [attStats, setAttStats] = useState<AttStats>({ present: 0, late: 0, absent: 0, overtime: 0, undertime: 0 })
-  const [deptStats, setDeptStats] = useState<DeptStat[]>([])
-  const [weekly, setWeekly] = useState<WeeklyDay[]>([])
-  const [activity, setActivity] = useState<ActivityRow[]>([])
   const [rate, setRate] = useState(0)
+  const [weekly, setWeekly] = useState<WeekDay[]>([])
+  const [deptStats, setDeptStats] = useState<DeptStat[]>([])
+  const [activity, setActivity] = useState<Activity[]>([])
   const [updatedAt, setUpdatedAt] = useState('')
 
-  /* ── Data fetching (all our fixed logic intact) ───── */
   const load = useCallback(async () => {
     try {
       const token = localStorage.getItem('token')
-      if (!token) return
+      if (!token) { router.replace('/login'); return }
 
-      const today = new Date()
-      const todayStr = today.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
-
-      // Start of current week (Monday) in PHT
-      const phtDayOfWeek = new Date(todayStr + 'T00:00:00+08:00').getDay()
-      const mondayOffset = phtDayOfWeek === 0 ? 6 : phtDayOfWeek - 1
+      // ── Use PHT (Asia/Manila) for all date comparisons ───
+      const now = new Date()
+      const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }) // YYYY-MM-DD in PHT
+      const dow = new Date(todayStr + 'T00:00:00+08:00').getDay()
+      const monOff = dow === 0 ? 6 : dow - 1
       const monday = new Date(todayStr + 'T00:00:00+08:00')
-      monday.setDate(monday.getDate() - mondayOffset)
-      const mondayStr = monday.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+      monday.setDate(monday.getDate() - monOff)
+      const monStr = monday.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
 
-      const [empRes, attRes, deptRes] = await Promise.all([
-        fetch('/api/employees', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`/api/attendance?startDate=${mondayStr}&endDate=${todayStr}&limit=5000`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }),
-        fetch('/api/departments', { headers: { 'Authorization': `Bearer ${token}` } })
+      setUpdatedAt(now.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+
+      const [eRes, aRes, dRes] = await Promise.all([
+        fetch('/api/employees', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`/api/attendance?startDate=${monStr}&endDate=${todayStr}&limit=5000`,
+          { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/departments', { headers: { Authorization: `Bearer ${token}` } }),
       ])
+      if (eRes.status === 401) { localStorage.removeItem('token'); router.replace('/login'); return }
 
-      if (empRes.status === 401 || attRes.status === 401 || deptRes.status === 401) {
-        localStorage.removeItem('token')
-        window.location.href = '/login'
-        return
-      }
+      const ed = await eRes.json()
+      const ad = await aRes.json()
+      const dd = dRes.ok ? await dRes.json() : { success: false }
+      const emps: any[] = ed.success ? (ed.employees || ed.data || []) : []
+      const atts: any[] = ad.success ? (ad.data || []) : []
+      const apiDepts: string[] = dd.success ? (dd.departments || []).map((d: any) => d.name) : []
 
-      const empData = await empRes.json()
-      const attData = await attRes.json()
-      const deptData = deptRes.ok ? await deptRes.json() : { success: false, departments: [] }
+      setEmpStats({ total: emps.length, active: emps.filter((e: any) => e.employmentStatus === 'ACTIVE').length })
 
-      const employeesRaw = empData.success ? (empData.employees || empData.data || []) : []
-      const employees = employeesRaw.filter((e: any) => e.employmentStatus === 'ACTIVE' && e.role === 'USER')
-      const attendance = attData.success ? (attData.data || []) : []
-      const departments = deptData.success ? deptData.departments : []
-
-      // ── Employee stats ──
-      const totalEmp = employees.length
-      const activeEmp = employees.filter((e: any) => e.employmentStatus === 'ACTIVE').length
-      setEmpStats({ total: totalEmp, active: activeEmp })
-
-      // ── Today's attendance stats ──
-      const todayRecords = attendance.filter((r: any) => {
-        const recDate = new Date(r.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
-        return recDate === todayStr
+      // Filter today's records using PHT date string
+      const todayRecs = atts.filter((r: any) => {
+        const recDatePHT = new Date(r.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+        return recDatePHT === todayStr
       })
 
-      let presentCount = 0
-      let lateCount = 0
-      let totalOT = 0
-      let totalUT = 0
-      const requiredHours = 8
-
-      todayRecords.forEach((r: any) => {
-        const checkIn = r.checkInTime ? new Date(r.checkInTime) : null
-        const checkOut = r.checkOutTime ? new Date(r.checkOutTime) : null
-
-        let isLate = r.status === 'late'
-        if (!isLate && checkIn) {
-          const ciHourPHT = parseInt(checkIn.toLocaleString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', hour12: false }))
-          const ciMinPHT = parseInt(checkIn.toLocaleString('en-US', { timeZone: 'Asia/Manila', minute: 'numeric' }))
-          isLate = ciHourPHT > 8 || (ciHourPHT === 8 && ciMinPHT > 30)
-        }
-
-        if (isLate) lateCount++
-        else if (checkIn) presentCount++
-
-        if (checkIn && checkOut) {
-          const hours = (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60)
-          if (hours > requiredHours) totalOT += Math.round(hours - requiredHours)
-          else if (hours < requiredHours) totalUT += Math.round(requiredHours - hours)
+      let present = 0, late = 0, ot = 0, ut = 0
+      todayRecs.forEach((r: any) => {
+        const ci = r.checkInTime ? new Date(r.checkInTime) : null
+        const co = r.checkOutTime ? new Date(r.checkOutTime) : null
+        // Check lateness using PHT hours
+        const ciHourPHT = ci ? parseInt(ci.toLocaleString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', hour12: false })) : 0
+        const ciMinPHT = ci ? parseInt(ci.toLocaleString('en-US', { timeZone: 'Asia/Manila', minute: 'numeric' })) : 0
+        const isLate = r.status === 'late' || (ci && (ciHourPHT > 8 || (ciHourPHT === 8 && ciMinPHT > 0)))
+        if (isLate) late++; else if (ci) present++
+        if (ci && co) {
+          const h = (co.getTime() - ci.getTime()) / 3600000
+          h > 8 ? (ot += h - 8) : (ut += 8 - h)
         }
       })
+      const absent = Math.max(0, emps.length - present - late)
+      setAttStats({ present, late, absent, overtime: Math.round(ot), undertime: Math.round(ut) })
+      setRate(emps.length > 0 ? Math.round(((present + late) / emps.length) * 100) : 0)
 
-      const absentCount = Math.max(0, totalEmp - presentCount - lateCount)
-      setAttStats({ present: presentCount, late: lateCount, absent: absentCount, overtime: totalOT, undertime: totalUT })
-      setRate(totalEmp > 0 ? Math.round(((presentCount + lateCount) / totalEmp) * 100) : 0)
-
-      // ── Department breakdown ──
-      const deptMap = new Map<string, { count: number; present: number }>()
-      if (departments && departments.length > 0) {
-        departments.forEach((d: any) => { deptMap.set(d.name, { count: 0, present: 0 }) })
-      }
-
-      const getDeptName = (e: any) => e?.Department?.name || e?.department || null
-
-      employees.forEach((e: any) => {
-        const dept = getDeptName(e)
-        if (dept) {
-          if (!deptMap.has(dept)) deptMap.set(dept, { count: 0, present: 0 })
-          deptMap.get(dept)!.count++
-        }
-      })
-
-      todayRecords.forEach((r: any) => {
-        const emp = r.employee || employees.find((e: any) => e.id === r.employeeId)
-        const dept = getDeptName(emp)
-        if (dept && deptMap.has(dept)) deptMap.get(dept)!.present++
-      })
-
-      const deptArr: DeptStat[] = []
-      deptMap.forEach((val, dept) => {
-        deptArr.push({ name: dept, total: val.count, rate: val.count > 0 ? Math.round((val.present / val.count) * 100) : 0 })
-      })
-      setDeptStats(deptArr)
-
-      // ── Weekly trend ──
-      const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-      const weeklyData: WeeklyDay[] = []
+      // ── Weekly trend ──────────────────────────────────
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+      const trend: WeekDay[] = []
       for (let i = 0; i < 7; i++) {
-        const d = new Date(monday)
-        d.setDate(d.getDate() + i)
-        const dateStr = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
-        if (dateStr > todayStr) break
-
-        const dayRecords = attendance.filter((r: any) =>
-          new Date(r.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }) === dateStr
+        const d = new Date(monday); d.setDate(d.getDate() + i)
+        const ds = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+        if (ds > todayStr) break
+        const recs = atts.filter((r: any) =>
+          new Date(r.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }) === ds
         )
-
-        let dayPresent = 0, dayLate = 0
-        dayRecords.forEach((r: any) => {
+        let p = 0, l = 0
+        recs.forEach((r: any) => {
           const ci = r.checkInTime ? new Date(r.checkInTime) : null
-          let isLateDay = r.status === 'late'
-          if (!isLateDay && ci) {
-            const ciHour = parseInt(ci.toLocaleString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', hour12: false }))
-            const ciMin = parseInt(ci.toLocaleString('en-US', { timeZone: 'Asia/Manila', minute: 'numeric' }))
-            isLateDay = ciHour > 8 || (ciHour === 8 && ciMin > 30)
-          }
-          if (isLateDay) dayLate++
-          else if (ci) dayPresent++
+          const ciH = ci ? parseInt(ci.toLocaleString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', hour12: false })) : 0
+          const ciM = ci ? parseInt(ci.toLocaleString('en-US', { timeZone: 'Asia/Manila', minute: 'numeric' })) : 0
+            ; (r.status === 'late' || (ci && (ciH > 8 || (ciH === 8 && ciM > 0)))) ? l++ : ci ? p++ : void 0
         })
-
-        weeklyData.push({ day: dayNames[i], present: dayPresent, late: dayLate, absent: Math.max(0, totalEmp - dayPresent - dayLate) })
+        trend.push({ day: days[i], present: p, late: l, absent: Math.max(0, emps.length - p - l) })
       }
-      setWeekly(weeklyData)
+      setWeekly(trend)
 
-      // ── Recent activity (USER employees only, Today only) ──
-      const recent: ActivityRow[] = [...todayRecords]
-        .filter((r: any) => {
-          const emp = r.employee || employees.find((e: any) => e.id === r.employeeId) || {}
-          return emp.role === 'USER' || !emp.role
-        })
+      // ── Department breakdown ──────────────────────────
+      const dmap = new Map<string, { total: number; present: number }>()
+      // Pre-seed from API departments, then fallback to static list
+      const deptSeed = apiDepts.length > 0 ? apiDepts : DEPARTMENTS
+      deptSeed.forEach(d => dmap.set(d, { total: 0, present: 0 }))
+
+      // Helper: get department name from employee, checking both string field and relation
+      const getDept = (e: any): string | null =>
+        e?.department || e?.Department?.name || null
+
+      emps.forEach((e: any) => {
+        const dept = getDept(e)
+        if (!dept) return
+        if (!dmap.has(dept)) dmap.set(dept, { total: 0, present: 0 })
+        dmap.get(dept)!.total++
+      })
+      todayRecs.forEach((r: any) => {
+        const e = r.employee || emps.find((x: any) => x.id === r.employeeId)
+        const dept = getDept(e)
+        if (dept && dmap.has(dept)) dmap.get(dept)!.present++
+      })
+      const dArr: DeptStat[] = []
+      dmap.forEach((v, name) => {
+        dArr.push({ name, total: v.total, present: v.present, rate: v.total > 0 ? Math.round((v.present / v.total) * 100) : 0 })
+      })
+      dArr.sort((a, b) => b.total - a.total)
+      setDeptStats(dArr)
+
+      // ── Today's Activity ──────────────────────────────
+      const sorted = [...todayRecs]
+        .filter((r: any) => r.checkInTime || r.checkOutTime)
         .sort((a: any, b: any) => {
-          const timeA = a.checkOutTime ? new Date(a.checkOutTime).getTime() : new Date(a.checkInTime).getTime()
-          const timeB = b.checkOutTime ? new Date(b.checkOutTime).getTime() : new Date(b.checkInTime).getTime()
-          return timeB - timeA
+          const ta = new Date(b.checkOutTime || b.checkInTime).getTime()
+          const tb = new Date(a.checkOutTime || a.checkInTime).getTime()
+          return ta - tb
         })
-        .slice(0, 8)
-        .map((r: any, idx: number) => {
-          const emp = r.employee || employees.find((e: any) => e.id === r.employeeId) || {}
-          const checkIn = r.checkInTime ? new Date(r.checkInTime) : null
-          const checkOut = r.checkOutTime ? new Date(r.checkOutTime) : null
-          let isLate = false
-          if (checkIn) {
-            const ciH = parseInt(checkIn.toLocaleString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', hour12: false }))
-            const ciM = parseInt(checkIn.toLocaleString('en-US', { timeZone: 'Asia/Manila', minute: 'numeric' }))
-            isLate = ciH > 8 || (ciH === 8 && ciM > 30)
-          }
-          const displayTime = checkOut || checkIn
-          return {
-            id: r.id || idx,
-            employee: `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || `Employee #${r.employeeId}`,
-            department: emp.Department?.name || emp.department || 'General',
-            branch: emp.branch || 'Main Office',
-            action: r.checkOutTime ? 'Out' : 'In',
-            time: displayTime ? displayTime.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '---',
-            status: isLate ? 'late' as const : 'on-time' as const,
-          }
-        })
-      setActivity(recent)
+        .slice(0, 5)
 
-      // Update timestamp
-      setUpdatedAt(new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }))
+      setActivity(sorted.map((r: any, i: number) => {
+        const e = r.employee || emps.find((x: any) => x.id === r.employeeId) || {}
+        const name = `${e.firstName || ''} ${e.lastName || ''}`.trim() || `Employee #${r.employeeId}`
+        const isOut = !!r.checkOutTime
+        const ts = new Date(isOut ? r.checkOutTime : r.checkInTime)
+        const ci = r.checkInTime ? new Date(r.checkInTime) : null
+        const ciHourPHT = ci ? parseInt(ci.toLocaleString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', hour12: false })) : 0
+        const ciMinPHT = ci ? parseInt(ci.toLocaleString('en-US', { timeZone: 'Asia/Manila', minute: 'numeric' })) : 0
+        const isLate = r.status === 'late' || (ci && (ciHourPHT > 8 || (ciHourPHT === 8 && ciMinPHT > 0)))
+        return {
+          id: r.id || i,
+          employee: name,
+          department: getDept(e) || '—',
+          branch: e.branch || '—',
+          action: isOut ? 'Out' : 'In',
+          // Display time in PHT
+          time: ts.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          status: isLate ? 'late' as const : 'on-time' as const,
+        }
+      }))
 
     } catch (err) {
       console.error(err)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [router])
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -243,7 +196,6 @@ export default function Dashboard() {
     return () => clearInterval(t)
   }, [load, router])
 
-  /* ── Loading state ──────────────────────────────────── */
   if (loading) return (
     <div className="flex items-center justify-center min-h-[60vh]">
       <div className="flex flex-col items-center gap-3">
@@ -254,15 +206,13 @@ export default function Dashboard() {
     </div>
   )
 
-  /* ── Stat card data ─────────────────────────────────── */
   const statCards = [
     { label: 'Total Employees', value: empStats.total, sub: `${empStats.active} active`, icon: Users, color: '#6366f1', bg: '#6366f115' },
-    { label: 'On Time', value: attStats.present, sub: `${rate}% rate`, icon: Clock, color: '#22c55e', bg: '#22c55e15' },
+    { label: 'On time', value: attStats.present, sub: `${rate}% rate`, icon: Clock, color: '#22c55e', bg: '#22c55e15' },
     { label: 'Late', value: attStats.late, sub: `+${attStats.overtime}h overtime`, icon: TrendingUp, color: GOLD, bg: `${GOLD}20` },
     { label: 'Absent', value: attStats.absent, sub: `${attStats.undertime}h undertime`, icon: AlertCircle, color: RED, bg: `${RED}15` },
   ]
 
-  /* ── JSX ────────────────────────────────────────────── */
   return (
     <div className="space-y-5">
 
@@ -274,11 +224,7 @@ export default function Dashboard() {
             Welcome to BITS Admin Panel — here&apos;s today&apos;s overview
           </p>
         </div>
-        <Button
-          style={{ backgroundColor: RED }}
-          className="gap-2 text-white hover:opacity-90"
-          onClick={() => router.push('/admin/reports')}
-        >
+        <Button style={{ backgroundColor: RED }} className="gap-2 text-white hover:opacity-90">
           <FileText className="w-4 h-4" />
           Generate Report
         </Button>
@@ -331,20 +277,27 @@ export default function Dashboard() {
         </Card>
 
         {/* Departments Breakdown */}
-        <Card className="bg-card border-border p-5">
-          <div className="flex items-center justify-between mb-4">
+        <Card className="bg-card border-border p-5 flex flex-col">
+          <div className="flex items-center justify-between mb-3 shrink-0">
             <h3 className="text-base font-semibold text-foreground">Departments</h3>
             <Building2 className="w-4 h-4 text-muted-foreground" />
           </div>
-          <div className="space-y-4 overflow-y-auto" style={{ maxHeight: 280 }}>
+          <div
+            className="flex-1 space-y-3 overflow-y-auto pr-1"
+            style={{
+              maxHeight: 290,
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#d1d5db transparent',
+            }}
+          >
             {deptStats.length > 0 ? deptStats.map((dept, i) => {
               const cols = [RED, ORANGE, GOLD, '#6366f1', '#22c55e']
               const col = cols[i % cols.length]
               return (
                 <div key={dept.name}>
                   <div className="flex items-center justify-between mb-1">
-                    <p className="text-sm font-medium text-foreground">{dept.name}</p>
-                    <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-foreground truncate mr-2">{dept.name}</p>
+                    <div className="flex items-center gap-2 shrink-0">
                       <span className="text-xs text-muted-foreground">{dept.total} emp</span>
                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
                         style={{ backgroundColor: `${col}15`, color: col }}>
@@ -352,9 +305,9 @@ export default function Dashboard() {
                       </span>
                     </div>
                   </div>
-                  <div className="h-2 rounded-full bg-gray-100">
+                  <div className="h-1.5 rounded-full bg-gray-100">
                     <div
-                      className="h-2 rounded-full transition-all duration-500"
+                      className="h-1.5 rounded-full transition-all duration-500"
                       style={{ width: `${dept.rate}%`, backgroundColor: col }}
                     />
                   </div>
@@ -379,11 +332,8 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-muted-foreground">Updated {updatedAt}</span>
-            <button
-              className="flex items-center gap-1 text-xs font-medium hover:opacity-80 transition-opacity"
-              style={{ color: RED }}
-              onClick={() => router.push('/attendance')}
-            >
+            <button className="flex items-center gap-1 text-xs font-medium hover:opacity-80 transition-opacity"
+              style={{ color: RED }}>
               View All <ArrowRight className="w-3 h-3" />
             </button>
           </div>
@@ -433,10 +383,10 @@ export default function Dashboard() {
                         style={{
                           backgroundColor: row.status === 'late' ? `${RED}15` :
                             row.status === 'absent' ? '#6b728015' :
-                              '#22c55e15',
+                              `${GOLD}20`,
                           color: row.status === 'late' ? RED :
                             row.status === 'absent' ? '#6b7280' :
-                              '#22c55e',
+                              GOLD,
                         }}>
                         {row.status === 'on-time' ? 'On Time' : row.status === 'late' ? 'Late' : 'Absent'}
                       </span>
