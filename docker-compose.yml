@@ -30,7 +30,7 @@ services:
       DB_USER: root
       DB_PASSWORD: root
       JWT_SECRET: your-secret-key-change-this-in-production
-      ZK_HOST: 10.10.1.217
+      ZK_HOST: 10.10.0.201
       ZK_PORT: 4370
       # volumes:
       # - ./backend:/app
