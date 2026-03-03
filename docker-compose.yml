@@ -30,7 +30,7 @@ services:
       DB_USER: root
       DB_PASSWORD: root
       JWT_SECRET: your-secret-key-change-this-in-production
-    volumes:
+      # volumes:
       # - ./backend:/app
       # - /app/node_modules
       # - /app/dist
@@ -52,7 +52,7 @@ services:
       NEXT_PUBLIC_API_URL: http://127.0.0.1:3001/api
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
-    volumes:
+      # volumes:
       # - ./frontend:/app
       # - /app/node_modules
       # - /app/.next
