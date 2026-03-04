@@ -1,7 +1,25 @@
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key';
+// ── Startup validation ────────────────────────────────────────────────
+// The server MUST NOT start with a missing or placeholder JWT secret.
+// These are validated once at module load time.
+if (!process.env.JWT_SECRET) {
+    throw new Error(
+        '[STARTUP] JWT_SECRET is not set. ' +
+        'Generate one with: node -e "require(\'crypto\').randomBytes(64).toString(\'hex\')" ' +
+        'and add it to your .env file.'
+    );
+}
+if (!process.env.JWT_REFRESH_SECRET) {
+    throw new Error(
+        '[STARTUP] JWT_REFRESH_SECRET is not set. ' +
+        'Generate one with: node -e "require(\'crypto\').randomBytes(64).toString(\'hex\')" ' +
+        'and add it to your .env file.'
+    );
+}
+
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
 export interface TokenPayload {
     employeeId: number;

@@ -1,15 +1,26 @@
 import type { NextConfig } from "next";
 
+// BACKEND_URL:
+//   LOCAL  → set in frontend/.env.local  (e.g. http://localhost:3001)
+//   DOCKER → set in docker-compose.yml   (e.g. http://backend:3001)
+const backendUrl = process.env.BACKEND_URL;
+if (!backendUrl) {
+  throw new Error(
+    "[next.config] BACKEND_URL is not set.\n" +
+    "  LOCAL:  Add BACKEND_URL=http://localhost:3001 to frontend/.env.local\n" +
+    "  DOCKER: It is already set in docker-compose.yml"
+  );
+}
+
 const nextConfig: NextConfig = {
-  // Empty turbopack config to silence the error and use default behavior
   turbopack: {},
   async rewrites() {
     return [
       {
         // Forward all /api/* requests to the backend,
-        // EXCEPT /api/auth/login which is handled by our Next.js server-side route
+        // EXCEPT routes handled by Next.js server-side route handlers.
         source: '/api/:path*',
-        destination: 'http://backend:3001/api/:path*',
+        destination: `${backendUrl}/api/:path*`,
         missing: [
           {
             type: 'header',
@@ -22,4 +33,3 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
-

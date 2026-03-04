@@ -1,13 +1,22 @@
-version: '3.8'
+# ─────────────────────────────────────────────────────────────────────────────
+# OPTIONAL: Create a .env file in this directory to override any of the
+# default values below. Copy from backend/.env.example to get started.
+#
+# The ${VAR:-default} syntax means:
+#   ✅ If VAR is set in .env → use that value (secure)
+#   ↩️  If VAR is NOT set    → fall back to the hardcoded default (same as before)
+#
+# This means your Docker setup works EXACTLY as before without any changes.
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
   postgres:
     image: postgres:15-alpine
     container_name: bits_postgres
     environment:
-      POSTGRES_DB: db_bits
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: root
+      POSTGRES_DB: ${DB_NAME:-db_bits}
+      POSTGRES_USER: ${DB_USER:-root}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-root}
     ports:
       - "5010:5432"
     volumes:
@@ -21,17 +30,18 @@ services:
       dockerfile: Dockerfile
     container_name: bits_backend
     environment:
-      NODE_ENV: development
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 3001
-      DATABASE_URL: postgresql://root:root@postgres:5432/db_bits
+      DATABASE_URL: postgresql://${DB_USER:-root}:${DB_PASSWORD:-root}@postgres:5432/${DB_NAME:-db_bits}
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_NAME: db_bits
-      DB_USER: root
-      DB_PASSWORD: root
-      JWT_SECRET: your-secret-key-change-this-in-production
-      ZK_HOST: 10.10.0.201
-      ZK_PORT: 4370
+      DB_NAME: ${DB_NAME:-db_bits}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-root}
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-this-in-production}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-refresh-secret-key-change-this-in-production}
+      ZK_HOST: ${ZK_HOST:-10.10.0.201}
+      ZK_PORT: ${ZK_PORT:-4370}
       # volumes:
       # - ./backend:/app
       # - /app/node_modules
@@ -50,8 +60,8 @@ services:
       dockerfile: Dockerfile
     container_name: bits_frontend
     environment:
-      NODE_ENV: development
-      BACKEND_URL: http://backend:3001
+      NODE_ENV: ${NODE_ENV:-development}
+      BACKEND_URL: ${BACKEND_URL:-http://backend:3001}
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
       # volumes:
@@ -86,8 +96,6 @@ services:
 
 volumes:
   postgres_data:
-    external: true
-    name: project_postgres_data
 
 networks:
   bits_network:

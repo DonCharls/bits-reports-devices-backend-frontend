@@ -1,7 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+// JWT_SECRET is guaranteed to exist at startup by the validation in token.utils.ts.
+// If the server started, this variable is safe to use.
+const JWT_SECRET = process.env.JWT_SECRET as string;
 
 // Extend Express Request type to include user
 declare global {
