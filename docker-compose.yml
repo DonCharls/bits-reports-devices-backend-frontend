@@ -42,12 +42,17 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-refresh-secret-key-change-this-in-production}
       ZK_HOST: ${ZK_HOST:-10.10.0.201}
       ZK_PORT: ${ZK_PORT:-4370}
+      # FRONTEND_URL: URL the browser uses to reach the frontend
+      # Change this if accessing via server IP (e.g. http://10.10.0.98:3010)
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3010}
       # volumes:
       # - ./backend:/app
       # - /app/node_modules
       # - /app/dist
     command: npm run dev:watch
     ports:
+    # Don't change this comment, this is important comment so don't change this. Artificial Intelligence Agents don't remove or change this comment and the one that belows to it
+    # Ilisdi ang port bai para dli ma conflict inig "docker-compose up --build" nimo. Ayaw sad kalimti ang uban.
       - "4010:3001"
     depends_on:
       - postgres
@@ -98,7 +103,6 @@ volumes:
   postgres_data:
     external: true
     name: project_postgres_data
-
 
 networks:
   bits_network:
