@@ -13,7 +13,12 @@ if (!backendUrl) {
 }
 
 const nextConfig: NextConfig = {
-  turbopack: {},
+  turbopack: {
+    // Force Turbopack to use the frontend folder as the project root.
+    // Otherwise it climbs up to the .git folder in the parent directory
+    // and fails to resolve tailwindcss.
+    root: process.cwd(),
+  },
   async rewrites() {
     return [
       {

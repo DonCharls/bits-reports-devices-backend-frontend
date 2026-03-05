@@ -13,15 +13,15 @@ import { DEPARTMENTS } from '@/types/departments'
 import { BRANCHES } from '@/types/branches'
 
 // ─── Color tokens ────────────────────────────────────────
-const RED    = '#C8102E'
+const RED = '#C8102E'
 const ORANGE = '#F26522'
-const GOLD   = '#D4A84B'
+const GOLD = '#D4A84B'
 
-interface EmpStats   { total: number; active: number }
-interface AttStats   { present: number; late: number; absent: number; overtime: number; undertime: number }
-interface WeekDay    { day: string; present: number; late: number; absent: number }
-interface DeptStat   { name: string; total: number; present: number; rate: number }
-interface Activity   {
+interface EmpStats { total: number; active: number }
+interface AttStats { present: number; late: number; absent: number; overtime: number; undertime: number }
+interface WeekDay { day: string; present: number; late: number; absent: number }
+interface DeptStat { name: string; total: number; present: number; rate: number }
+interface Activity {
   id: number | string
   employee: string
   department: string
@@ -33,37 +33,33 @@ interface Activity   {
 
 export default function Dashboard() {
   const router = useRouter()
-  const [loading, setLoading]           = useState(true)
-  const [empStats, setEmpStats]         = useState<EmpStats>({ total: 0, active: 0 })
-  const [attStats, setAttStats]         = useState<AttStats>({ present: 0, late: 0, absent: 0, overtime: 0, undertime: 0 })
-  const [rate, setRate]                 = useState(0)
-  const [weekly, setWeekly]             = useState<WeekDay[]>([])
-  const [deptStats, setDeptStats]       = useState<DeptStat[]>([])
-  const [activity, setActivity]         = useState<Activity[]>([])
-  const [updatedAt, setUpdatedAt]       = useState('')
+  const [loading, setLoading] = useState(true)
+  const [empStats, setEmpStats] = useState<EmpStats>({ total: 0, active: 0 })
+  const [attStats, setAttStats] = useState<AttStats>({ present: 0, late: 0, absent: 0, overtime: 0, undertime: 0 })
+  const [rate, setRate] = useState(0)
+  const [weekly, setWeekly] = useState<WeekDay[]>([])
+  const [deptStats, setDeptStats] = useState<DeptStat[]>([])
+  const [activity, setActivity] = useState<Activity[]>([])
+  const [updatedAt, setUpdatedAt] = useState('')
 
   const load = useCallback(async () => {
     try {
-      const token = localStorage.getItem('token')
-      if (!token) { router.replace('/login'); return }
-
-      const today    = new Date()
-      const offset   = today.getTimezoneOffset()
-      const local    = new Date(today.getTime() - offset * 60000)
+      const today = new Date()
+      const offset = today.getTimezoneOffset()
+      const local = new Date(today.getTime() - offset * 60000)
       const todayStr = local.toISOString().split('T')[0]
-      const dow      = local.getDay()
-      const monOff   = dow === 0 ? 6 : dow - 1
-      const monday   = new Date(local); monday.setDate(monday.getDate() - monOff)
-      const monStr   = monday.toISOString().split('T')[0]
+      const dow = local.getDay()
+      const monOff = dow === 0 ? 6 : dow - 1
+      const monday = new Date(local); monday.setDate(monday.getDate() - monOff)
+      const monStr = monday.toISOString().split('T')[0]
 
       setUpdatedAt(local.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
 
       const [eRes, aRes] = await Promise.all([
-        fetch('/api/employees',   { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`/api/attendance?startDate=${monStr}&endDate=${todayStr}&limit=5000`,
-              { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/employees'),
+        fetch(`/api/attendance?startDate=${monStr}&endDate=${todayStr}&limit=5000`),
       ])
-      if (eRes.status === 401) { localStorage.removeItem('token'); router.replace('/login'); return }
+      if (eRes.status === 401) { router.replace('/login'); return }
 
       const ed = await eRes.json()
       const ad = await aRes.json()
@@ -76,7 +72,7 @@ export default function Dashboard() {
 
       let present = 0, late = 0, ot = 0, ut = 0
       todayRecs.forEach((r: any) => {
-        const ci = r.checkInTime  ? new Date(r.checkInTime)  : null
+        const ci = r.checkInTime ? new Date(r.checkInTime) : null
         const co = r.checkOutTime ? new Date(r.checkOutTime) : null
         const isLate = r.status === 'late' || (ci && (ci.getHours() > 8 || (ci.getHours() === 8 && ci.getMinutes() > 0)))
         if (isLate) late++; else if (ci) present++
@@ -90,7 +86,7 @@ export default function Dashboard() {
       setRate(emps.length > 0 ? Math.round(((present + late) / emps.length) * 100) : 0)
 
       // ── Weekly trend ──────────────────────────────────
-      const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
       const trend: WeekDay[] = []
       for (let i = 0; i < 7; i++) {
         const d = new Date(monday); d.setDate(d.getDate() + i)
@@ -100,7 +96,7 @@ export default function Dashboard() {
         let p = 0, l = 0
         recs.forEach((r: any) => {
           const ci = r.checkInTime ? new Date(r.checkInTime) : null
-          ;(r.status === 'late' || (ci && (ci.getHours() > 8 || (ci.getHours() === 8 && ci.getMinutes() > 0)))) ? l++ : ci ? p++ : void 0
+            ; (r.status === 'late' || (ci && (ci.getHours() > 8 || (ci.getHours() === 8 && ci.getMinutes() > 0)))) ? l++ : ci ? p++ : void 0
         })
         trend.push({ day: days[i], present: p, late: l, absent: Math.max(0, emps.length - p - l) })
       }
@@ -132,11 +128,11 @@ export default function Dashboard() {
         .slice(0, 5)
 
       setActivity(sorted.map((r: any, i: number) => {
-        const e    = r.employee || emps.find((x: any) => x.id === r.employeeId) || {}
+        const e = r.employee || emps.find((x: any) => x.id === r.employeeId) || {}
         const name = `${e.firstName || ''} ${e.lastName || ''}`.trim() || `Employee #${r.employeeId}`
         const isOut = !!r.checkOutTime
-        const ts    = new Date(isOut ? r.checkOutTime : r.checkInTime)
-        const ci    = r.checkInTime ? new Date(r.checkInTime) : null
+        const ts = new Date(isOut ? r.checkOutTime : r.checkInTime)
+        const ci = r.checkInTime ? new Date(r.checkInTime) : null
         const isLate = r.status === 'late' || (ci && (ci.getHours() > 8 || (ci.getHours() === 8 && ci.getMinutes() > 0)))
         return {
           id: r.id || i,
@@ -157,9 +153,8 @@ export default function Dashboard() {
   }, [router])
 
   useEffect(() => {
-    const token    = localStorage.getItem('token')
     const employee = localStorage.getItem('employee')
-    if (!token || !employee) { router.replace('/login'); return }
+    if (!employee) { router.replace('/login'); return }
     load()
     // auto-refresh every 30s
     const t = setInterval(load, 30000)
@@ -177,10 +172,10 @@ export default function Dashboard() {
   )
 
   const statCards = [
-    { label: 'Total Employees', value: empStats.total,  sub: `${empStats.active} active`,     icon: Users,        color: '#6366f1', bg: '#6366f115' },
-    { label: 'On time',   value: attStats.present, sub: `${rate}% rate`,                icon: Clock,        color: '#22c55e', bg: '#22c55e15' },
-    { label: 'Late',            value: attStats.late,   sub: `+${attStats.overtime}h overtime`,icon: TrendingUp,   color: GOLD,      bg: `${GOLD}20`  },
-    { label: 'Absent',          value: attStats.absent, sub: `${attStats.undertime}h undertime`,icon: AlertCircle, color: RED,       bg: `${RED}15`   },
+    { label: 'Total Employees', value: empStats.total, sub: `${empStats.active} active`, icon: Users, color: '#6366f1', bg: '#6366f115' },
+    { label: 'On time', value: attStats.present, sub: `${rate}% rate`, icon: Clock, color: '#22c55e', bg: '#22c55e15' },
+    { label: 'Late', value: attStats.late, sub: `+${attStats.overtime}h overtime`, icon: TrendingUp, color: GOLD, bg: `${GOLD}20` },
+    { label: 'Absent', value: attStats.absent, sub: `${attStats.undertime}h undertime`, icon: AlertCircle, color: RED, bg: `${RED}15` },
   ]
 
   return (
@@ -240,8 +235,8 @@ export default function Dashboard() {
                 labelStyle={{ color: '#374151', fontWeight: 600 }}
               />
               <Bar dataKey="present" name="Present" fill="#22c55e" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="late"    name="Late"    fill={GOLD}      radius={[4, 4, 0, 0]} />
-              <Bar dataKey="absent"  name="Absent"  fill={RED}       radius={[4, 4, 0, 0]} />
+              <Bar dataKey="late" name="Late" fill={GOLD} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="absent" name="Absent" fill={RED} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Card>
@@ -255,7 +250,7 @@ export default function Dashboard() {
           <div className="space-y-4 overflow-y-auto" style={{ maxHeight: 280 }}>
             {deptStats.length > 0 ? deptStats.map((dept, i) => {
               const cols = [RED, ORANGE, GOLD, '#6366f1', '#22c55e']
-              const col  = cols[i % cols.length]
+              const col = cols[i % cols.length]
               return (
                 <div key={dept.name}>
                   <div className="flex items-center justify-between mb-1">
@@ -345,12 +340,12 @@ export default function Dashboard() {
                     <td className="py-3 px-3">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
                         style={{
-                          backgroundColor: row.status === 'late'    ? `${RED}15`      :
-                                           row.status === 'absent'  ? '#6b728015'     :
-                                           `${GOLD}20`,
-                          color:           row.status === 'late'    ? RED             :
-                                           row.status === 'absent'  ? '#6b7280'       :
-                                           GOLD,
+                          backgroundColor: row.status === 'late' ? `${RED}15` :
+                            row.status === 'absent' ? '#6b728015' :
+                              `${GOLD}20`,
+                          color: row.status === 'late' ? RED :
+                            row.status === 'absent' ? '#6b7280' :
+                              GOLD,
                         }}>
                         {row.status === 'on-time' ? 'On Time' : row.status === 'late' ? 'Late' : 'Absent'}
                       </span>

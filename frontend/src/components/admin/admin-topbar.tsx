@@ -43,12 +43,14 @@ export function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleLogout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('refreshToken')
+  const handleLogout = async () => {
+    // Clear the HttpOnly cookie via the server-side route handler
+    await fetch('/api/auth/logout', { method: 'POST' })
+    // Clear non-sensitive cached user data from localStorage
     localStorage.removeItem('employee')
     router.push('/login')
   }
+
 
   return (
     <header className="h-16 bg-gray-50 border-b border-gray-200 flex items-center justify-between px-4 md:px-8 fixed top-0 left-0 right-0 z-70">

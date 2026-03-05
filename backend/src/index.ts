@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
@@ -29,6 +30,7 @@ const allowedOrigin = process.env.FRONTEND_URL || 'http://localhost:3010';
 
 // ── Security middleware (must come before routes) ──────────────────────────────
 app.use(helmet());        // Sets secure HTTP headers on every response
+app.use(cookieParser());  // Parses incoming cookies so req.cookies.auth_token is available
 app.use(cors({
   origin: allowedOrigin,
   credentials: true,    // Required if we add HttpOnly cookie auth (Phase 4)

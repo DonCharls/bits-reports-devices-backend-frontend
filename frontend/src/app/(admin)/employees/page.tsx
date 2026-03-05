@@ -67,10 +67,7 @@ export default function EmployeesPage() {
 
   const fetchBranches = async () => {
     try {
-      const token = localStorage.getItem('token')
-      const res = await fetch('/api/branches', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
+      const res = await fetch('/api/branches')
       const data = await res.json()
       if (data.success) setBranches(data.branches)
     } catch (error) {
@@ -81,12 +78,8 @@ export default function EmployeesPage() {
   const fetchEmployees = async () => {
     setLoading(true)
     try {
-      const token = localStorage.getItem('token')
-      const res = await fetch('/api/employees', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
+      const res = await fetch('/api/employees')
       if (res.status === 401) {
-        localStorage.removeItem('token')
         window.location.href = '/login'
         return
       }
@@ -125,13 +118,9 @@ export default function EmployeesPage() {
   const handleAddEmployee = async () => {
     if (newEmployee.firstName && newEmployee.lastName && newEmployee.department && newEmployee.branch) {
       try {
-        const token = localStorage.getItem('token')
         const res = await fetch('/api/employees', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             firstName: newEmployee.firstName,
             lastName: newEmployee.lastName,
@@ -161,10 +150,8 @@ export default function EmployeesPage() {
     if (!confirmDeactivate) return
     setIsDeactivating(true)
     try {
-      const token = localStorage.getItem('token')
       const res = await fetch(`/api/employees/${confirmDeactivate.id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
       })
       const data = await res.json()
       if (data.success) {
@@ -189,13 +176,9 @@ export default function EmployeesPage() {
   const handleUpdateEmployee = async () => {
     if (!editingEmployee || !editForm) return
     try {
-      const token = localStorage.getItem('token')
       const res = await fetch(`/api/employees/${editingEmployee.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editForm)
       })
       const data = await res.json()
@@ -531,7 +514,7 @@ export default function EmployeesPage() {
                 <button
                   className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
                   onClick={() => {
-                  setNewEmployee({ firstName: '', lastName: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '' })
+                    setNewEmployee({ firstName: '', lastName: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '' })
                     setIsAddOpen(false)
                   }}
                 >
@@ -669,11 +652,10 @@ export default function EmployeesPage() {
               <button
                 key={page}
                 onClick={() => setCurrentPage(page)}
-                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${
-                  currentPage === page
+                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${currentPage === page
                     ? 'bg-red-600 text-white'
                     : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
-                }`}
+                  }`}
               >
                 {page}
               </button>

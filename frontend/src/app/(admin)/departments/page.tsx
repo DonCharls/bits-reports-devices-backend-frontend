@@ -53,21 +53,15 @@ export default function DepartmentsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const token = localStorage.getItem('token')
-
         // Fetch branches
-        const branchRes = await fetch('/api/branches', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
+        const branchRes = await fetch('/api/branches')
         const branchData = await branchRes.json()
         if (branchData.success) {
           setBranches(branchData.branches)
         }
 
         // Fetch employees
-        const empRes = await fetch('/api/employees', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
+        const empRes = await fetch('/api/employees')
         const empData = await empRes.json()
         if (empData.success) {
           const activeEmps = empData.employees.filter((e: any) => e.employmentStatus === 'ACTIVE')
@@ -274,22 +268,20 @@ export default function DepartmentsPage() {
                 <div className="flex gap-2 mt-1.5">
                   <button
                     onClick={() => setAddType('department')}
-                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all border ${
-                      addType === 'department'
+                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all border ${addType === 'department'
                         ? 'bg-red-50 border-red-200 text-red-600'
                         : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-600'
-                    }`}
+                      }`}
                   >
                     <Building2 className="w-4 h-4" />
                     Department
                   </button>
                   <button
                     onClick={() => setAddType('branch')}
-                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all border ${
-                      addType === 'branch'
+                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all border ${addType === 'branch'
                         ? 'bg-red-50 border-red-200 text-red-600'
                         : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-600'
-                    }`}
+                      }`}
                   >
                     <MapPin className="w-4 h-4" />
                     Branch
@@ -417,22 +409,20 @@ export default function DepartmentsPage() {
           <div className="flex items-center bg-slate-100 rounded-xl p-1">
             <button
               onClick={() => setViewMode('grid')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
-                viewMode === 'grid'
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'grid'
                   ? 'bg-white text-slate-700 shadow-sm'
                   : 'text-slate-400 hover:text-slate-600'
-              }`}
+                }`}
             >
               <LayoutGrid className="w-3.5 h-3.5" />
               Grid
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
-                viewMode === 'list'
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'list'
                   ? 'bg-white text-slate-700 shadow-sm'
                   : 'text-slate-400 hover:text-slate-600'
-              }`}
+                }`}
             >
               <List className="w-3.5 h-3.5" />
               List

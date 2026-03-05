@@ -10,7 +10,7 @@ export default function TopBar({ setIsMobileOpen }: { setIsMobileOpen: (val: boo
   const [time, setTime] = useState(new Date());
   const [mounted, setMounted] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [isDeviceOnline, setIsDeviceOnline] = useState(true); 
+  const [isDeviceOnline, setIsDeviceOnline] = useState(true);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [userName, setUserName] = useState('');
 
@@ -41,9 +41,10 @@ export default function TopBar({ setIsMobileOpen }: { setIsMobileOpen: (val: boo
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
+  const handleLogout = async () => {
+    // Clear the HttpOnly cookie via the server-side route handler
+    await fetch('/api/auth/logout', { method: 'POST' });
+    // Clear non-sensitive cached user data from localStorage
     localStorage.removeItem('employee');
     router.push('/login');
   };
@@ -55,7 +56,7 @@ export default function TopBar({ setIsMobileOpen }: { setIsMobileOpen: (val: boo
           <Menu size={24} />
         </button>
         <div className="flex items-center gap-3">
-          
+
           <div className="relative h-11 w-11 overflow-hidden rounded-xl border border-red-700 bg-[#FE0908]">
             <Image src="/images/av.jpg" alt="Logo" fill className="object-contain" priority quality={100} />
           </div>
@@ -64,13 +65,12 @@ export default function TopBar({ setIsMobileOpen }: { setIsMobileOpen: (val: boo
       </div>
 
       <div className="flex items-center gap-3 md:gap-6">
-        <button 
+        <button
           onClick={() => setIsDeviceOnline(!isDeviceOnline)}
-          className={`hidden md:flex items-center gap-3 px-3 py-1.5 border rounded-full transition-all duration-300 ${
-            isDeviceOnline 
-            ? 'bg-emerald-50 border-emerald-100 text-emerald-700 hover:bg-emerald-100' 
-            : 'bg-rose-50 border-rose-100 text-rose-700 hover:bg-rose-100'
-          }`}
+          className={`hidden md:flex items-center gap-3 px-3 py-1.5 border rounded-full transition-all duration-300 ${isDeviceOnline
+              ? 'bg-emerald-50 border-emerald-100 text-emerald-700 hover:bg-emerald-100'
+              : 'bg-rose-50 border-rose-100 text-rose-700 hover:bg-rose-100'
+            }`}
         >
           <div className="relative flex h-2 w-2">
             <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isDeviceOnline ? 'bg-emerald-400' : 'bg-rose-400'}`}></span>

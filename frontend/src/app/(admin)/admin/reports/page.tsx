@@ -77,16 +77,12 @@ export default function ReportsPage() {
   const fetchReportData = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const headers = { 'Authorization': `Bearer ${token}` };
-
       const [empRes, attRes] = await Promise.all([
-        fetch('/api/employees', { headers }),
-        fetch(`/api/attendance?startDate=${startDate}&endDate=${endDate}&limit=10000`, { headers })
+        fetch('/api/employees'),
+        fetch(`/api/attendance?startDate=${startDate}&endDate=${endDate}&limit=10000`)
       ]);
 
       if (empRes.status === 401 || attRes.status === 401) {
-        localStorage.removeItem('token');
         window.location.href = '/login';
         return;
       }
@@ -394,11 +390,10 @@ export default function ReportsPage() {
                             </span>
                           </td>
                           <td className="px-5 py-3.5">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
-                              isLate
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${isLate
                                 ? 'bg-yellow-50 text-yellow-600 border border-yellow-200'
                                 : 'bg-green-50 text-green-600 border border-green-200'
-                            }`}>
+                              }`}>
                               {isLate ? 'Late' : 'On Time'}
                             </span>
                           </td>
@@ -599,11 +594,10 @@ export default function ReportsPage() {
               <button
                 key={page}
                 onClick={() => setCurrentPage(page)}
-                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${
-                  currentPage === page
+                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${currentPage === page
                     ? 'bg-red-600 text-white'
                     : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
-                }`}
+                  }`}
               >
                 {page}
               </button>

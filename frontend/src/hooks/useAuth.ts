@@ -18,9 +18,10 @@ interface AuthState {
 }
 
 /**
- * Auth guard hook. Checks localStorage for token + employee data.
- * Redirects to /login if not authenticated or if role doesn't match.
- * 
+ * Auth guard hook. Checks localStorage for cached employee data.
+ * The actual auth token is an HttpOnly cookie — invisible to JS.
+ * Redirects to /login if no employee data found or role doesn't match.
+ *
  * @param requiredRole - If provided, only allows users with this role
  */
 export function useAuth(requiredRole?: 'ADMIN' | 'HR'): AuthState {
@@ -32,10 +33,11 @@ export function useAuth(requiredRole?: 'ADMIN' | 'HR'): AuthState {
   })
 
   useEffect(() => {
-    const token = localStorage.getItem('token')
+    // Token is in an HttpOnly cookie — we can't read it here, and that's the point.
+    // We use the cached employee record (non-sensitive: name, role, id) for UI state.
     const employeeStr = localStorage.getItem('employee')
 
-    if (!token || !employeeStr) {
+    if (!employeeStr) {
       router.replace('/login')
       return
     }
@@ -56,7 +58,6 @@ export function useAuth(requiredRole?: 'ADMIN' | 'HR'): AuthState {
       })
     } catch {
       // Invalid data in localStorage
-      localStorage.removeItem('token')
       localStorage.removeItem('employee')
       router.replace('/login')
     }

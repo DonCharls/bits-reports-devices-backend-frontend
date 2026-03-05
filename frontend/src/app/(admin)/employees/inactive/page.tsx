@@ -39,12 +39,8 @@ export default function InactiveEmployeesPage() {
   const fetchInactiveEmployees = async () => {
     setLoading(true)
     try {
-      const token = localStorage.getItem('token')
-      const res = await fetch('/api/employees', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
+      const res = await fetch('/api/employees')
       if (res.status === 401) {
-        localStorage.removeItem('token')
         window.location.href = '/login'
         return
       }
@@ -79,10 +75,8 @@ export default function InactiveEmployeesPage() {
     if (!confirmRestore) return
     setIsRestoring(true)
     try {
-      const token = localStorage.getItem('token')
       const res = await fetch(`/api/employees/${confirmRestore.id}/reactivate`, {
         method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${token}` }
       })
       const data = await res.json()
       if (data.success) {
@@ -103,10 +97,8 @@ export default function InactiveEmployeesPage() {
     if (!confirmDelete) return
     setIsDeleting(true)
     try {
-      const token = localStorage.getItem('token')
       const res = await fetch(`/api/employees/${confirmDelete.id}/permanent`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
       })
       const data = await res.json()
       if (data.success) {
@@ -305,11 +297,10 @@ export default function InactiveEmployeesPage() {
               <button
                 key={page}
                 onClick={() => setCurrentPage(page)}
-                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${
-                  currentPage === page
+                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${currentPage === page
                     ? 'bg-red-600 text-white'
                     : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
-                }`}
+                  }`}
               >
                 {page}
               </button>

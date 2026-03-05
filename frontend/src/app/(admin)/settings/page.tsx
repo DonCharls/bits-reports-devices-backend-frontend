@@ -61,18 +61,13 @@ export default function SettingsPage() {
     setProfileError('')
     setProfileSaved(false)
     try {
-      const token = localStorage.getItem('token')
       const res = await fetch('/api/users/profile', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ firstName, lastName, contactNumber: phone })
       })
 
       if (res.status === 401) {
-        localStorage.removeItem('token')
         window.location.href = '/login'
         return
       }
@@ -100,7 +95,7 @@ export default function SettingsPage() {
   }
 
   const handleChangePassword = async () => {
-     setPasswordError('')
+    setPasswordError('')
     setPasswordSaved(false)
 
     if (!currentPassword) {
@@ -117,18 +112,13 @@ export default function SettingsPage() {
     }
 
     try {
-      const token = localStorage.getItem('token')
       const res = await fetch('/api/users/change-password', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ currentPassword, newPassword })
       })
 
       if (res.status === 401 && !currentPassword) {
-        localStorage.removeItem('token')
         window.location.href = '/login'
         return
       }
@@ -332,8 +322,8 @@ export default function SettingsPage() {
                   <div className={`h-1.5 rounded-full transition-all duration-300 ${strength.color}`} style={{ width: strength.width }} />
                 </div>
                 <p className={`text-[10px] mt-1 font-bold ${strength.label === 'Weak' ? 'text-red-500' :
-                    strength.label === 'Fair' ? 'text-yellow-500' :
-                      strength.label === 'Good' ? 'text-blue-500' : 'text-green-500'
+                  strength.label === 'Fair' ? 'text-yellow-500' :
+                    strength.label === 'Good' ? 'text-blue-500' : 'text-green-500'
                   }`}>
                   Password strength: {strength.label}
                 </p>

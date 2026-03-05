@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 // BACKEND_URL must be set in .env.local (local) or docker-compose.yml (Docker).
-// The server must NOT silently fall back to an internal Docker hostname
-// when running locally, as that would make all login requests fail.
 const backendUrl = process.env.BACKEND_URL;
 if (!backendUrl) {
     throw new Error(
@@ -23,7 +21,30 @@ export async function POST(request: NextRequest) {
         })
 
         const data = await res.json()
-        return NextResponse.json(data, { status: res.status })
+
+        if (!res.ok) {
+            return NextResponse.json(data, { status: res.status })
+        }
+
+        // ── Set HttpOnly cookie (JS can never read this) ──────────────────────
+        // The token lives in the cookie; we strip it from the JSON body so it
+        // never touches localStorage or any client-side JavaScript variable.
+        const { accessToken, token, refreshToken, ...safeData } = data
+
+        const response = NextResponse.json(
+            { ...safeData, success: true },
+            { status: 200 }
+        )
+
+        response.cookies.set('auth_token', accessToken ?? token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            path: '/',
+            maxAge: 60 * 60 * 8,  // 8 hours
+        })
+
+        return response
     } catch (error) {
         return NextResponse.json(
             { message: 'Network error. Could not reach the server.' },

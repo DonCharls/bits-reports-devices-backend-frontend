@@ -73,13 +73,9 @@ export default function UserAccountsPage() {
   const fetchUsers = async () => {
     setLoading(true)
     try {
-      const token = localStorage.getItem('token')
-      const res = await fetch('/api/users', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
+      const res = await fetch('/api/users')
 
       if (res.status === 401) {
-        localStorage.removeItem('token')
         window.location.href = '/login'
         return
       }
@@ -156,7 +152,6 @@ export default function UserAccountsPage() {
     }
 
     try {
-      const token = localStorage.getItem('token')
       const url = editingUser ? `/api/users/${editingUser.id}` : '/api/users'
       const method = editingUser ? 'PUT' : 'POST'
 
@@ -172,10 +167,7 @@ export default function UserAccountsPage() {
 
       const res = await fetch(url, {
         method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       })
 
@@ -194,10 +186,8 @@ export default function UserAccountsPage() {
 
   const toggleStatus = async (id: number) => {
     try {
-      const token = localStorage.getItem('token')
       const res = await fetch(`/api/users/${id}/toggle-status`, {
         method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${token}` }
       })
       const data = await res.json()
       if (data.success) {
@@ -527,11 +517,10 @@ export default function UserAccountsPage() {
               <button
                 key={page}
                 onClick={() => setCurrentPage(page)}
-                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${
-                  currentPage === page
+                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${currentPage === page
                     ? 'bg-red-600 text-white'
                     : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
-                }`}
+                  }`}
               >
                 {page}
               </button>
