@@ -2,6 +2,9 @@ import { Router } from 'express';
 import { register, login, refreshToken } from '../controllers/auth.controller';
 import { validate } from '../middleware/validation.middleware';
 import { registerValidator, loginValidator, refreshValidator } from '../validators/auth.validator';
+import { authenticate } from '../middleware/auth.middleware';
+import { adminOnly } from '../middleware/role.middleware';
+
 
 const router = Router();
 
@@ -16,8 +19,10 @@ const router = Router();
  * @swagger
  * /api/auth/register:
  *   post:
- *     summary: Register a new employee
+ *     summary: Register a new user (Admin only)
  *     tags: [Auth]
+ *     security:
+ *       - cookieAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -56,8 +61,12 @@ const router = Router();
  *         description: User created successfully
  *       400:
  *         description: Validation error or user already exists
+ *       401:
+ *         description: Unauthorized - must be logged in
+ *       403:
+ *         description: Forbidden - ADMIN role required
  */
-router.post('/register', validate(registerValidator), register);
+router.post('/register', authenticate, adminOnly, validate(registerValidator), register);
 
 /**
  * @swagger
