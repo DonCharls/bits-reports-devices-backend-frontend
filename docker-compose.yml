@@ -40,7 +40,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-root}
       JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-this-in-production}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-refresh-secret-key-change-this-in-production}
-      ZK_HOST: ${ZK_HOST:-10.10.0.201}
+      ZK_HOST: ${ZK_HOST:-192.168.0.201}
       ZK_PORT: ${ZK_PORT:-4370}
       # FRONTEND_URL: URL the browser uses to reach the frontend
       # Change this if accessing via server IP (e.g. http://10.10.0.98:3010)
