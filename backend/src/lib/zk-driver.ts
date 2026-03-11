@@ -132,6 +132,20 @@ export class ZKDriver {
     }
 
     /**
+     * Refresh device data — commits newly written users/templates to active memory.
+     * Must be called after setUser so CMD_STARTENROLL can find the new user.
+     */
+    async refreshData(): Promise<void> {
+        if (!this.zkInstance) throw new Error('Not connected');
+        const { COMMANDS } = require('node-zklib/constants');
+        try {
+            await this.zkInstance.executeCmd(COMMANDS.CMD_REFRESHDATA, '');
+        } catch {
+            // Non-critical — device may not ACK this command but the data is still written
+        }
+    }
+
+    /**
      * Set a user on the device
      */
     async setUser(zkId: number, name: string, password: string = "", role: number = 0, cardno: number = 0, userId: string = ""): Promise<void> {
@@ -198,6 +212,42 @@ export class ZKDriver {
     }
 
     /**
+     * Clear ALL fingerprint templates for a given device UID.
+     *
+     * ZKTeco stores user records (CMD_USER_WRQ) and fingerprint templates
+     * (CMD_USERTEMP_WRQ) in SEPARATE tables on the device.
+     * Deleting a user with CMD_DELETE_USER removes only the user record —
+     * the fingerprint templates remain on the same UID slot.
+     *
+     * If that UID slot is later reused for a NEW employee, the new employee
+     * will appear as "already enrolled" because the old template is still there.
+     *
+     * This method sends CMD_DELETE_USERTEMP for each of the 10 possible finger
+     * slots (0-9) to guarantee a clean slate before writing a new user.
+     *
+     * @param uid  Internal device UID (NOT the visible userId string)
+     */
+    async clearUserFingerprints(uid: number): Promise<void> {
+        if (!this.zkInstance) throw new Error('Not connected');
+
+        const { COMMANDS } = require('node-zklib/constants');
+
+        // CMD_DELETE_USERTEMP = 19
+        // Packet format: 2 bytes UID (little-endian) + 1 byte finger index
+        for (let finger = 0; finger <= 9; finger++) {
+            try {
+                const buf = Buffer.alloc(3);
+                buf.writeUInt16LE(uid, 0);
+                buf.writeUInt8(finger, 2);
+                await this.zkInstance.executeCmd(COMMANDS.CMD_DELETE_USERTEMP, buf);
+            } catch {
+                // A missing template is not an error — skip silently
+            }
+        }
+        console.log(`[ZKDriver] Fingerprint templates cleared for UID: ${uid}.`);
+    }
+
+    /**
      * Get attendance logs
      */
     async getLogs(): Promise<DeviceLog[]> {
@@ -215,47 +265,36 @@ export class ZKDriver {
     }
 
     /**
-     * Start fingerprint enrollment
+     * Start fingerprint enrollment.
+     * @param visibleUserId  The badge/visible user ID string (e.g. "2") — NOT the internal UID.
+     *                       CMD_STARTENROLL TCP format expects the same string that was stored
+     *                       in the userId field when the user was written with CMD_USER_WRQ.
+     * @param fingerIndex    0-9 (see FINGER_MAP for mapping)
      */
-    async startEnrollment(uid: number, fingerIndex: number): Promise<void> {
+    async startEnrollment(visibleUserId: string, fingerIndex: number): Promise<void> {
         if (!this.zkInstance) throw new Error('Not connected');
 
         const { COMMANDS } = require('node-zklib/constants');
 
-        // Cancel any pending capture first to clear state
+        // Cancel any pending capture first to clear device state
         try {
             await this.zkInstance.executeCmd(COMMANDS.CMD_CANCELCAPTURE, '');
         } catch (e) {
-            // Ignore error
+            // Ignore — device may not have a pending capture
         }
 
-        // IMPORTANT: node-zklib uses TCP connections by default
-        // TCP format is different from UDP format!
-        // 
         // TCP Format (from pyzk):
         //   pack('<24sbb', str(user_id).encode(), temp_id, 1)
-        //   - 24 bytes: user_id as string
-        //   - 1 byte: template/finger index
-        //   - 1 byte: flag (1 = allow overwrite)
-        //
-        // UDP Format:
-        //   pack('<Ib', int(user_id), temp_id)
-        //   - 4 bytes: user_id as integer
-        //   - 1 byte: template/finger index
+        //   - 24 bytes: visible userId string (same as badge number stored on device)
+        //   - 1 byte:   finger index (0-9)
+        //   - 1 byte:   flag — 1 = allow overwrite existing template
 
         const enrollData = Buffer.alloc(26); // 24 + 1 + 1
-
-        // Write user_id as string (24 bytes, ASCII)
-        const userIdStr = String(uid);
-        enrollData.write(userIdStr, 0, 24, 'ascii');
-
-        // Write fingerprint index (1 byte)
+        enrollData.write(visibleUserId, 0, 24, 'ascii');  // visible userId, NOT internal UID
         enrollData.writeInt8(fingerIndex, 24);
+        enrollData.writeInt8(1, 25); // overwrite flag
 
-        // Write flag: 1 = allow overwrite (1 byte)
-        enrollData.writeInt8(1, 25);
-
-        console.log(`[ZKDriver] Sending CMD_STARTENROLL (TCP). User ID: "${userIdStr}", Finger: ${fingerIndex}`);
+        console.log(`[ZKDriver] Sending CMD_STARTENROLL (TCP). visibleUserId="${visibleUserId}", Finger: ${fingerIndex}`);
 
         try {
             await this.zkInstance.executeCmd(COMMANDS.CMD_STARTENROLL, enrollData);

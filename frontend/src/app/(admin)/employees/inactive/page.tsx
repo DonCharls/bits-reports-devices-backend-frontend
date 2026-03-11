@@ -297,10 +297,11 @@ export default function InactiveEmployeesPage() {
               <button
                 key={page}
                 onClick={() => setCurrentPage(page)}
-                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${currentPage === page
+                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${
+                  currentPage === page
                     ? 'bg-red-600 text-white'
                     : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
-                  }`}
+                }`}
               >
                 {page}
               </button>

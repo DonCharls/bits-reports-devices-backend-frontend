@@ -10,7 +10,7 @@ import {
 } from 'recharts'
 import { Users, Clock, AlertCircle, TrendingUp, Building2, FileText, ArrowRight } from 'lucide-react'
 import { DEPARTMENTS } from '@/types/departments'
-import { BRANCHES } from '@/types/branches'
+
 
 // ─── Color tokens ────────────────────────────────────────
 const RED = '#C8102E'
@@ -44,16 +44,15 @@ export default function Dashboard() {
 
   const load = useCallback(async () => {
     try {
-      const today = new Date()
-      const offset = today.getTimezoneOffset()
-      const local = new Date(today.getTime() - offset * 60000)
-      const todayStr = local.toISOString().split('T')[0]
-      const dow = local.getDay()
+      const now = new Date()
+      const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }) // YYYY-MM-DD in PHT
+      const dow = new Date(todayStr + 'T00:00:00+08:00').getDay()
       const monOff = dow === 0 ? 6 : dow - 1
-      const monday = new Date(local); monday.setDate(monday.getDate() - monOff)
-      const monStr = monday.toISOString().split('T')[0]
+      const monday = new Date(todayStr + 'T00:00:00+08:00')
+      monday.setDate(monday.getDate() - monOff)
+      const monStr = monday.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
 
-      setUpdatedAt(local.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+      setUpdatedAt(now.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }))
 
       const [eRes, aRes] = await Promise.all([
         fetch('/api/employees'),
@@ -63,18 +62,27 @@ export default function Dashboard() {
 
       const ed = await eRes.json()
       const ad = await aRes.json()
+      const dd = dRes.ok ? await dRes.json() : { success: false }
       const emps: any[] = ed.success ? (ed.employees || ed.data || []) : []
       const atts: any[] = ad.success ? (ad.data || []) : []
+      const apiDepts: string[] = dd.success ? (dd.departments || []).map((d: any) => d.name) : []
 
       setEmpStats({ total: emps.length, active: emps.filter((e: any) => e.employmentStatus === 'ACTIVE').length })
 
-      const todayRecs = atts.filter((r: any) => new Date(r.date).toISOString().split('T')[0] === todayStr)
+      // Filter today's records using PHT date string
+      const todayRecs = atts.filter((r: any) => {
+        const recDatePHT = new Date(r.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+        return recDatePHT === todayStr
+      })
 
       let present = 0, late = 0, ot = 0, ut = 0
       todayRecs.forEach((r: any) => {
         const ci = r.checkInTime ? new Date(r.checkInTime) : null
         const co = r.checkOutTime ? new Date(r.checkOutTime) : null
-        const isLate = r.status === 'late' || (ci && (ci.getHours() > 8 || (ci.getHours() === 8 && ci.getMinutes() > 0)))
+        // Check lateness using PHT hours
+        const ciHourPHT = ci ? parseInt(ci.toLocaleString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', hour12: false })) : 0
+        const ciMinPHT = ci ? parseInt(ci.toLocaleString('en-US', { timeZone: 'Asia/Manila', minute: 'numeric' })) : 0
+        const isLate = r.status === 'late' || (ci && (ciHourPHT > 8 || (ciHourPHT === 8 && ciMinPHT > 0)))
         if (isLate) late++; else if (ci) present++
         if (ci && co) {
           const h = (co.getTime() - ci.getTime()) / 3600000
@@ -90,13 +98,17 @@ export default function Dashboard() {
       const trend: WeekDay[] = []
       for (let i = 0; i < 7; i++) {
         const d = new Date(monday); d.setDate(d.getDate() + i)
-        if (d > local) break
-        const ds = d.toISOString().split('T')[0]
-        const recs = atts.filter((r: any) => new Date(r.date).toISOString().split('T')[0] === ds)
+        const ds = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+        if (ds > todayStr) break
+        const recs = atts.filter((r: any) =>
+          new Date(r.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }) === ds
+        )
         let p = 0, l = 0
         recs.forEach((r: any) => {
           const ci = r.checkInTime ? new Date(r.checkInTime) : null
-            ; (r.status === 'late' || (ci && (ci.getHours() > 8 || (ci.getHours() === 8 && ci.getMinutes() > 0)))) ? l++ : ci ? p++ : void 0
+          const ciH = ci ? parseInt(ci.toLocaleString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', hour12: false })) : 0
+          const ciM = ci ? parseInt(ci.toLocaleString('en-US', { timeZone: 'Asia/Manila', minute: 'numeric' })) : 0
+            ; (r.status === 'late' || (ci && (ciH > 8 || (ciH === 8 && ciM > 0)))) ? l++ : ci ? p++ : void 0
         })
         trend.push({ day: days[i], present: p, late: l, absent: Math.max(0, emps.length - p - l) })
       }
@@ -104,15 +116,28 @@ export default function Dashboard() {
 
       // ── Department breakdown ──────────────────────────
       const dmap = new Map<string, { total: number; present: number }>()
-      DEPARTMENTS.forEach(d => dmap.set(d, { total: 0, present: 0 }))
-      emps.forEach((e: any) => { if (e.department && dmap.has(e.department)) dmap.get(e.department)!.total++ })
+      // Pre-seed from API departments, then fallback to static list
+      const deptSeed = apiDepts.length > 0 ? apiDepts : DEPARTMENTS
+      deptSeed.forEach(d => dmap.set(d, { total: 0, present: 0 }))
+
+      // Helper: get department name from employee, checking both string field and relation
+      const getDept = (e: any): string | null =>
+        e?.department || e?.Department?.name || null
+
+      emps.forEach((e: any) => {
+        const dept = getDept(e)
+        if (!dept) return
+        if (!dmap.has(dept)) dmap.set(dept, { total: 0, present: 0 })
+        dmap.get(dept)!.total++
+      })
       todayRecs.forEach((r: any) => {
         const e = r.employee || emps.find((x: any) => x.id === r.employeeId)
-        if (e?.department && dmap.has(e.department)) dmap.get(e.department)!.present++
+        const dept = getDept(e)
+        if (dept && dmap.has(dept)) dmap.get(dept)!.present++
       })
       const dArr: DeptStat[] = []
       dmap.forEach((v, name) => {
-        if (v.total > 0) dArr.push({ name, total: v.total, present: v.present, rate: Math.round((v.present / v.total) * 100) })
+        dArr.push({ name, total: v.total, present: v.present, rate: v.total > 0 ? Math.round((v.present / v.total) * 100) : 0 })
       })
       dArr.sort((a, b) => b.total - a.total)
       setDeptStats(dArr)
@@ -133,14 +158,17 @@ export default function Dashboard() {
         const isOut = !!r.checkOutTime
         const ts = new Date(isOut ? r.checkOutTime : r.checkInTime)
         const ci = r.checkInTime ? new Date(r.checkInTime) : null
-        const isLate = r.status === 'late' || (ci && (ci.getHours() > 8 || (ci.getHours() === 8 && ci.getMinutes() > 0)))
+        const ciHourPHT = ci ? parseInt(ci.toLocaleString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', hour12: false })) : 0
+        const ciMinPHT = ci ? parseInt(ci.toLocaleString('en-US', { timeZone: 'Asia/Manila', minute: 'numeric' })) : 0
+        const isLate = r.status === 'late' || (ci && (ciHourPHT > 8 || (ciHourPHT === 8 && ciMinPHT > 0)))
         return {
           id: r.id || i,
           employee: name,
-          department: e.department || e.dept || '—',
+          department: getDept(e) || '—',
           branch: e.branch || '—',
           action: isOut ? 'Out' : 'In',
-          time: ts.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          // Display time in PHT
+          time: ts.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }),
           status: isLate ? 'late' as const : 'on-time' as const,
         }
       }))
@@ -242,20 +270,27 @@ export default function Dashboard() {
         </Card>
 
         {/* Departments Breakdown */}
-        <Card className="bg-card border-border p-5">
-          <div className="flex items-center justify-between mb-4">
+        <Card className="bg-card border-border p-5 flex flex-col">
+          <div className="flex items-center justify-between mb-3 shrink-0">
             <h3 className="text-base font-semibold text-foreground">Departments</h3>
             <Building2 className="w-4 h-4 text-muted-foreground" />
           </div>
-          <div className="space-y-4 overflow-y-auto" style={{ maxHeight: 280 }}>
+          <div
+            className="flex-1 space-y-3 overflow-y-auto pr-1"
+            style={{
+              maxHeight: 290,
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#d1d5db transparent',
+            }}
+          >
             {deptStats.length > 0 ? deptStats.map((dept, i) => {
               const cols = [RED, ORANGE, GOLD, '#6366f1', '#22c55e']
               const col = cols[i % cols.length]
               return (
                 <div key={dept.name}>
                   <div className="flex items-center justify-between mb-1">
-                    <p className="text-sm font-medium text-foreground">{dept.name}</p>
-                    <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-foreground truncate mr-2">{dept.name}</p>
+                    <div className="flex items-center gap-2 shrink-0">
                       <span className="text-xs text-muted-foreground">{dept.total} emp</span>
                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
                         style={{ backgroundColor: `${col}15`, color: col }}>
@@ -263,10 +298,9 @@ export default function Dashboard() {
                       </span>
                     </div>
                   </div>
-                  {/* Progress bar */}
-                  <div className="h-2 rounded-full bg-gray-100">
+                  <div className="h-1.5 rounded-full bg-gray-100">
                     <div
-                      className="h-2 rounded-full transition-all duration-500"
+                      className="h-1.5 rounded-full transition-all duration-500"
                       style={{ width: `${dept.rate}%`, backgroundColor: col }}
                     />
                   </div>

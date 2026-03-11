@@ -81,7 +81,6 @@ export default function LoginPage() {
       // Only cache non-sensitive employee info for UI display.
       localStorage.setItem('employee', JSON.stringify(data.employee))
 
-
       // Determine redirect path
       let path = '/login'
       if (data.employee.role === 'HR') {

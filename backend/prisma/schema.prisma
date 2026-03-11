@@ -11,9 +11,11 @@ model Attendance {
   id           Int       @id @default(autoincrement())
   employeeId   Int
   date         DateTime
-  checkInTime  DateTime
-  checkOutTime DateTime?
-  status       String    @default("present")
+  checkInTime       DateTime
+  checkOutTime      DateTime?
+  checkin_updated   DateTime?
+  checkout_updated  DateTime?
+  status            String    @default("present")
   notes        String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

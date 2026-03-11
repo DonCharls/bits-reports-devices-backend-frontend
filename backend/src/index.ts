@@ -13,6 +13,8 @@ import employeeRoutes from './routes/employee_routes';
 import userRoutes from './routes/user_routes';
 import departmentRoutes from './routes/department_routes';
 import branchRoutes from './routes/branch_routes';
+import deviceRoutes from './routes/device_routes';
+import logsRoutes from './routes/logs_routes';
 import { startCronJobs } from './lib/cronJobs';
 import { repairMissingCheckouts } from './services/attendance.service';
 
@@ -51,9 +53,43 @@ app.use('/api/employees', employeeRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/branches', branchRoutes);
+app.use('/api/devices', deviceRoutes);
+app.use('/api/logs', logsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// ── Device health endpoint — polled by topbar every 15 seconds ────────────────
+// Returns the live isActive status for the primary device (ZK_HOST) from the DB.
+// syncZkData updates isActive on every cron tick (every 30s), so this endpoint
+// reflects real connectivity without making its own TCP connection.
+app.get('/api/health/device', async (req, res) => {
+  try {
+    const zkHost = process.env.ZK_HOST || '192.168.1.201';
+
+    // Find the device by its IP in the DB
+    const device = await prisma.device.findFirst({
+      where: { ip: zkHost },
+      select: { id: true, name: true, ip: true, port: true, isActive: true, updatedAt: true }
+    });
+
+    if (!device) {
+      // Device not in DB yet — status unknown
+      return res.json({ online: false, status: 'unknown', message: 'Device not registered in system' });
+    }
+
+    return res.json({
+      online: device.isActive,
+      status: device.isActive ? 'online' : 'offline',
+      deviceName: device.name,
+      ip: device.ip,
+      port: device.port,
+      lastSeen: device.updatedAt,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ online: false, status: 'error', message: error.message });
+  }
 });
 
 app.get('/api/test-db', async (req, res) => {
@@ -97,10 +133,11 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-// Handle uncaught exceptions
+// Handle uncaught exceptions — log but keep server alive to avoid JSON parse errors on the frontend
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
-  process.exit(1);
+  // Do NOT call process.exit(1) — if we crash here the frontend gets no JSON response
+  // which causes "Unexpected token I" parse errors. Log and continue instead.
 });
 
 app.listen(port, () => {

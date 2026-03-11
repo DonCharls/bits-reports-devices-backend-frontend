@@ -52,7 +52,7 @@ export const addUser = async (req: Request, res: Response) => {
  */
 export const getAttendance = async (req: Request, res: Response) => {
     try {
-        const { startDate, endDate, employeeId, status, page = 1, limit = 10 } = req.query;
+        const { startDate, endDate, employeeId, status, page = 1, limit = 10, branchName, departmentId, departmentName } = req.query;
 
         const filters: any = {};
 
@@ -68,6 +68,9 @@ export const getAttendance = async (req: Request, res: Response) => {
         }
         if (employeeId) filters.employeeId = parseInt(String(employeeId));
         if (status) filters.status = String(status);
+        if (branchName) filters.branch = String(branchName);
+        if (departmentId) filters.departmentId = parseInt(String(departmentId));
+        if (departmentName) filters.departmentName = String(departmentName);
 
         const pageNum = parseInt(String(page));
         const limitNum = parseInt(String(limit));

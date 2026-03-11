@@ -44,7 +44,6 @@ const FINGER_MAP: { [key: number]: string } = {
     2: "Left Middle Finger",
     1: "Left Ring Finger",
     0: "Left Little Finger"
-
 };
 
 /**
@@ -54,14 +53,55 @@ function printJson(data: any) {
     console.log(JSON.stringify(data));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Device-busy lock (shared with zkServices via module-level state would be
+// ideal, but this service is primarily used as a standalone CLI script via
+// src/scripts/enrollFingerprint.ts — it is NOT called by the API controllers.
+// The API controllers use enrollEmployeeFingerprint() in zkServices.ts instead,
+// which has its own lock. This local lock protects repeated CLI invocations.
+// ─────────────────────────────────────────────────────────────────────────────
+let _deviceBusy = false;
+const _deviceQueue: Array<() => void> = [];
+
+function acquireDeviceLock(): Promise<void> {
+    return new Promise((resolve) => {
+        if (!_deviceBusy) {
+            _deviceBusy = true;
+            resolve();
+        } else {
+            console.log('[EnrollService] Device busy — queuing request...');
+            _deviceQueue.push(() => {
+                _deviceBusy = true;
+                resolve();
+            });
+        }
+    });
+}
+
+function releaseDeviceLock(): void {
+    const next = _deviceQueue.shift();
+    if (next) {
+        setTimeout(next, 500);
+    } else {
+        _deviceBusy = false;
+    }
+}
+
 /**
- * Enroll a fingerprint for a user on ZKTeco device
- * 
- * @param deviceIp IP address of the device
- * @param userId User ID (zkId) 
- * @param fingerIndex Which finger to enroll (0-9)
- * @param timeout Connection timeout in seconds
- * @param port Device port (default: 4370)
+ * Enroll a fingerprint for a user on ZKTeco device.
+ *
+ * NOTE: This function is used by the standalone CLI script
+ * (src/scripts/enrollFingerprint.ts) and is NOT called by the
+ * API controllers. The API path uses enrollEmployeeFingerprint()
+ * in zkServices.ts, which has its own device-busy lock and DB lookup.
+ *
+ * @param deviceIp   IP address of the device
+ * @param employeeId Employee ID (for logging only)
+ * @param name       Employee display name (used as fallback lookup)
+ * @param userIdString  Visible userId string stored on device (= zkId as string)
+ * @param fingerIndex   Which finger to enroll (0-9)
+ * @param timeout       Connection timeout in seconds
+ * @param port          Device port (default: 4370)
  */
 export async function enrollFingerprint(
     deviceIp: string,
@@ -75,6 +115,8 @@ export async function enrollFingerprint(
 
     // Use ZKDriver to maintain consistency with other parts of the codebase
     const zkDriver = new ZKDriver(deviceIp, port, timeout * 1000);
+
+    await acquireDeviceLock();
 
     try {
         // Connect to device
@@ -102,48 +144,62 @@ export async function enrollFingerprint(
                 "message": "Device info retrieved",
                 "device_info": {
                     "serial_number": info.serialNumber || "N/A",
-                    "firmware_version": info.version || "N/A"
+                    "firmware_version": "N/A"
                 }
             });
         } catch (error) {
             console.warn("Failed to get device info:", error);
         }
 
-        // Check if user exists and get correct internal UID
+        // Check if user exists on device
         console.log(`[Enrollment] Verifying user with ID ${employeeId} on device...`);
-        let enrollmentUid = employeeId; // Default to provided ID if lookup fails (fallback)
+
+        // The visible userId string stored on the device (= zkId, NOT the DB employee id)
+        // BUG FIX: previously enrollmentUid (internal device UID, a number) was passed
+        // to startEnrollment() which expects the visible userId STRING. This caused the
+        // enrollment command to target the wrong user or fail silently.
+        const targetUserIdString = userIdString || String(employeeId);
+        let resolvedVisibleId: string = targetUserIdString; // ← always a string
         let userExists = false;
 
-        // Use provided string ID or fallback to employeeId
-        const targetUserIdString = userIdString || String(employeeId);
-
         try {
-            // Get all users from device to find the internal UID
-            const employees = await zkDriver.getUsers();
+            // Get all users from device to confirm the user is there
+            const deviceUsers = await zkDriver.getUsers();
 
             // Try multiple lookup strategies to find the user
-            // 1. Match by the provided userIdString (e.g. zkId as string)
-            let targetEmployee = employees.find((emp: any) => String(emp.userId) === targetUserIdString);
+            // 1. Match by the provided userIdString (= zkId as string)
+            let targetEmployee = deviceUsers.find((emp: any) => String(emp.userId) === targetUserIdString);
 
             // 2. If not found, try matching by employeeId string
             if (!targetEmployee) {
-                targetEmployee = employees.find((emp: any) => String(emp.userId) === String(employeeId));
+                targetEmployee = deviceUsers.find((emp: any) => String(emp.userId) === String(employeeId));
             }
 
             // 3. If still not found, try matching by name
             if (!targetEmployee) {
-                targetEmployee = employees.find((emp: any) => emp.name === name);
+                targetEmployee = deviceUsers.find((emp: any) => emp.name === name);
             }
 
             if (targetEmployee) {
-                // IMPORTANT: ZKTeco uses an internal 2-byte UID (uid) for enrollment commands,
-                // NOT the visible User ID string (userId/badge number).
-                enrollmentUid = targetEmployee.uid;
+                // ── KEY FIX ────────────────────────────────────────────────────────────
+                // CMD_STARTENROLL (TCP format) expects the VISIBLE userId string
+                // (the same string stored in the userId field via CMD_USER_WRQ),
+                // NOT the internal 2-byte device UID.
+                //
+                // Old (broken) code:
+                //   enrollmentUid = targetEmployee.uid;   // ← number (internal UID)
+                //   await zkDriver.startEnrollment(enrollmentUid, fingerIndex);  // ← wrong!
+                //
+                // Fixed:
+                //   resolvedVisibleId = targetEmployee.userId;  // ← string (visible id)
+                //   await zkDriver.startEnrollment(resolvedVisibleId, fingerIndex); // ← correct
+                // ───────────────────────────────────────────────────────────────────────
+                resolvedVisibleId = String(targetEmployee.userId);
                 userExists = true;
-                console.log(`[Enrollment] Found User: "${targetEmployee.name}" (Badge: ${targetEmployee.userId}). Internal UID: ${enrollmentUid}`);
+                console.log(`[Enrollment] Found User: "${targetEmployee.name}" (VisibleId: ${resolvedVisibleId}, InternalUID: ${targetEmployee.uid}).`);
             } else {
-                console.error(`[Enrollment] User not found on device with any lookup strategy (userIdString="${targetUserIdString}", employeeId=${employeeId}, name="${name}"). Available users:`);
-                employees.forEach((emp: any) => {
+                console.error(`[Enrollment] User not found on device (userIdString="${targetUserIdString}", employeeId=${employeeId}, name="${name}"). Available users:`);
+                deviceUsers.forEach((emp: any) => {
                     console.log(`[Enrollment]   UID=${emp.uid}, userId="${emp.userId}", name="${emp.name}"`);
                 });
             }
@@ -152,7 +208,7 @@ export async function enrollFingerprint(
             console.error("[Enrollment] Failed to fetch users list.", error);
         }
 
-        // If user does not exist on device, fail instead of creating (addUserToDevice already handled creation)
+        // If user does not exist on device, fail — addUserToDevice already handles creation
         if (!userExists) {
             throw new Error(`User ${name} (ID: ${targetUserIdString}) not found on device. Please ensure the employee was synced to the device first.`);
         }
@@ -162,7 +218,7 @@ export async function enrollFingerprint(
             throw new Error(`Finger index must be between 0 and 9, got ${fingerIndex}`);
         }
 
-        // Start enrollment
+        // Start enrollment — pass the VISIBLE userId string, not the internal UID
         const fingerName = FINGER_MAP[fingerIndex] || `Finger ${fingerIndex}`;
 
         printJson({
@@ -173,19 +229,16 @@ export async function enrollFingerprint(
             "employee_id": employeeId
         });
 
-        // Use ZKDriver's startEnrollment method
-        await zkDriver.startEnrollment(enrollmentUid, fingerIndex);
+        // ── FIXED: resolvedVisibleId is the visible userId string (e.g. "2") ──
+        await zkDriver.startEnrollment(resolvedVisibleId, fingerIndex);
 
         printJson({
             "status": "success",
-            "message": `Fingerprint enrolled successfully for user ${employeeId}!`,
+            "message": `Fingerprint enrollment command sent for user ${employeeId}!`,
             "employee_id": employeeId,
             "finger": fingerName,
             "finger_index": fingerIndex
         });
-
-        // Disconnect
-        await zkDriver.disconnect();
 
         return {
             success: true,
@@ -196,13 +249,6 @@ export async function enrollFingerprint(
 
     } catch (error: any) {
         console.error("Enrollment error:", error);
-
-        // Try to disconnect if possible
-        try {
-            await zkDriver.disconnect();
-        } catch (recoverError: any) {
-            console.warn("Recovery error:", recoverError);
-        }
 
         // Determine error type
         let errorType = "unknown_error";
@@ -233,7 +279,13 @@ export async function enrollFingerprint(
             employee_id: employeeId,
             finger_index: fingerIndex
         };
+    } finally {
+        // Always disconnect and release the lock, even on error
+        try {
+            await zkDriver.disconnect();
+        } catch {
+            // Ignore disconnect errors during cleanup
+        }
+        releaseDeviceLock();
     }
 }
-
-

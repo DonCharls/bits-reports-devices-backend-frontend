@@ -95,7 +95,7 @@ export default function SettingsPage() {
   }
 
   const handleChangePassword = async () => {
-    setPasswordError('')
+     setPasswordError('')
     setPasswordSaved(false)
 
     if (!currentPassword) {
@@ -322,8 +322,8 @@ export default function SettingsPage() {
                   <div className={`h-1.5 rounded-full transition-all duration-300 ${strength.color}`} style={{ width: strength.width }} />
                 </div>
                 <p className={`text-[10px] mt-1 font-bold ${strength.label === 'Weak' ? 'text-red-500' :
-                  strength.label === 'Fair' ? 'text-yellow-500' :
-                    strength.label === 'Good' ? 'text-blue-500' : 'text-green-500'
+                    strength.label === 'Fair' ? 'text-yellow-500' :
+                      strength.label === 'Good' ? 'text-blue-500' : 'text-green-500'
                   }`}>
                   Password strength: {strength.label}
                 </p>

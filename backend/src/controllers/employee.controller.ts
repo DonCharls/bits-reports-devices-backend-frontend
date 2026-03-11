@@ -331,29 +331,32 @@ export const createEmployee = async (req: Request, res: Response) => {
 
         console.log(`[API] Created employee: ${newEmployee.firstName} ${newEmployee.lastName} (zkId: ${newEmployee.zkId})`);
 
-        let deviceSyncResult = { success: false, message: '' };
-
-        try {
-            if (newEmployee.zkId) {
-                console.log(`[API] Syncing new employee to device...`);
-                // Use zkId for both userId and user_id(uid) on device
-                // Concatenate firstName and lastName for device
-                const displayName = `${newEmployee.firstName} ${newEmployee.lastName}`;
-                const badgeNumber = newEmployee.employeeNumber || "";
-                await addUserToDevice(newEmployee.zkId, displayName, newEmployee.role, badgeNumber);
-                deviceSyncResult = { success: true, message: 'Synced to device' };
-            }
-        } catch (syncError: any) {
-            console.error('[API] Failed to sync to device:', syncError);
-            deviceSyncResult = { success: false, message: `Device sync failed: ${syncError.message}` };
-        }
-
+        // ── Respond immediately — device sync happens in the background ──────
+        // We do NOT await the device call here. The ZKTeco device may take up to
+        // 25 s to time out (3 retries × ~8 s each). Holding the HTTP response
+        // open that long causes the success toast to never appear on the frontend.
+        // Instead, we respond with 201 right away and let the sync run in the
+        // background. If it fails, the admin can use the Fingerprint button later.
         res.status(201).json({
             success: true,
-            message: `Employee created successfully with zkId ${nextZkId}. ${deviceSyncResult.message}`,
+            message: 'Employee created successfully.',
             employee: newEmployee,
-            deviceSync: deviceSyncResult
+            deviceSync: { success: null, message: 'Device sync running in background' },
         });
+
+        // Fire-and-forget: sync to biometric device after response is sent
+        if (newEmployee.zkId) {
+            setImmediate(async () => {
+                try {
+                    console.log(`[API] (background) Syncing ${newEmployee.firstName} ${newEmployee.lastName} to device...`);
+                    const displayName = `${newEmployee.firstName} ${newEmployee.lastName}`;
+                    await addUserToDevice(newEmployee.zkId!, displayName, newEmployee.role);
+                    console.log(`[API] (background) Device sync OK: ${displayName} (zkId: ${newEmployee.zkId})`);
+                } catch (syncErr: any) {
+                    console.error(`[API] (background) Device sync failed for zkId ${newEmployee.zkId}:`, syncErr?.message || syncErr);
+                }
+            });
+        }
 
     } catch (error: any) {
         console.error('Error creating employee:', error);
@@ -390,23 +393,31 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
             });
         }
 
-        console.log(`[API] Starting fingerprint enrollment for employee ${employeeId}...`);
+        console.log(`[API] Starting fingerprint enrollment for employee ${employeeId} (finger: ${finger})...`);
 
-        // Call enrollment service
-        const result = await enrollEmployeeFingerprint(employeeId, finger);
+        // ── Respond immediately — enrollment happens in the background ─────────
+        // enrollEmployeeFingerprint connects to the device and awaits physical
+        // scans, which can take 25+ seconds. Holding the HTTP response open
+        // causes the Enroll button to appear frozen. We return 202 right away
+        // so the frontend can show feedback instantly.
+        res.status(202).json({
+            success: true,
+            message: 'Fingerprint enrollment started — please have the employee scan their finger on the device now.',
+        });
 
-        if (result.success) {
-            res.json({
-                success: true,
-                message: result.message,
-            });
-        } else {
-            res.status(400).json({
-                success: false,
-                message: result.message,
-                error: result.error,
-            });
-        }
+        // Fire-and-forget: run the actual enrollment after response is sent
+        setImmediate(async () => {
+            try {
+                const result = await enrollEmployeeFingerprint(employeeId, finger);
+                if (result.success) {
+                    console.log(`[API] (background) Enrollment success for employee ${employeeId}: ${result.message}`);
+                } else {
+                    console.error(`[API] (background) Enrollment failed for employee ${employeeId}: ${result.message}`);
+                }
+            } catch (enrollErr: any) {
+                console.error(`[API] (background) Enrollment error for employee ${employeeId}:`, enrollErr?.message || enrollErr);
+            }
+        });
 
     } catch (error: any) {
         console.error('Error enrolling fingerprint:', error);
@@ -553,39 +564,33 @@ export const permanentDeleteEmployee = async (req: Request, res: Response) => {
             });
         }
 
-        // Delete from ZK Device if zkId exists
-        if (employee.zkId) {
-            try {
-                await deleteUserFromDevice(employee.zkId);
-            } catch (err) {
-                console.error(`[API] Failed to delete user ${employee.zkId} from device before permanent deletion:`, err);
-                // Continue with DB delete even if device delete fails
-            }
-        }
-
-        // Delete all related attendance logs and attendance records first to avoid foreign key constraints
-        // We'll run this in a transaction to ensure all or nothing
+        // ── DB delete first — device removal is fire-and-forget ────────────
+        // We must NOT await deleteUserFromDevice before the transaction.
+        // If the device is offline it retries for up to 25 s, causing the
+        // permanent delete to appear to fail. The DB is the source of truth.
+        // Delete from DB unconditionally; remove from device in the background.
         await prisma.$transaction(async (tx) => {
-            // Delete Attendance Logs
-            await tx.attendanceLog.deleteMany({
-                where: { employeeId: employeeId }
-            });
-
-            // Delete Attendance Records
-            await tx.attendance.deleteMany({
-                where: { employeeId: employeeId }
-            });
-
-            // Delete the employee
-            await tx.employee.delete({
-                where: { id: employeeId }
-            });
+            await tx.attendanceLog.deleteMany({ where: { employeeId } });
+            await tx.attendance.deleteMany({ where: { employeeId } });
+            await tx.employee.delete({ where: { id: employeeId } });
         });
 
         res.json({
             success: true,
             message: `User "${employee.firstName} ${employee.lastName}" permanently deleted`,
         });
+
+        // Fire-and-forget: remove from biometric device after DB is clean
+        if (employee.zkId) {
+            setImmediate(async () => {
+                try {
+                    await deleteUserFromDevice(employee.zkId!);
+                    console.log(`[API] (background) Removed zkId ${employee.zkId} from device.`);
+                } catch (devErr: any) {
+                    console.error(`[API] (background) Could not remove zkId ${employee.zkId} from device (user already removed from DB):`, devErr?.message || devErr);
+                }
+            });
+        }
     } catch (error) {
         console.error('Error permanently deleting employee:', error);
         res.status(500).json({

@@ -8,14 +8,15 @@ import { autoCloseIncompleteAttendance, autoCheckoutEmployees } from '../service
 export const startCronJobs = () => {
     console.log('[CronJobs] Initializing automated jobs...');
 
-    // Job 1: Sync attendance logs from ZKTeco device every 1 minute
-    cron.schedule('*/10 * * * * *', async () => {
-        console.log('[CronJob] Running periodic attendance sync...');
+    // Job 1: Sync attendance logs from ZKTeco device every 30 seconds.
+    // Uses a non-blocking lock — if the device is busy (e.g. enrollment is
+    // running), this tick is skipped and the next one tries again.
+    cron.schedule('*/30 * * * * *', async () => {
         try {
             const result = await syncZkData();
-            if (result.success) {
+            if (result.success && result.message !== 'Skipped — device busy') {
                 console.log(`[CronJob] Sync completed: ${result.newLogs || 0} new logs`);
-            } else {
+            } else if (!result.success) {
                 console.error('[CronJob] Sync failed:', result.error);
             }
         } catch (error) {
@@ -45,7 +46,7 @@ export const startCronJobs = () => {
         }
     });
 
-    console.log('[CronJobs] ✓ Periodic sync scheduled (every 10 seconds)');
+    console.log('[CronJobs] ✓ Periodic sync scheduled (every 30 seconds, skips when device is busy)');
     console.log('[CronJobs] ✓ Midnight cleanup scheduled (00:00 daily)');
     console.log('[CronJobs] ✓ Auto-checkout scheduled (23:59 daily)');
 };

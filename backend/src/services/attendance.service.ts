@@ -40,6 +40,9 @@ interface AttendanceFilters {
     endDate?: Date;
     employeeId?: number;
     status?: string;
+    branch?: string;           // filter by employee.branch (string)
+    departmentId?: number;    // filter by employee.departmentId (FK)
+    departmentName?: string;  // filter by employee.department (string, fallback)
 }
 
 /**
@@ -73,12 +76,20 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
 
             if (!existingAttendance) {
                 // No record exists → This is a CHECK-IN
+                // Determine if late: check-in after 08:00 AM PHT
+                // AttendanceLog timestamps are stored as UTC where PHT midnight = UTC midnight
+                // (because convertPHTtoUTC subtracts 8 hours from device-reported PHT time)
+                // So PHT 08:00 AM = UTC 00:00 AM in our stored representation.
+                const checkInPHT = new Date(log.timestamp.getTime() + 8 * 60 * 60 * 1000);
+                const isLate = checkInPHT.getUTCHours() > 8 ||
+                    (checkInPHT.getUTCHours() === 8 && checkInPHT.getUTCMinutes() > 0);
+
                 await prisma.attendance.create({
                     data: {
                         employeeId: log.employeeId,
                         date: dateOnly,
                         checkInTime: log.timestamp,
-                        status: 'present'
+                        status: isLate ? 'late' : 'present'
                     }
                 });
                 created++;
@@ -268,6 +279,24 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
 
     if (filters.status) {
         where.status = filters.status;
+    }
+
+    // Branch / department filters — applied via nested employee relation
+    // Use OR for department: filter by FK (if set) OR string field (legacy)
+    const empConditions: any = {}
+    if (filters.branch) empConditions.branch = filters.branch
+
+    if (filters.departmentId || filters.departmentName) {
+        const deptOr: any[] = []
+        if (filters.departmentId) deptOr.push({ departmentId: filters.departmentId })
+        if (filters.departmentName) deptOr.push({ department: { equals: filters.departmentName, mode: 'insensitive' } })
+        if (Object.keys(empConditions).length > 0 || deptOr.length > 0) {
+            where.employee = deptOr.length === 1
+                ? { ...empConditions, ...deptOr[0] }
+                : { ...empConditions, OR: deptOr }
+        }
+    } else if (Object.keys(empConditions).length > 0) {
+        where.employee = empConditions
     }
 
     // Calculate pagination
