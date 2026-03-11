@@ -440,15 +440,7 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
                 const password = existingUser ? existingUser.password : "";
                 const cardno = existingUser ? existingUser.cardno : 0;
 
-                // Use employeeNumber as the visible User ID if available
-                const userIdString = employee.employeeNumber || zkId.toString();
 
-                // Look up by visible userId string — NOT by internal UID
-                const existingUser = deviceUserByVisibleId.get(userIdString) || deviceUserByVisibleId.get(zkId.toString());
-
-                // Preserve existing password/cardno if user already on device
-                const password = existingUser ? existingUser.password : "";
-                const cardno = existingUser ? existingUser.cardno : 0;
 
                 // Use existing UID if found, otherwise assign next available UID
                 // CRITICAL: Never overwrite a protected UID

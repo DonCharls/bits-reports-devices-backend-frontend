@@ -54,9 +54,10 @@ export default function Dashboard() {
 
       setUpdatedAt(now.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }))
 
-      const [eRes, aRes] = await Promise.all([
+      const [eRes, aRes, dRes] = await Promise.all([
         fetch('/api/employees'),
         fetch(`/api/attendance?startDate=${monStr}&endDate=${todayStr}&limit=5000`),
+        fetch('/api/departments'),
       ])
       if (eRes.status === 401) { router.replace('/login'); return }
 
