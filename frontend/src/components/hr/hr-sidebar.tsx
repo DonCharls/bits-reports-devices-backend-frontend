@@ -192,13 +192,12 @@ export default function Sidebar({ isMobileOpen, setIsMobileOpen, isCollapsed, se
                   <Link
                     href="/hr/employees?status=Inactive"
                     onClick={() => setIsMobileOpen(false)}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                      isInactivePage
-                        ? 'text-[#E60000]'
-                        : isOnEmployees
-                          ? 'text-[#E60000]/60 hover:text-[#E60000]'
-                          : 'text-white/60 hover:text-white'
-                    }`}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${isInactivePage
+                      ? 'text-[#E60000]'
+                      : isOnEmployees
+                        ? 'text-[#E60000]/60 hover:text-[#E60000]'
+                        : 'text-white/60 hover:text-white'
+                      }`}
                   >
                     <UserX size={15} className="shrink-0" />
                     Inactive Employees
@@ -248,13 +247,12 @@ export default function Sidebar({ isMobileOpen, setIsMobileOpen, isCollapsed, se
                   <Link
                     href="/hr/adjusts"
                     onClick={() => setIsMobileOpen(false)}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                      isAuditPage
-                        ? 'text-[#E60000]'
-                        : isOnReports
-                          ? 'text-[#E60000]/60 hover:text-[#E60000]'
-                          : 'text-white/60 hover:text-white'
-                    }`}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${isAuditPage
+                      ? 'text-[#E60000]'
+                      : isOnReports
+                        ? 'text-[#E60000]/60 hover:text-[#E60000]'
+                        : 'text-white/60 hover:text-white'
+                      }`}
                   >
                     <History size={15} className="shrink-0" />
                     Adjustment Logs
