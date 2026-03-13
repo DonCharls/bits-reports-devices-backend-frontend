@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
+import * as XLSX from 'xlsx'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -60,9 +61,10 @@ export default function BiometricPage() {
 
   // Stats
   const [stats, setStats] = useState({
-    totalPresent: 0,
+    onTime: 0,
     totalLate: 0,
     totalAbsent: 0,
+    total: 0,
     avgHours: '0',
     totalOvertime: '0',
     totalUndertime: '0',
@@ -84,6 +86,26 @@ export default function BiometricPage() {
     const h = Math.floor(mins / 60)
     const m = mins % 60
     return h > 0 ? `${h}h ${m}m` : `${m}m`
+  }
+
+  /** Convert decimal hours (e.g. 1.53) to "1h 32m" */
+  const fmtHours = (hours: number): string => {
+    if (!hours || hours <= 0) return '—'
+    const h = Math.floor(hours)
+    const m = Math.round((hours - h) * 60)
+    if (h === 0) return `${m}m`
+    if (m === 0) return `${h}h`
+    return `${h}h ${m}m`
+  }
+
+  /** Convert minutes to "Xh Ym" */
+  const fmtMins = (mins: number): string => {
+    if (!mins || mins <= 0) return '—'
+    const h = Math.floor(mins / 60)
+    const m = Math.round(mins % 60)
+    if (h === 0) return `${m}m`
+    if (m === 0) return `${h}h`
+    return `${h}h ${m}m`
   }
 
   /* ── Debounce search ── */
@@ -134,8 +156,7 @@ export default function BiometricPage() {
       const params = new URLSearchParams({
         startDate: selectedDate,
         endDate: selectedDate,
-        page: String(currentPage),
-        limit: String(rowsPerPage),
+        limit: '9999',
       })
       // Branch tab uses the branch NAME (employee.branch is a plain string, not a relation)
       if (activeBranchId !== 'all') {
@@ -171,49 +192,96 @@ export default function BiometricPage() {
           const emp = log.employee || log.Employee || {}
           const checkIn = new Date(log.checkInTime)
           const checkOut = log.checkOutTime ? new Date(log.checkOutTime) : null
-          let hours = 0
-          if (checkOut) hours = (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60)
-          const overtime = hours > 8 ? hours - 8 : 0
-          const undertime = hours > 0 && hours < 8 ? 8 - hours : 0
-          const { hour, minute } = getPHTTime(checkIn)
-          // Consistent with dashboard: after 08:00 AM PHT = late
-          const isLate = hour > 8 || (hour === 8 && minute > 0)
+
+          // Prefer backend-calculated values (shift-aware); fall back to raw time diff
+          const totalHours: number = log.totalHours ?? (checkOut ? (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60) : 0)
+          const lateMinutes: number = log.lateMinutes ?? 0
+          const overtimeMinutes: number = log.overtimeMinutes ?? (totalHours > 8 ? (totalHours - 8) * 60 : 0)
+          const undertimeMinutes: number = log.undertimeMinutes ?? (totalHours > 0 && totalHours < 8 ? (8 - totalHours) * 60 : 0)
+          const shiftCode: string | null = log.shiftCode ?? emp.Shift?.shiftCode ?? null
+          const isAnomaly: boolean = log.isAnomaly ?? false
+
+          const status = isAnomaly ? 'anomaly' : lateMinutes > 0 ? 'late' : (log.status || 'present')
 
           return {
             id: log.id,
             employeeId: log.employeeId,
             employeeName: emp.firstName ? `${emp.firstName} ${emp.lastName}` : 'Unknown',
-            branchName: emp.branch || '—',  // employee.branch is a plain string, not a relation
+            branchName: emp.branch || '—',
             department: emp.Department?.name || emp.department || 'General',
             date: new Date(log.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }),
-            checkIn: log.checkInTimePH || checkIn.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }),
-            checkOut: log.checkOutTime
-              ? log.checkOutTimePH || checkOut?.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })
+            checkIn: checkIn.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true }),
+            checkOut: checkOut
+              ? checkOut.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true })
               : '—',
-            lateMinutes: log.lateMinutes ?? (isLate ? (hour * 60 + minute) - (8 * 60) : null),
-            status: log.lateMinutes != null ? (log.lateMinutes > 0 ? 'late' : log.status || 'present') : (isLate ? 'late' : log.status || 'present'),
-            shiftType: log.shiftType || 'MORNING',
-            hours,
-            overtime,
-            undertime,
+            lateMinutes,
+            status,
+            shiftCode,
+            isNightShift: emp.Shift?.isNightShift ?? false,
+            totalHours,
+            overtimeMinutes,
+            undertimeMinutes,
+            isAnomaly,
           }
         })
 
+        // Fetch all active employees and inject absent rows
+        const token2 = localStorage.getItem('token')
+        let allEmployees: any[] = []
+        try {
+          const empRes = await fetch('/api/employees?limit=9999', { headers: { Authorization: `Bearer ${token2}` } })
+          const empData = await empRes.json()
+          if (empData.success) allEmployees = (empData.employees || empData.data || []).filter((e: any) => (e.role === 'USER' || !e.role) && (e.employmentStatus === 'ACTIVE' || !e.employmentStatus))
+        } catch { /* ignore */ }
+
+        // Determine which employees have no record today
+        const presentIds = new Set(mapped.map((r: any) => r.employeeId))
+        // Filter allEmployees by the currently active branch tab
+        const branchName = activeBranchId !== 'all' ? branches.find(b => b.id === activeBranchId)?.name : null
+        const absentRows = allEmployees
+          .filter((e: any) => {
+            if (presentIds.has(e.id)) return false
+            if (branchName && e.branch !== branchName) return false
+            return true
+          })
+          .map((e: any) => ({
+            id: `absent-${e.id}`,
+            employeeId: e.id,
+            employeeName: `${e.firstName} ${e.lastName}`,
+            branchName: e.branch || '—',
+            department: e.Department?.name || e.department || 'General',
+            date: selectedDate,
+            checkIn: '—',
+            checkOut: '—',
+            lateMinutes: 0,
+            status: 'absent',
+            shiftCode: e.Shift?.shiftCode ?? null,
+            isNightShift: e.Shift?.isNightShift ?? false,
+            totalHours: 0,
+            overtimeMinutes: 0,
+            undertimeMinutes: 0,
+            isAnomaly: false,
+          }))
+
+        const full = [...mapped, ...absentRows]
+
         const filtered = debouncedSearch
-          ? mapped.filter((r: any) => r.employeeName.toLowerCase().includes(debouncedSearch.toLowerCase()))
-          : mapped
+          ? full.filter((r: any) => r.employeeName.toLowerCase().includes(debouncedSearch.toLowerCase()))
+          : full
 
         setRecords(filtered)
-        setTotalPages(data.meta?.totalPages || 1)
+        setTotalPages(Math.max(1, Math.ceil(filtered.length / rowsPerPage)))
         setStats({
-          totalPresent: filtered.filter((r: any) => r.status === 'present').length, totalLate: filtered.filter((r: any) => r.status === 'late').length,
+          onTime: filtered.filter((r: any) => r.status === 'present').length,
+          totalLate: filtered.filter((r: any) => r.status === 'late').length,
           totalAbsent: filtered.filter((r: any) => r.status === 'absent').length,
+          total: filtered.length,
           avgHours: filtered.length > 0
-            ? (filtered.filter((r: any) => r.hours > 0).reduce((s: number, r: any) => s + r.hours, 0) /
-              (filtered.filter((r: any) => r.hours > 0).length || 1)).toFixed(1)
+            ? (filtered.filter((r: any) => r.totalHours > 0).reduce((s: number, r: any) => s + r.totalHours, 0) /
+              (filtered.filter((r: any) => r.totalHours > 0).length || 1)).toFixed(1)
             : '0',
-          totalOvertime: filtered.reduce((s: number, r: any) => s + r.overtime, 0).toFixed(1),
-          totalUndertime: filtered.reduce((s: number, r: any) => s + r.undertime, 0).toFixed(1),
+          totalOvertime: (filtered.reduce((s: number, r: any) => s + (r.overtimeMinutes ?? 0), 0) / 60).toFixed(1),
+          totalUndertime: (filtered.reduce((s: number, r: any) => s + (r.undertimeMinutes ?? 0), 0) / 60).toFixed(1),
         })
       } else {
         setError(data.message || 'Failed to fetch records')
@@ -229,25 +297,85 @@ export default function BiometricPage() {
 
   /* ── Export ── */
   const handleExport = () => {
-    const headers = ['Employee', 'Branch', 'Department', 'Date', 'Check In', 'Check Out', 'Late', 'Hours', 'OT', 'UT', 'Shift', 'Status']
-    const rows = records.map(r => [
-      r.employeeName, r.branchName, r.department, r.date, r.checkIn, r.checkOut,
-      formatLate(r.lateMinutes),
-      r.hours > 0 ? r.hours.toFixed(2) : '—',
-      r.overtime > 0 ? r.overtime.toFixed(2) : '—',
-      r.undertime > 0 ? r.undertime.toFixed(2) : '—',
-      r.shiftType === 'NIGHT' ? 'Night' : 'Morning',
-      r.status.charAt(0).toUpperCase() + r.status.slice(1),
+    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+    const date = new Date(selectedDate + 'T00:00:00')
+    const formattedDate = `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
+    const branchLabel = activeBranchId === 'all' ? 'All Branches' : (branches.find(b => b.id === activeBranchId)?.name || 'Branch')
+
+    const presentCount = records.filter(r => r.status === 'present').length
+    const lateCount = records.filter(r => r.status === 'late').length
+    const anomalyCount = records.filter((r: any) => r.isAnomaly).length
+    const absentCount = records.filter(r => r.status === 'absent').length
+    const avgHoursNum = parseFloat(stats.avgHours)
+
+    const allRows: (string | number)[][] = []
+
+    // ── Header block ──
+    allRows.push(['BITS Attendance Report'])
+    allRows.push(['Branch', branchLabel])
+    allRows.push(['Date', formattedDate])
+    allRows.push(['Generated', new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })])
+    allRows.push([])
+
+    // ── Summary stats ──
+    allRows.push(['SUMMARY'])
+    allRows.push(['Total Employees', records.length, '', 'Avg Hours', `${stats.avgHours}h`])
+    allRows.push(['On Time', presentCount,        '', 'Overtime Total', `${stats.totalOvertime}h`])
+    allRows.push(['Late',    lateCount,           '', 'Undertime Total', `${stats.totalUndertime}h`])
+    allRows.push(['Anomaly', anomalyCount])
+    allRows.push(['Absent',  absentCount])
+    allRows.push([])
+
+    // ── Column headers ──
+    allRows.push([
+      '#', 'Employee', 'Branch', 'Department', 'Shift',
+      'Check In', 'Check Out', 'Hours Worked',
+      'Late By', 'Overtime', 'Undertime', 'Status'
     ])
-    const csv = [headers, ...rows].map(row => row.join(',')).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    const branchLabel = activeBranchId === 'all' ? 'All-Branches' : (branches.find(b => b.id === activeBranchId)?.name || 'Branch').replace(/\s+/g, '-')
-    a.download = `Attendance_${branchLabel}_${selectedDate}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+
+    // ── Data rows ──
+    records.forEach((r, i) => {
+      const statusLabel = (r as any).isAnomaly
+        ? 'Anomaly'
+        : r.status.charAt(0).toUpperCase() + r.status.slice(1)
+      allRows.push([
+        i + 1,
+        r.employeeName,
+        r.branchName,
+        r.department,
+        r.shiftCode || 'No Shift',
+        r.checkIn,
+        r.checkOut,
+        r.totalHours > 0 ? fmtHours(r.totalHours) : '—',
+        formatLate(r.lateMinutes),
+        r.overtimeMinutes  > 0 ? `+${fmtMins(r.overtimeMinutes)}`  : '—',
+        r.undertimeMinutes > 0 ? `-${fmtMins(r.undertimeMinutes)}` : '—',
+        statusLabel,
+      ])
+    })
+
+    allRows.push([])
+    allRows.push([`${records.length} employee record${records.length !== 1 ? 's' : ''} · ${selectedDate}`])
+
+    // ── Build workbook ──
+    const worksheet = XLSX.utils.aoa_to_sheet(allRows)
+    worksheet['!cols'] = [
+      { wch: 4  },  // #
+      { wch: 25 },  // Employee
+      { wch: 18 },  // Branch
+      { wch: 18 },  // Department
+      { wch: 15 },  // Shift
+      { wch: 12 },  // Check In
+      { wch: 12 },  // Check Out
+      { wch: 14 },  // Hours Worked
+      { wch: 12 },  // Late By
+      { wch: 10 },  // Overtime
+      { wch: 10 },  // Undertime
+      { wch: 12 },  // Status
+    ]
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance')
+    XLSX.writeFile(workbook, `Attendance_${branchLabel.replace(/\s+/g, '_')}_${selectedDate}.xlsx`)
   }
 
   const activeBranch = activeBranchId !== 'all' ? branches.find(b => b.id === activeBranchId) : null
@@ -376,8 +504,13 @@ export default function BiometricPage() {
           </div>
           <div className="flex items-center gap-4">
             <div className="text-center">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Present</p>
-              <p className="text-xl font-black text-foreground">{stats.totalPresent}</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">On Time</p>
+              <p className="text-xl font-black text-foreground">{stats.onTime}</p>
+            </div>
+            <div className="w-px h-8 bg-border" />
+            <div className="text-center">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Late</p>
+              <p className="text-xl font-black text-yellow-400">{stats.totalLate}</p>
             </div>
             <div className="w-px h-8 bg-border" />
             <div className="text-center">
@@ -387,7 +520,7 @@ export default function BiometricPage() {
             <div className="w-px h-8 bg-border" />
             <div className="text-center">
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Total</p>
-              <p className="text-xl font-black text-foreground">{records.length}</p>
+              <p className="text-xl font-black text-foreground">{stats.total}</p>
             </div>
           </div>
         </div>
@@ -472,79 +605,92 @@ export default function BiometricPage() {
                   </td>
                 </tr>
               ) : (
-                records.map((record, index) => (<tr
-                  key={record.id}
-                  className={`hover:bg-primary/5 transition-colors ${index % 2 === 0 ? 'bg-transparent' : 'bg-secondary/10'}`}
-                >
-                  <td className="px-4 sm:px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm shrink-0">
-                        {record.employeeName.charAt(0)}
+                records
+                  .slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
+                  .map((record, index) => (<tr
+                    key={record.id}
+                    className={`hover:bg-primary/5 transition-colors ${index % 2 === 0 ? 'bg-transparent' : 'bg-secondary/10'}`}
+                  >
+                    <td className="px-4 sm:px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm shrink-0">
+                          {record.employeeName.charAt(0)}
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-sm font-medium text-foreground block truncate">{record.employeeName}</span>
+                          <span className="text-xs text-muted-foreground sm:hidden">{record.department}</span>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <span className="text-sm font-medium text-foreground block truncate">{record.employeeName}</span>
-                        <span className="text-xs text-muted-foreground sm:hidden">{record.department}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 sm:px-6 py-4 text-xs text-muted-foreground hidden sm:table-cell">{record.branchName}</td>
-                  <td className="px-4 sm:px-6 py-4 hidden sm:table-cell">
-                    <Badge variant="outline" className="bg-secondary/50 text-foreground border-border text-xs">
-                      {record.department}
-                    </Badge>
-                  </td>
-                  <td className="px-4 sm:px-6 py-4 text-sm font-mono text-emerald-400 hidden sm:table-cell">{record.checkIn}</td>
-                  <td className="px-4 sm:px-6 py-4 text-sm font-mono text-foreground hidden sm:table-cell">{record.checkOut}</td>
-                  <td className="px-4 sm:px-6 py-4 hidden md:table-cell">
-                    <Badge
-                      variant="outline"
-                      className={record.shiftType === 'NIGHT'
-                        ? 'bg-purple-500/20 text-purple-400 border-purple-500/30 text-xs'
-                        : 'bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs'}
-                    >
-                      {record.shiftType === 'NIGHT' ? '🌙 Night' : '☀️ Morning'}
-                    </Badge>
-                  </td>
-                  <td className="px-4 sm:px-6 py-4 hidden md:table-cell">
-                    {record.lateMinutes && record.lateMinutes > 0 ? (
-                      <span className="text-xs font-bold text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full whitespace-nowrap">
-                        {formatLate(record.lateMinutes)}
+                    </td>
+                    <td className="px-4 sm:px-6 py-4 text-xs text-muted-foreground hidden sm:table-cell">{record.branchName}</td>
+                    <td className="px-4 sm:px-6 py-4 hidden sm:table-cell">
+                      <Badge variant="outline" className="bg-secondary/50 text-foreground border-border text-xs">
+                        {record.department}
+                      </Badge>
+                    </td>
+                    <td className="px-4 sm:px-6 py-4 text-sm font-mono text-emerald-400 hidden sm:table-cell">{record.checkIn}</td>
+                    <td className="px-4 sm:px-6 py-4 text-sm font-mono text-foreground hidden sm:table-cell">{record.checkOut}</td>
+                    <td className="px-4 sm:px-6 py-4 hidden md:table-cell">
+                      {record.shiftCode ? (
+                        <Badge
+                          variant="outline"
+                          className={record.isNightShift
+                            ? 'bg-purple-500/20 text-purple-400 border-purple-500/30 text-xs font-bold'
+                            : 'bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs font-bold'}
+                        >
+                          {record.shiftCode}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">No shift</span>
+                      )}
+                    </td>
+                    <td className="px-4 sm:px-6 py-4 hidden md:table-cell">
+                      {record.lateMinutes && record.lateMinutes > 0 ? (
+                        <span className="text-xs font-bold text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full whitespace-nowrap">
+                          {formatLate(record.lateMinutes)}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 sm:px-6 py-4 text-sm font-mono text-foreground">
+                      {fmtHours(record.totalHours)}
+                    </td>
+                    <td className="px-4 sm:px-6 py-4 hidden md:table-cell">
+                      <span className={`text-sm font-medium ${record.overtimeMinutes > 0 ? 'text-green-400' : 'text-muted-foreground'}`}>
+                        {record.overtimeMinutes > 0 ? `+${fmtMins(record.overtimeMinutes)}` : '—'}
                       </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 sm:px-6 py-4 text-sm font-mono text-foreground">
-                    {record.hours > 0 ? record.hours.toFixed(2) : '—'}
-                  </td>
-                  <td className="px-4 sm:px-6 py-4 hidden md:table-cell">
-                    <span className={`text-sm font-medium ${record.overtime > 0 ? 'text-green-400' : 'text-muted-foreground'}`}>
-                      {record.overtime > 0 ? `+${record.overtime.toFixed(2)}` : '—'}
-                    </span>
-                  </td>
-                  <td className="px-4 sm:px-6 py-4 hidden md:table-cell">
-                    <span className={`text-sm font-medium ${record.undertime > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
-                      {record.undertime > 0 ? `-${record.undertime.toFixed(2)}` : '—'}
-                    </span>
-                  </td>
-                  <td className="px-4 sm:px-6 py-4">
-                    <Badge
-                      variant="outline"
-                      className={
-                        record.status === 'present'
-                          ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                          : record.status === 'late'
-                            ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-                            : record.status === 'absent'
-                              ? 'bg-red-500/20 text-red-400 border-red-500/30'
-                              : 'bg-secondary/50 text-muted-foreground border-border'
-                      }
-                    >
-                      {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
-                    </Badge>
-                  </td>
-                </tr>
-                ))
+                    </td>
+                    <td className="px-4 sm:px-6 py-4 hidden md:table-cell">
+                      <span className={`text-sm font-medium ${record.undertimeMinutes > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                        {record.undertimeMinutes > 0 ? `-${fmtMins(record.undertimeMinutes)}` : '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 sm:px-6 py-4">
+                      {record.isAnomaly ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200 whitespace-nowrap">
+                          <AlertCircle className="w-3 h-3" />
+                          Anomaly
+                        </span>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className={
+                            record.status === 'present'
+                              ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                              : record.status === 'late'
+                                ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                                : record.status === 'absent'
+                                  ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                                  : 'bg-secondary/50 text-muted-foreground border-border'
+                          }
+                        >
+                          {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
+                        </Badge>
+                      )}
+                    </td>
+                  </tr>
+                  ))
               )}
             </tbody>
           </table>

@@ -219,3 +219,25 @@ export const testDeviceConnection = async (req: Request, res: Response) => {
         });
     }
 };
+
+// ─── POST /api/devices/:id/reconcile ─────────────────────────────────────────
+export const reconcileDevice = async (req: Request, res: Response) => {
+    const id = parseInt(String(req.params.id));
+    if (isNaN(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid device ID' });
+    }
+    try {
+        console.log(`[Devices] Starting reconcile for device ${id}...`);
+        const { reconcileDeviceWithDB } = await import('../services/zkServices');
+        const report = await reconcileDeviceWithDB(id);
+        return res.json({
+            success: true,
+            message: `Reconcile complete: ${report.pushed.length} pushed, ${report.deleted.length} removed, ${report.needsEnrollment.length} need enrollment.`,
+            report,
+        });
+    } catch (error: any) {
+        const msg = zkErrMsg(error);
+        console.error(`[Devices] Reconcile failed for device ${id}: ${msg}`);
+        return res.status(500).json({ success: false, message: msg });
+    }
+};

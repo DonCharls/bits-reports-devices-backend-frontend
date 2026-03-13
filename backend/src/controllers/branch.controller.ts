@@ -47,6 +47,33 @@ export const createBranch = async (req: Request, res: Response) => {
     }
 };
 
+// PUT /api/branches/:id - Rename a branch
+export const renameBranch = async (req: Request, res: Response) => {
+    try {
+        const id = parseInt(String(req.params.id));
+        if (isNaN(id)) {
+            return res.status(400).json({ success: false, message: 'Invalid branch ID' });
+        }
+        const { name } = req.body;
+        if (!name || !name.trim()) {
+            return res.status(400).json({ success: false, message: 'Branch name is required' });
+        }
+        const trimmedName = name.trim();
+        const existing = await prisma.branch.findUnique({ where: { name: trimmedName } });
+        if (existing && existing.id !== id) {
+            return res.status(409).json({ success: false, message: 'Branch name already exists' });
+        }
+        const branch = await prisma.branch.update({
+            where: { id },
+            data: { name: trimmedName, updatedAt: new Date() }
+        });
+        res.json({ success: true, branch });
+    } catch (error) {
+        console.error('Error renaming branch:', error);
+        res.status(500).json({ success: false, message: 'Failed to rename branch' });
+    }
+};
+
 // DELETE /api/branches/:id - Delete a branch
 export const deleteBranch = async (req: Request, res: Response) => {
     try {

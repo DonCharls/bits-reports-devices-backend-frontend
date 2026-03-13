@@ -1,54 +1,39 @@
-"use client";
-import React, { useState } from 'react';
-import { usePathname } from 'next/navigation';
-import { useAuth } from '@/hooks/useAuth';
-import Sidebar from './hr-sidebar';
-import TopBar from './hr-topbar';
+'use client'
 
-export default function HRLayout({ children }: { children: React.ReactNode }) {
-    const { isLoading, isAuthenticated } = useAuth('HR');
-    const [isMobileOpen, setIsMobileOpen] = useState(false);
-    const [isCollapsed, setIsCollapsed] = useState(false);
-    const pathname = usePathname();
+import React, { useState } from "react"
+import Sidebar from './hr-sidebar'
+import TopBar from './hr-topbar'
 
-    // Show loading state while checking auth
-    if (isLoading || !isAuthenticated) {
-        return (
-            <div className="flex h-screen items-center justify-center bg-white">
-                <div className="text-gray-500">Loading...</div>
-            </div>
-        );
-    }
+export function HRLayout({ children }: { children: React.ReactNode }) {
+    const [isMobileOpen, setIsMobileOpen] = useState(false)
+    const [isCollapsed, setIsCollapsed] = useState(false)
 
     return (
-        <div className="h-screen bg-white overflow-hidden relative">
+        <div className="relative min-h-screen bg-slate-50 flex flex-col">
 
-            {/* Top Bar - full width, above everything */}
-            <TopBar setIsMobileOpen={setIsMobileOpen} />
+            <header className="fixed top-0 left-0 right-0 z-[100] h-16">
+                <TopBar setIsMobileOpen={setIsMobileOpen} />
+            </header>
 
-            {/* Mobile Overlay */}
-            {isMobileOpen && (
-                <div
-                    className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden backdrop-blur-sm transition-opacity"
-                    onClick={() => setIsMobileOpen(false)}
+            <div className="flex flex-1 pt-16">
+                <Sidebar
+                    isMobileOpen={isMobileOpen}
+                    setIsMobileOpen={setIsMobileOpen}
+                    isCollapsed={isCollapsed}
+                    setIsCollapsed={setIsCollapsed}
                 />
-            )}
 
-            {/* Sidebar */}
-            <Sidebar isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} />
+                <main
+                    className={`flex-1 min-w-0 transition-all duration-300 p-6 
+                    ${isCollapsed ? 'lg:ml-24' : 'lg:ml-64'} 
+                    ml-0`}
+                >
 
-            {/* Main Content Area */}
-            <div className={`h-[calc(100vh-4rem)] mt-16 transition-all duration-300 ${isCollapsed ? 'lg:ml-20' : 'lg:ml-72'}`}>
-                <main className="h-full overflow-y-auto p-4 md:p-8">
-                    {/* key={pathname} ensures the smooth page transition triggers on navigation */}
-                    <div
-                        key={pathname}
-                        className="max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-2 duration-500 ease-out"
-                    >
+                    <div className="w-full h-full relative">
                         {children}
                     </div>
                 </main>
             </div>
         </div>
-    );
+    )
 }

@@ -13,6 +13,8 @@ import departmentRoutes from './routes/department_routes';
 import branchRoutes from './routes/branch_routes';
 import deviceRoutes from './routes/device_routes';
 import logsRoutes from './routes/logs_routes';
+import shiftRoutes from './routes/shift_routes';
+import reportRoutes from './routes/report_routes';
 import { startCronJobs } from './lib/cronJobs';
 import { repairMissingCheckouts } from './services/attendance.service';
 
@@ -38,6 +40,8 @@ app.use('/api/departments', departmentRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/logs', logsRoutes);
+app.use('/api/shifts', shiftRoutes);
+app.use('/api/reports', reportRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });

@@ -257,9 +257,6 @@ export const addUserToDevice = async (zkId: number, name: string, role: string =
     try {
         console.log(`[ZK] Adding User with zkId=${zkId} (${name})...`);
 
-        // ── Always read device IPs from the DB — never from env vars ────────
-        // getDriver() with no args falls back to ZK_HOST env var which may be
-        // stale. We must use the same DB-first approach as syncZkData.
         const dbDevices = await prisma.device.findMany({
             where: { isActive: true },
             orderBy: { id: 'asc' },
@@ -282,32 +279,31 @@ export const addUserToDevice = async (zkId: number, name: string, role: string =
                 const deviceRole = role === 'ADMIN' ? 14 : 0;
                 const visibleId = zkId.toString();
 
-                const existingUsers = await zk.getUsers();
+                // ── UID = zkId (deterministic, collision-free) ────────────────
+                // Using getNextUid() was the root cause of overwriting existing
+                // users. Instead, we ALWAYS use the employee's DB zkId as their
+                // device UID. This makes the mapping 1-to-1 and predictable:
+                //   DB employee.zkId === device internal UID (always)
+                const deviceUid = zkId;
 
-                const existingUser = existingUsers.find(
-                    (u: any) => u.userId === visibleId || u.userId === zkId.toString()
-                );
-
-                let deviceUid: number;
-
-                if (existingUser) {
-                    if (PROTECTED_DEVICE_UIDS.includes(existingUser.uid)) {
-                        deviceUid = await zk.getNextUid();
-                        while (PROTECTED_DEVICE_UIDS.includes(deviceUid)) deviceUid++;
-                    } else {
-                        deviceUid = existingUser.uid;
-                        console.log(`[ZK] User already exists on "${dbDevice.name}" (UID: ${deviceUid}). Updating...`);
-                    }
-                } else {
-                    deviceUid = await zk.getNextUid();
-                    while (PROTECTED_DEVICE_UIDS.includes(deviceUid)) deviceUid++;
-                    console.log(`[ZK] New user on "${dbDevice.name}". Assigning device UID: ${deviceUid}`);
+                if (PROTECTED_DEVICE_UIDS.includes(deviceUid)) {
+                    console.warn(`[ZK] ⚠ zkId=${zkId} collides with a protected device UID. Skipping device "${dbDevice.name}".`);
+                    continue;
                 }
 
+                // ── Force-clear the slot BEFORE writing ──────────────────────
+                // Even if no one should be in this slot, we always purge it
+                // first. This prevents stale fingerprints/names from a previous
+                // employee who occupied this UID (e.g. after DB reset/re-seed).
+                console.log(`[ZK] Force-clearing UID=${deviceUid} on "${dbDevice.name}" before write...`);
+                try { await zk.deleteUser(deviceUid); } catch { /* slot may be empty — ok */ }
                 await zk.clearUserFingerprints(deviceUid);
-                await zk.setUser(deviceUid, name, "", deviceRole, 0, visibleId);
 
-                console.log(`[ZK] ${existingUser && !PROTECTED_DEVICE_UIDS.includes(existingUser.uid) ? 'Updated' : 'Added'} user "${name}" on "${dbDevice.name}" (UID: ${deviceUid}).`);
+                // ── Write the new user ────────────────────────────────────────
+                await zk.setUser(deviceUid, name, "", deviceRole, 0, visibleId);
+                await zk.refreshData();
+
+                console.log(`[ZK] ✓ Written "${name}" → UID=${deviceUid}, visibleId="${visibleId}" on "${dbDevice.name}".`);
                 addedToAtLeastOne = true;
             } catch (err: any) {
                 lastError = err;
@@ -329,6 +325,7 @@ export const addUserToDevice = async (zkId: number, name: string, role: string =
         releaseDeviceLock();
     }
 };
+
 
 
 
@@ -380,108 +377,82 @@ export const deleteUserFromDevice = async (zkId: number): Promise<SyncResult> =>
 };
 
 export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
-    const zk = getDriver();
     await acquireDeviceLock();
 
     try {
-        console.log(`[ZK] Fetching DB employees...`);
+        console.log(`[ZK] syncEmployeesToDevice — fetching DB employees...`);
         const employees = await prisma.employee.findMany({
             where: {
                 zkId: { not: null, gt: 1 }, // Skip Admin (zkId = 1)
                 employmentStatus: 'ACTIVE',
             },
-            select: {
-                zkId: true,
-                firstName: true,
-                lastName: true,
-                employeeNumber: true,
-                role: true,
-            }
+            select: { zkId: true, firstName: true, lastName: true, role: true }
         });
 
         if (employees.length === 0) {
             return { success: true, message: "No employees to sync.", count: 0 };
         }
 
-        console.log(`[ZK] Connecting...`);
-        await connectWithRetry(zk);
+        const dbDevices = await prisma.device.findMany({
+            where: { isActive: true },
+            orderBy: { id: 'asc' },
+        });
 
-        // 1. Fetch current device users — map by visible userId string for safe lookup
-        console.log(`[ZK] Fetching existing device users...`);
-        const deviceUsers = await zk.getUsers();
-        const deviceUserByVisibleId = new Map<string, any>();
-        deviceUsers.forEach(u => deviceUserByVisibleId.set(u.userId, u));
-        console.log(`[ZK] Found ${deviceUsers.length} existing users on device.`);
+        if (dbDevices.length === 0) {
+            return { success: false, message: 'No active devices configured.' };
+        }
 
-        // Track the next available UID for new users — skip protected UIDs
-        const existingUids = deviceUsers.map((u: any) => u.uid);
-        let nextUid = existingUids.length > 0 ? Math.max(...existingUids) + 1 : 1;
-        while (PROTECTED_DEVICE_UIDS.includes(nextUid)) nextUid++;
+        let totalSuccess = 0;
 
-        let successCount = 0;
-        let failedCount = 0;
-        const errors: string[] = [];
-
-        for (const employee of employees) {
-            const fullName = `${employee.firstName} ${employee.lastName}`;
+        for (const dbDevice of dbDevices) {
+            const zk = getDriver(dbDevice.ip, dbDevice.port);
+            let successCount = 0;
             try {
-                const role = employee.role === 'ADMIN' ? 14 : 0; // 14 = Admin, 0 = User
-                const zkId = employee.zkId!;
-                const displayName = fullName;
+                console.log(`[ZK] Connecting to "${dbDevice.name}"...`);
+                await connectWithRetry(zk);
 
-                // IMPORTANT: Always use zkId as the visible device User ID.
-                // employeeNumber is a company HR field — NOT a biometric device identifier.
-                const userIdString = zkId.toString();
+                for (const employee of employees) {
+                    const fullName = `${employee.firstName} ${employee.lastName}`;
+                    const zkId = employee.zkId!;
+                    const visibleId = zkId.toString();
+                    const deviceRole = employee.role === 'ADMIN' ? 14 : 0;
+                    const deviceUid = zkId; // UID ≡ zkId — deterministic, no collisions
 
-                // Look up by visible userId string — NOT by internal UID
-                const existingUser = deviceUserByVisibleId.get(userIdString) || deviceUserByVisibleId.get(zkId.toString());
-
-                // Preserve existing password/cardno if user already on device
-                const password = existingUser ? existingUser.password : "";
-                const cardno = existingUser ? existingUser.cardno : 0;
-
-                // Use existing UID if found, otherwise assign next available UID
-                // CRITICAL: Never overwrite a protected UID
-                let deviceUid: number;
-                if (existingUser) {
-                    if (PROTECTED_DEVICE_UIDS.includes(existingUser.uid)) {
-                        console.warn(`[ZK]   ⚠ SKIPPING ${displayName} — matched protected UID ${existingUser.uid} ("${existingUser.name}"). Assigning new UID.`);
-                        deviceUid = nextUid++;
-                        while (PROTECTED_DEVICE_UIDS.includes(deviceUid)) deviceUid = nextUid++;
-                    } else {
-                        deviceUid = existingUser.uid;
+                    if (PROTECTED_DEVICE_UIDS.includes(deviceUid)) {
+                        console.warn(`[ZK]   ⚠ SKIP ${fullName} — zkId=${zkId} is a protected UID.`);
+                        continue;
                     }
-                } else {
-                    deviceUid = nextUid++;
-                    while (PROTECTED_DEVICE_UIDS.includes(deviceUid)) deviceUid = nextUid++;
+
+                    try {
+                        // Force-clear the slot, then write
+                        try { await zk.deleteUser(deviceUid); } catch { /* empty slot — ok */ }
+                        await zk.clearUserFingerprints(deviceUid);
+                        await zk.setUser(deviceUid, fullName, "", deviceRole, 0, visibleId);
+                        console.log(`[ZK]   ✓ Written: "${fullName}" → UID=${deviceUid} on "${dbDevice.name}"`);
+                        successCount++;
+                    } catch (err: any) {
+                        console.error(`[ZK]   ✗ Failed "${fullName}": ${zkErrMsg(err)}`);
+                    }
                 }
 
-                await zk.setUser(deviceUid, displayName, password, role, cardno, userIdString);
-
-                if (existingUser) {
-                    console.log(`[ZK]   ✓ Updated: ${displayName} (UID: ${deviceUid}, ID: ${userIdString}, Role: ${role}, Card: ${cardno})`);
-                } else {
-                    console.log(`[ZK]   ✓ Added: ${displayName} (UID: ${deviceUid}, ID: ${userIdString}, Role: ${role})`);
-                }
-
-                successCount++;
-            } catch (error: any) {
-                failedCount++;
-                errors.push(`Failed ${fullName}: ${error.message}`);
-                console.error(`[ZK]   ✗ Failed ${fullName}: ${error.message}`);
+                await zk.refreshData();
+                totalSuccess += successCount;
+            } catch (err: any) {
+                console.error(`[ZK] Could not sync to "${dbDevice.name}": ${zkErrMsg(err)}`);
+            } finally {
+                try { await zk.disconnect(); } catch { /* ignore */ }
             }
         }
 
         return {
-            success: successCount > 0,
-            message: `Synced ${successCount}/${employees.length} employees.`,
-            count: successCount,
+            success: totalSuccess > 0,
+            message: `Synced ${totalSuccess} employee(s) across ${dbDevices.length} device(s).`,
+            count: totalSuccess,
         };
 
     } catch (error: any) {
         throw new Error(`Sync failed: ${error.message}`);
     } finally {
-        try { await zk.disconnect(); } catch { /* ignore disconnect errors */ }
         releaseDeviceLock();
     }
 };
@@ -552,29 +523,34 @@ export const enrollEmployeeFingerprint = async (
         console.log(`[Enrollment] Connecting to "${dbDevice.name}" (${dbDevice.ip}:${dbDevice.port})...`);
         await connectWithRetry(zk);
 
-        // 4. Ensure user exists on device (add if missing) — all within the same connection
+        // ── UID = zkId (same deterministic strategy as addUserToDevice) ──────
+        const deviceUid = employee.zkId!;
+
+        if (PROTECTED_DEVICE_UIDS.includes(deviceUid)) {
+            return { success: false, message: `UID ${deviceUid} is a protected device slot`, error: 'protected_uid' };
+        }
+
+        // 4. Ensure user is correctly written on device (UID = zkId, force-clear first)
         const deviceUsers = await zk.getUsers();
-        const existingUser = deviceUsers.find(
-            (u: any) => u.userId === visibleId || u.name === fullName
-        );
+        const existingUser = deviceUsers.find((u: any) => u.userId === visibleId);
 
         if (!existingUser) {
-            console.log(`[Enrollment] User not found on device — adding now (visibleId="${visibleId}")...`);
-            let deviceUid = await zk.getNextUid();
-            while (PROTECTED_DEVICE_UIDS.includes(deviceUid)) deviceUid++;
+            console.log(`[Enrollment] User not found on device — force-clearing slot UID=${deviceUid} and adding (visibleId="${visibleId}")...`);
+            try { await zk.deleteUser(deviceUid); } catch { /* slot empty — ok */ }
+            await zk.clearUserFingerprints(deviceUid);
             await zk.setUser(deviceUid, fullName, '', 0, 0, visibleId);
-            await zk.refreshData(); // commit new user to device memory
-            console.log(`[Enrollment] User added to device (UID: ${deviceUid}).`);
-        } else if (PROTECTED_DEVICE_UIDS.includes(existingUser.uid)) {
-            // Matched a protected slot — re-add under a safe UID
-            console.warn(`[Enrollment] ⚠ Matched protected UID ${existingUser.uid} — re-adding under new UID.`);
-            let deviceUid = await zk.getNextUid();
-            while (PROTECTED_DEVICE_UIDS.includes(deviceUid)) deviceUid++;
+            await zk.refreshData();
+            console.log(`[Enrollment] User written to UID=${deviceUid}.`);
+        } else if (existingUser.uid !== deviceUid) {
+            // User exists but at wrong UID — move them to the correct slot
+            console.warn(`[Enrollment] ⚠ User found at wrong UID=${existingUser.uid} — re-writing to correct slot UID=${deviceUid}.`);
+            try { await zk.deleteUser(deviceUid); } catch { /* slot may be empty */ }
+            await zk.clearUserFingerprints(deviceUid);
             await zk.setUser(deviceUid, fullName, '', 0, 0, visibleId);
-            await zk.refreshData(); // commit to device memory
-            console.log(`[Enrollment] User re-added (UID: ${deviceUid}).`);
+            await zk.refreshData();
+            console.log(`[Enrollment] User re-written to UID=${deviceUid}.`);
         } else {
-            console.log(`[Enrollment] User already on device (UID: ${existingUser.uid}, visibleId="${existingUser.userId}"). Proceeding to enroll.`);
+            console.log(`[Enrollment] User already at correct slot UID=${deviceUid}. Proceeding to enroll.`);
         }
 
         // 5. Send CMD_STARTENROLL — visibleId (zkId string) is the correct payload
@@ -649,18 +625,14 @@ export const syncEmployeesFromDevice = async (): Promise<SyncResult> => {
                 if (user.name && (existing.firstName !== firstName || existing.lastName !== lastName)) {
                     await prisma.employee.update({
                         where: { id: existing.id },
-                        data: {
-                            firstName,
-                            lastName
-                        }
+                        data: { firstName, lastName }
                     });
                     console.log(`[ZK] Updated Name for ID ${zkId}: ${user.name}`);
                 }
                 updateCount++;
             } else {
                 // Unknown device user — do NOT auto-create in DB.
-                // If this user was deleted from DB intentionally, they should stay deleted.
-                console.log(`[ZK] Skipping unknown device user zkId=${zkId} ("${user.name}") — not in database. Delete from device if unwanted.`);
+                console.log(`[ZK] Skipping unknown device user zkId=${zkId} ("${user.name}") — not in database.`);
             }
         }
 
@@ -670,6 +642,158 @@ export const syncEmployeesFromDevice = async (): Promise<SyncResult> => {
         return { success: false, error: error.message };
     } finally {
         try { await zk.disconnect(); } catch { /* ignore disconnect errors */ }
+        releaseDeviceLock();
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RECONCILE: Two-way sync between a specific device and the database.
+//
+// Safety rules:
+//   1. NEVER delete device users with role > 0 (device admins).
+//   2. NEVER delete device users in PROTECTED_DEVICE_UIDS list.
+//   3. Use UID = zkId for all writes (deterministic, no collisions).
+//   4. Force-clear slot before each write (prevents stale fingerprint data).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ReconcileReport {
+    deviceId: number;
+    deviceName: string;
+    pushed: { zkId: number; name: string }[];         // DB-only → pushed to device
+    deleted: { uid: number; userId: string; name: string }[]; // device-only → removed
+    protected: { uid: number; name: string }[];        // admin users skipped
+    needsEnrollment: { zkId: number; name: string }[]; // users with 0 fingerprints
+    errors: string[];
+}
+
+export const reconcileDeviceWithDB = async (deviceId: number): Promise<ReconcileReport> => {
+    const report: ReconcileReport = {
+        deviceId,
+        deviceName: '',
+        pushed: [],
+        deleted: [],
+        protected: [],
+        needsEnrollment: [],
+        errors: [],
+    };
+
+    // 1. Load device config from DB
+    const dbDevice = await prisma.device.findUnique({ where: { id: deviceId } });
+    if (!dbDevice) throw new Error(`Device ${deviceId} not found in DB`);
+    report.deviceName = dbDevice.name;
+
+    // 2. Load all active DB employees
+    const dbEmployees = await prisma.employee.findMany({
+        where: { zkId: { not: null }, employmentStatus: 'ACTIVE' },
+        select: { zkId: true, firstName: true, lastName: true, role: true }
+    });
+    const dbByZkId = new Map(dbEmployees.map(e => [e.zkId!.toString(), e]));
+
+    await acquireDeviceLock();
+    const zk = getDriver(dbDevice.ip, dbDevice.port);
+
+    try {
+        console.log(`[Reconcile] Connecting to "${dbDevice.name}" (${dbDevice.ip}:${dbDevice.port})...`);
+        await connectWithRetry(zk, 2);
+
+        // 3. Get all users currently on device
+        const deviceUsers = await zk.getUsers();
+        console.log(`[Reconcile] Device has ${deviceUsers.length} users. DB has ${dbEmployees.length} active employees.`);
+
+        const deviceByVisibleId = new Map(deviceUsers.map((u: any) => [u.userId, u]));
+
+        // ── STEP A: Delete device-only ghost users ──────────────────────────
+        for (const dUser of deviceUsers) {
+            const uid = dUser.uid;
+            const visibleId = dUser.userId;
+
+            // Skip protected UIDs
+            if (PROTECTED_DEVICE_UIDS.includes(uid)) {
+                report.protected.push({ uid, name: dUser.name });
+                continue;
+            }
+
+            // Skip device admins (role > 0) — never auto-delete admin accounts
+            if ((dUser.role ?? 0) > 0) {
+                report.protected.push({ uid, name: dUser.name });
+                console.log(`[Reconcile] ⛔ Skipping admin UID=${uid} ("${dUser.name}") — protected.`);
+                continue;
+            }
+
+            // Check if this user maps to an active DB employee
+            if (!dbByZkId.has(visibleId)) {
+                // Ghost user — delete from device
+                console.log(`[Reconcile] 🗑 Deleting ghost user UID=${uid} visibleId="${visibleId}" ("${dUser.name}")...`);
+                try {
+                    await zk.clearUserFingerprints(uid);
+                    await zk.deleteUser(uid);
+                    report.deleted.push({ uid, userId: visibleId, name: dUser.name });
+                    console.log(`[Reconcile] ✓ Deleted ghost UID=${uid}.`);
+                } catch (err: any) {
+                    const msg = `Failed to delete UID=${uid}: ${zkErrMsg(err)}`;
+                    report.errors.push(msg);
+                    console.error(`[Reconcile] ✗ ${msg}`);
+                }
+            }
+        }
+
+        // ── STEP B: Push DB-only employees to device ────────────────────────
+        for (const emp of dbEmployees) {
+            const zkId = emp.zkId!;
+            const visibleId = zkId.toString();
+            const fullName = `${emp.firstName} ${emp.lastName}`;
+            const deviceRole = emp.role === 'ADMIN' ? 14 : 0;
+
+            if (PROTECTED_DEVICE_UIDS.includes(zkId)) continue;
+
+            if (!deviceByVisibleId.has(visibleId)) {
+                // Employee in DB but not on device — push them
+                console.log(`[Reconcile] ➕ Pushing "${fullName}" (zkId=${zkId}) to device...`);
+                try {
+                    try { await zk.deleteUser(zkId); } catch { /* slot may be empty */ }
+                    await zk.clearUserFingerprints(zkId);
+                    await zk.setUser(zkId, fullName, "", deviceRole, 0, visibleId);
+                    report.pushed.push({ zkId, name: fullName });
+                    // Newly pushed user has no fingerprints yet
+                    report.needsEnrollment.push({ zkId, name: fullName });
+                    console.log(`[Reconcile] ✓ Pushed "${fullName}" to UID=${zkId}.`);
+                } catch (err: any) {
+                    const msg = `Failed to push "${fullName}": ${zkErrMsg(err)}`;
+                    report.errors.push(msg);
+                    console.error(`[Reconcile] ✗ ${msg}`);
+                }
+            } else {
+                // User exists on device — check finger count
+                const dUser = deviceByVisibleId.get(visibleId);
+                try {
+                    const fingerCount = await zk.getFingerCount(dUser.uid);
+                    if (fingerCount === 0) {
+                        report.needsEnrollment.push({ zkId, name: fullName });
+                        console.log(`[Reconcile] ⚠ "${fullName}" (UID=${dUser.uid}) has 0 fingerprints — needs enrollment.`);
+                    }
+                } catch {
+                    // getFingerCount is best-effort; non-critical
+                }
+            }
+        }
+
+        await zk.refreshData();
+
+        console.log(`[Reconcile] ✅ Complete. Pushed: ${report.pushed.length}, Deleted: ${report.deleted.length}, Needs enrollment: ${report.needsEnrollment.length}, Protected: ${report.protected.length}`);
+
+        // Update device isActive to true since we just connected successfully
+        await prisma.device.update({ where: { id: deviceId }, data: { isActive: true, updatedAt: new Date() } });
+
+        return report;
+
+    } catch (error: any) {
+        const msg = zkErrMsg(error);
+        console.error(`[Reconcile] Fatal error: ${msg}`);
+        // Mark device offline
+        await prisma.device.update({ where: { id: deviceId }, data: { isActive: false, updatedAt: new Date() } }).catch(() => { });
+        throw new Error(`Reconcile failed: ${msg}`);
+    } finally {
+        try { await zk.disconnect(); } catch { /* ignore */ }
         releaseDeviceLock();
     }
 };

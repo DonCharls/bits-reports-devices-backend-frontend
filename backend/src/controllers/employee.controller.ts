@@ -22,6 +22,8 @@ export const getAllEmployees = async (req: Request, res: Response) => {
                 contactNumber: true,
                 hireDate: true,
                 employmentStatus: true,
+                shiftId: true,
+                Shift: { select: { id: true, name: true, shiftCode: true, startTime: true, endTime: true } },
                 createdAt: true,
             },
             // Order by ZK ID ascending
@@ -224,7 +226,8 @@ export const createEmployee = async (req: Request, res: Response) => {
             branch,
             contactNumber,
             hireDate,
-            employmentStatus
+            employmentStatus,
+            shiftId
         } = req.body;
 
         // Validate required fields
@@ -309,6 +312,7 @@ export const createEmployee = async (req: Request, res: Response) => {
                 hireDate: hireDate ? new Date(hireDate) : undefined,
                 employmentStatus: employmentStatus || 'ACTIVE',
                 zkId: nextZkId,
+                shiftId: shiftId ? parseInt(shiftId, 10) : null,
                 updatedAt: new Date()
             },
             select: {
@@ -448,8 +452,11 @@ export const updateEmployee = async (req: Request, res: Response) => {
             email,
             contactNumber,
             position,
+            department,
             departmentId,
             branch,
+            hireDate,
+            shiftId,
             employmentStatus
         } = req.body;
 
@@ -472,10 +479,13 @@ export const updateEmployee = async (req: Request, res: Response) => {
         if (email !== undefined) updateData.email = email === '' ? null : email;
         if (contactNumber !== undefined) updateData.contactNumber = contactNumber;
         if (position !== undefined) updateData.position = position;
+        if (department !== undefined) updateData.department = department || null;
         if (departmentId !== undefined) {
             updateData.departmentId = departmentId ? parseInt(departmentId, 10) : null;
         }
-        if (branch !== undefined) updateData.branch = branch;
+        if (branch !== undefined) updateData.branch = branch || null;
+        if (hireDate !== undefined) updateData.hireDate = hireDate ? new Date(hireDate) : null;
+        if (shiftId !== undefined) updateData.shiftId = shiftId ? parseInt(shiftId, 10) : null;
         if (employmentStatus !== undefined && ['ACTIVE', 'INACTIVE', 'TERMINATED'].includes(employmentStatus)) {
             updateData.employmentStatus = employmentStatus;
         }
@@ -494,6 +504,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
                 lastName: true,
                 email: true,
                 role: true,
+                department: true,
                 Department: { select: { name: true } },
                 departmentId: true,
                 position: true,
@@ -501,6 +512,8 @@ export const updateEmployee = async (req: Request, res: Response) => {
                 contactNumber: true,
                 hireDate: true,
                 employmentStatus: true,
+                shiftId: true,
+                Shift: { select: { id: true, name: true, shiftCode: true } },
                 createdAt: true,
                 updatedAt: true
             },

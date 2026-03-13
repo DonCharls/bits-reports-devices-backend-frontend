@@ -152,3 +152,50 @@ export const getEmployeeHistory = async (req: Request, res: Response) => {
         });
     }
 };
+
+/**
+ * Manually update an attendance record (HR correction)
+ * Body: { checkInTime?, checkOutTime?, status?, reason? }
+ */
+export const updateAttendance = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const recordId = parseInt(id);
+
+        if (isNaN(recordId)) {
+            res.status(400).json({ success: false, message: 'Invalid attendance record ID' });
+            return;
+        }
+
+        const { checkInTime, checkOutTime, status, reason } = req.body;
+
+        const existing = await prisma.attendanceRecord.findUnique({ where: { id: recordId } });
+        if (!existing) {
+            res.status(404).json({ success: false, message: 'Attendance record not found' });
+            return;
+        }
+
+        const updateData: any = {};
+        if (checkInTime) updateData.checkInTime = new Date(checkInTime);
+        if (checkOutTime !== undefined) updateData.checkOutTime = checkOutTime ? new Date(checkOutTime) : null;
+        if (status) updateData.status = status.toLowerCase();
+
+        const updated = await prisma.attendanceRecord.update({
+            where: { id: recordId },
+            data: updateData
+        });
+
+        res.json({
+            success: true,
+            message: 'Attendance record updated successfully',
+            data: updated,
+            reason: reason || null
+        });
+    } catch (error: any) {
+        console.error('Update Attendance Failed:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to update attendance record'
+        });
+    }
+};

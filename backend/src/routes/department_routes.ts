@@ -1,5 +1,5 @@
 import express from 'express';
-import { getAllDepartments, createDepartment, deleteDepartment } from '../controllers/department.controller';
+import { getAllDepartments, createDepartment, renameDepartment, deleteDepartment } from '../controllers/department.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { adminOrHR } from '../middleware/role.middleware';
 
@@ -42,6 +42,7 @@ router.post('/', adminOrHR, createDepartment);
  *     security:
  *       - bearerAuth: []
  */
+router.put('/:id', adminOrHR, renameDepartment);
 router.delete('/:id', adminOrHR, deleteDepartment);
 
 export default router;

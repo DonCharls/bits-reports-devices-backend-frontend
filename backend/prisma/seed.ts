@@ -60,19 +60,52 @@ async function main() {
     // 3. Shifts
     // ──────────────────────────────────────────────
     const shifts = [
-        { name: 'Morning Shift', startTime: '08:00', endTime: '17:00' },
-        { name: 'Afternoon Shift', startTime: '13:00', endTime: '22:00' },
-        { name: 'Night Shift', startTime: '22:00', endTime: '06:00' },
+        {
+            shiftCode: 'MS-01',
+            name: 'Morning Shift',
+            startTime: '08:00',
+            endTime: '17:00',
+            graceMinutes: 15,
+            breakMinutes: 60,
+            isNightShift: false,
+            description: 'Standard day shift, 8AM to 5PM',
+        },
+        {
+            shiftCode: 'AS-01',
+            name: 'Afternoon Shift',
+            startTime: '13:00',
+            endTime: '22:00',
+            graceMinutes: 15,
+            breakMinutes: 60,
+            isNightShift: false,
+            description: 'Afternoon shift, 1PM to 10PM',
+        },
+        {
+            shiftCode: 'NS-01',
+            name: 'Night Shift',
+            startTime: '22:00',
+            endTime: '06:00',
+            graceMinutes: 15,
+            breakMinutes: 60,
+            isNightShift: true,
+            description: 'Overnight shift, crosses midnight',
+        },
     ]
     const shiftMap: Record<string, number> = {}
     for (const s of shifts) {
-        // Shift has no unique constraint, find by name or create
-        let shift = await prisma.shift.findFirst({ where: { name: s.name } })
-        if (!shift) {
-            shift = await prisma.shift.create({
-                data: { ...s, updatedAt: new Date() }
-            })
-        }
+        const shift = await prisma.shift.upsert({
+            where: { name: s.name },
+            update: {
+                shiftCode: s.shiftCode,
+                startTime: s.startTime,
+                endTime: s.endTime,
+                graceMinutes: s.graceMinutes,
+                breakMinutes: s.breakMinutes,
+                isNightShift: s.isNightShift,
+                description: s.description,
+            },
+            create: { ...s },
+        })
         shiftMap[s.name] = shift.id
     }
     console.log(`⏰ Seeded ${shifts.length} shifts`)

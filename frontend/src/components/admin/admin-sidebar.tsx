@@ -26,6 +26,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
   const navItems = [
     { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { label: 'Organization', href: '/departments', icon: Building2 },
+    { label: 'Shifts', href: '/shifts', icon: Clock },
     { label: 'Attendance', href: '/attendance', icon: Fingerprint },
     { label: 'Devices', href: '/devices', icon: RadioTower },
     { label: 'Reports', href: '/admin/reports', icon: FileText },
@@ -38,6 +39,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
     { href: '/dashboard' },
     { href: '/employees', matchPrefix: '/employees' },
     { href: '/departments' },
+    { href: '/shifts' },
     { href: '/attendance' },
     { href: '/devices' },
     { href: '/admin/reports' },

@@ -11,7 +11,7 @@ export default function SettingsPage() {
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
-  
+
   const [userData, setUserData] = useState({
     name: "mwehehe",
     role: "HR Payroll Officer",
@@ -86,7 +86,7 @@ export default function SettingsPage() {
         <h2 className="text-2xl font-black text-slate-800 tracking-tight">
           Account Settings
         </h2>
-        <button 
+        <button
           onClick={handleSaveAll}
           className="flex items-center gap-2 px-6 py-2 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200 active:scale-95"
         >
@@ -96,18 +96,18 @@ export default function SettingsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          
+
           <div className="bg-white border border-slate-200 overflow-hidden shadow-sm rounded-3xl">
             <div className="h-32 bg-[#E60000]" />
             <div className="px-8 pb-8">
               <div className="relative flex justify-between items-end -mt-12 mb-6">
                 <div className="h-24 w-24 rounded-3xl bg-[#FE0908] p-1 shadow-xl border border-slate-100 overflow-hidden">
                   <div className="h-full w-full rounded-2xl overflow-hidden relative">
-                    <Image 
-                      src="/images/av.jpg" 
-                      alt="Avatar" 
-                      fill 
-                      className="object-contain" 
+                    <Image
+                      src="/images/av.jpg"
+                      alt="Avatar"
+                      fill
+                      className="object-contain"
                       priority
                     />
                   </div>
@@ -135,7 +135,7 @@ export default function SettingsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">Full Name</label>
-                    <input 
+                    <input
                       disabled={!isEditingProfile}
                       value={userData.name}
                       onChange={(e) => setUserData({ ...userData, name: e.target.value })}
@@ -146,7 +146,7 @@ export default function SettingsPage() {
                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">Email Address</label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-red-400" size={16} />
-                      <input 
+                      <input
                         disabled={!isEditingProfile}
                         value={userData.email}
                         onChange={(e) => setUserData({ ...userData, email: e.target.value })}
@@ -161,7 +161,7 @@ export default function SettingsPage() {
                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">Office Location</label>
                     <div className="relative">
                       <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-red-400" size={16} />
-                      <input 
+                      <input
                         disabled={!isEditingProfile}
                         value={userData.site}
                         onChange={(e) => setUserData({ ...userData, site: e.target.value })}
@@ -189,14 +189,14 @@ export default function SettingsPage() {
             <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
               <Lock size={16} className="text-red-500" /> Security & Password
             </h3>
-            
+
             <div className="space-y-5 max-w-md">
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">Current Password</label>
-                <input 
-                  type={showPassword ? "text" : "password"} 
+                <input
+                  type={showPassword ? "text" : "password"}
                   value={passwordForm.current}
-                  onChange={(e) => setPasswordForm({...passwordForm, current: e.target.value})}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, current: e.target.value })}
                   placeholder="••••••••"
                   className="w-full p-3 bg-red-50/30 border border-red-100 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20"
                 />
@@ -206,10 +206,10 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">New Password</label>
                   <div className="relative">
-                    <input 
-                      type={showPassword ? "text" : "password"} 
+                    <input
+                      type={showPassword ? "text" : "password"}
                       value={passwordForm.new}
-                      onChange={(e) => setPasswordForm({...passwordForm, new: e.target.value})}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, new: e.target.value })}
                       placeholder="New password"
                       className="w-full p-3 bg-red-50/30 border border-red-100 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20"
                     />
@@ -218,14 +218,14 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">Confirm New Password</label>
                   <div className="relative">
-                    <input 
-                      type={showPassword ? "text" : "password"} 
+                    <input
+                      type={showPassword ? "text" : "password"}
                       value={passwordForm.confirm}
-                      onChange={(e) => setPasswordForm({...passwordForm, confirm: e.target.value})}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })}
                       placeholder="Confirm password"
                       className="w-full p-3 bg-red-50/30 border border-red-100 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20"
                     />
-                    <button 
+                    <button
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                     >
@@ -235,7 +235,7 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <button 
+              <button
                 onClick={handlePasswordChange}
                 disabled={isUpdatingPassword}
                 className="w-full md:w-fit px-8 py-3 bg-red-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-800 transition-all active:scale-95 disabled:opacity-50"
@@ -268,7 +268,7 @@ export default function SettingsPage() {
               </div>
               <div className="pt-4 border-t border-white/10">
                 <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Last Login</p>
-                <p className="text-sm font-medium">Today at {new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                <p className="text-sm font-medium">Today at {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
               </div>
             </div>
           </div>
@@ -279,21 +279,21 @@ export default function SettingsPage() {
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-6 text-center space-y-4">
-              
+
               <div>
                 <h3 className="text-lg font-black text-slate-800 tracking-tight">Discard changes?</h3>
                 <p className="text-sm font-medium text-slate-500 mt-1">Your unsaved modifications will be lost.</p>
               </div>
               <div className="flex gap-3 pt-2">
-                <button 
+                <button
                   onClick={() => setShowCancelModal(false)}
                   className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all"
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   onClick={confirmCancel}
-                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200 active:scale-95"
+                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl text-smfont-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200 active:scale-95"
                 >
                   Yes
                 </button>

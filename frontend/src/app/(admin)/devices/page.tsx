@@ -9,7 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
     Wifi, WifiOff, Plus, Pencil, Trash2, X, Check,
     Server, MapPin, RadioTower, Loader2, AlertCircle, RefreshCw,
-    ChevronRight, Activity
+    ChevronRight, Activity, GitMerge, UserPlus, UserX, AlertTriangle
 } from 'lucide-react'
 
 interface Device {
@@ -28,6 +28,16 @@ interface FormState {
     ip: string
     port: string
     location: string
+}
+
+interface ReconcileReport {
+    deviceId: number
+    deviceName: string
+    pushed: { zkId: number; name: string }[]
+    deleted: { uid: number; userId: string; name: string }[]
+    protected: { uid: number; name: string }[]
+    needsEnrollment: { zkId: number; name: string }[]
+    errors: string[]
 }
 
 const EMPTY_FORM: FormState = { name: '', ip: '', port: '4370', location: '' }
@@ -51,6 +61,10 @@ export default function DevicesPage() {
     // Test connection state
     const [testingId, setTestingId] = useState<number | null>(null)
     const [testResults, setTestResults] = useState<Record<number, { success: boolean; message: string; info?: any }>>({})
+
+    // Reconcile state
+    const [reconcilingId, setReconcilingId] = useState<number | null>(null)
+    const [reconcileReport, setReconcileReport] = useState<ReconcileReport | null>(null)
 
     // Toast
     const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
@@ -171,6 +185,29 @@ export default function DevicesPage() {
             setTestResults(prev => ({ ...prev, [device.id]: { success: false, message: e.message || 'Connection failed' } }))
         } finally {
             setTestingId(null)
+        }
+    }
+
+    const handleReconcile = async (device: Device) => {
+        setReconcilingId(device.id)
+        setReconcileReport(null)
+        try {
+            const token = localStorage.getItem('token')
+            const res = await fetch(`/api/devices/${device.id}/reconcile`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` }
+            })
+            const data = await res.json()
+            if (data.success) {
+                setReconcileReport(data.report)
+                fetchDevices()
+            } else {
+                showToast(data.message || 'Reconcile failed', false)
+            }
+        } catch (e: any) {
+            showToast(e.message || 'Network error', false)
+        } finally {
+            setReconcilingId(null)
         }
     }
 
@@ -310,12 +347,25 @@ export default function DevicesPage() {
                                         variant="outline"
                                         size="sm"
                                         onClick={() => handleTest(device)}
-                                        disabled={isTesting}
+                                        disabled={isTesting || reconcilingId === device.id}
                                         className="w-full gap-2 border-border text-sm"
                                     >
                                         {isTesting
                                             ? <><Loader2 className="w-4 h-4 animate-spin" /> Testing...</>
                                             : <><Activity className="w-4 h-4" /> Test Connection</>}
+                                    </Button>
+
+                                    {/* Reconcile */}
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleReconcile(device)}
+                                        disabled={reconcilingId === device.id || isTesting}
+                                        className="w-full gap-2 border-purple-300 text-purple-600 text-sm hover:bg-purple-50 dark:hover:bg-purple-950"
+                                    >
+                                        {reconcilingId === device.id
+                                            ? <><Loader2 className="w-4 h-4 animate-spin" /> Syncing...</>
+                                            : <><GitMerge className="w-4 h-4" /> Reconcile with DB</>}
                                     </Button>
 
                                     <div className="flex gap-2">
@@ -458,6 +508,97 @@ export default function DevicesPage() {
                                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</>
                                     : <><Check className="w-4 h-4" /> {editingDevice ? 'Save Changes' : 'Add Device'}</>}
                             </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Reconcile Report Modal */}
+            {reconcileReport && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="bg-background rounded-2xl shadow-2xl border border-border w-full max-w-lg max-h-[85vh] flex flex-col">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+                            <div className="flex items-center gap-2">
+                                <GitMerge className="w-5 h-5 text-purple-600" />
+                                <h3 className="font-semibold text-lg">Reconcile Report</h3>
+                                <span className="text-sm text-muted-foreground">— {reconcileReport.deviceName}</span>
+                            </div>
+                            <button onClick={() => setReconcileReport(null)} className="text-muted-foreground hover:text-foreground">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="overflow-y-auto px-6 py-4 space-y-5">
+                            {/* Pushed */}
+                            <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <UserPlus className="w-4 h-4 text-green-600" />
+                                    <span className="font-medium text-sm">Added to Device <span className="text-muted-foreground">({reconcileReport.pushed.length})</span></span>
+                                </div>
+                                {reconcileReport.pushed.length === 0
+                                    ? <p className="text-xs text-muted-foreground pl-6">None — all DB employees already on device.</p>
+                                    : <ul className="pl-6 space-y-1">{reconcileReport.pushed.map(p => (
+                                        <li key={p.zkId} className="text-xs bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg px-3 py-1.5">
+                                            <span className="font-mono text-green-700 dark:text-green-400">#{p.zkId}</span> {p.name}
+                                        </li>
+                                    ))}</ul>}
+                            </div>
+                            {/* Deleted */}
+                            <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <UserX className="w-4 h-4 text-red-600" />
+                                    <span className="font-medium text-sm">Removed from Device <span className="text-muted-foreground">({reconcileReport.deleted.length})</span></span>
+                                </div>
+                                {reconcileReport.deleted.length === 0
+                                    ? <p className="text-xs text-muted-foreground pl-6">None — no ghost users found.</p>
+                                    : <ul className="pl-6 space-y-1">{reconcileReport.deleted.map(d => (
+                                        <li key={d.uid} className="text-xs bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg px-3 py-1.5">
+                                            <span className="font-mono text-red-700 dark:text-red-400">UID {d.uid}</span> {d.name || d.userId}
+                                        </li>
+                                    ))}</ul>}
+                            </div>
+                            {/* Needs Enrollment */}
+                            {reconcileReport.needsEnrollment.length > 0 && (
+                                <div>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <AlertTriangle className="w-4 h-4 text-yellow-600" />
+                                        <span className="font-medium text-sm">Needs Fingerprint Enrollment <span className="text-muted-foreground">({reconcileReport.needsEnrollment.length})</span></span>
+                                    </div>
+                                    <ul className="pl-6 space-y-1">{reconcileReport.needsEnrollment.map(n => (
+                                        <li key={n.zkId} className="text-xs bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-lg px-3 py-1.5">
+                                            <span className="font-mono text-yellow-700 dark:text-yellow-400">#{n.zkId}</span> {n.name}
+                                        </li>
+                                    ))}</ul>
+                                </div>
+                            )}
+                            {/* Protected */}
+                            {reconcileReport.protected.length > 0 && (
+                                <div>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <Check className="w-4 h-4 text-blue-600" />
+                                        <span className="font-medium text-sm">Protected (Device Admins) <span className="text-muted-foreground">({reconcileReport.protected.length})</span></span>
+                                    </div>
+                                    <ul className="pl-6 space-y-1">{reconcileReport.protected.map((p, i) => (
+                                        <li key={i} className="text-xs bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-1.5">
+                                            <span className="font-mono text-blue-700 dark:text-blue-400">UID {p.uid}</span> {p.name}
+                                        </li>
+                                    ))}</ul>
+                                </div>
+                            )}
+                            {/* Errors */}
+                            {reconcileReport.errors.length > 0 && (
+                                <div>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <AlertCircle className="w-4 h-4 text-red-600" />
+                                        <span className="font-medium text-sm text-red-600">Errors ({reconcileReport.errors.length})</span>
+                                    </div>
+                                    <ul className="pl-6 space-y-1">{reconcileReport.errors.map((e, i) => (
+                                        <li key={i} className="text-xs text-red-600">{e}</li>
+                                    ))}</ul>
+                                </div>
+                            )}
+                        </div>
+                        <div className="px-6 py-4 border-t border-border">
+                            <Button className="w-full" onClick={() => setReconcileReport(null)}>Close</Button>
                         </div>
                     </div>
                 </div>

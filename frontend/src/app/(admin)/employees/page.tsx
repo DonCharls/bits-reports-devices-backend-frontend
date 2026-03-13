@@ -29,7 +29,17 @@ type Employee = {
   contactNumber: string | null
   hireDate: string | null
   employmentStatus: 'ACTIVE' | 'INACTIVE' | 'TERMINATED'
+  shiftId?: number | null
+  Shift?: { id: number; name: string; shiftCode: string; startTime: string; endTime: string } | null
   createdAt: string
+}
+
+type ShiftOption = {
+  id: number
+  shiftCode: string
+  name: string
+  startTime: string
+  endTime: string
 }
 
 type Toast = {
@@ -37,6 +47,23 @@ type Toast = {
   type: 'success' | 'warning' | 'error'
   title: string
   message: string
+}
+
+function formatTime(t: string) {
+  if (!t) return '';
+  const [h] = t.split(':');
+  const hour = parseInt(h);
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const display = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  return `${display}:${t.split(':')[1]} ${suffix}`;
+}
+
+function formatPhoneNumber(value: string | null) {
+  if (!value) return '';
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 4)} ${digits.slice(4)}`;
+  return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
 }
 
 export default function EmployeesPage() {
@@ -114,6 +141,7 @@ export default function EmployeesPage() {
     branch: '',
     email: '',
     hireDate: '',
+    shiftId: '',
   })
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [isRegistering, setIsRegistering] = useState(false)
@@ -123,6 +151,18 @@ export default function EmployeesPage() {
 
   const [departments, setDepartments] = useState<Department[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
+  const [shifts, setShifts] = useState<ShiftOption[]>([])
+
+  const fetchShifts = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch('/api/shifts', { headers: { Authorization: `Bearer ${token}` } })
+      const data = await res.json()
+      if (data.success) setShifts(data.shifts.filter((s: ShiftOption) => s))
+    } catch (error) {
+      console.error('Error fetching shifts:', error)
+    }
+  }
 
   const fetchBranches = async () => {
     try {
@@ -170,6 +210,7 @@ export default function EmployeesPage() {
     fetchEmployees()
     fetchBranches()
     fetchDepartments()
+    fetchShifts()
   }, [])
 
   // Countdown timer for Scan Now modal
@@ -207,7 +248,7 @@ export default function EmployeesPage() {
     if (!newEmployee.firstName.trim()) errors.firstName = 'First name is required'
     if (!newEmployee.lastName.trim()) errors.lastName = 'Last name is required'
     if (!newEmployee.contactNumber.trim()) errors.contactNumber = 'Contact number is required'
-    else if (newEmployee.contactNumber.replace(/\D/g, '').length > 11) errors.contactNumber = 'Max 11 digits allowed'
+    else if (newEmployee.contactNumber.replace(/\D/g, '').length !== 11) errors.contactNumber = 'Must be exactly 11 digits'
     if (newEmployee.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmployee.email.trim())) errors.email = 'Enter a valid email address'
     if (!newEmployee.department) errors.department = 'Department is required'
     if (!newEmployee.branch) errors.branch = 'Branch is required'
@@ -231,12 +272,13 @@ export default function EmployeesPage() {
           branch: newEmployee.branch,
           email: newEmployee.email || undefined,
           hireDate: newEmployee.hireDate || undefined,
+          shiftId: newEmployee.shiftId ? parseInt(newEmployee.shiftId) : undefined,
         })
       })
       const data = await res.json()
       if (data.success) {
         await fetchEmployees()
-        setNewEmployee({ firstName: '', lastName: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '' })
+        setNewEmployee({ firstName: '', lastName: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '', shiftId: '' })
         setFormErrors({})
         setIsAddOpen(false)
         // Show toast based on device sync result
@@ -354,7 +396,10 @@ export default function EmployeesPage() {
                 </div>
                 <div className="space-y-1">
                   <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Contact Number</label>
-                  <input type="tel" value={editForm.contactNumber || ''} onChange={(e) => setEditForm({ ...editForm, contactNumber: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                  <input type="tel" maxLength={13} value={editForm.contactNumber || ''} onChange={(e) => {
+                    const val = formatPhoneNumber(e.target.value)
+                    setEditForm({ ...editForm, contactNumber: val })
+                  }} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
                 </div>
               </div>
 
@@ -399,6 +444,21 @@ export default function EmployeesPage() {
                     </label>
                   </div>
                 </div>
+              </div>
+
+              {/* Work Shift */}
+              <div className="space-y-1">
+                <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Work Shift</label>
+                <select
+                  value={(editForm as any).shiftId || ''}
+                  onChange={(e) => setEditForm({ ...editForm, shiftId: e.target.value ? parseInt(e.target.value) : null } as any)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20"
+                >
+                  <option value="">No shift assigned</option>
+                  {shifts.map(s => (
+                    <option key={s.id} value={s.id}>[{s.shiftCode}] {s.name} ({formatTime(s.startTime)} – {formatTime(s.endTime)})</option>
+                  ))}
+                </select>
               </div>
 
               <div className="bg-amber-50 border border-amber-100 p-3 rounded-xl flex gap-3 shadow-sm shadow-amber-600/5">
@@ -616,12 +676,12 @@ export default function EmployeesPage() {
                     <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Contact Number *</label>
                     <input
                       type="tel"
-                      placeholder="09XXXXXXXXX"
-                      maxLength={11}
+                      placeholder="09XX XXX XXXX"
+                      maxLength={13}
                       className={`mt-1.5 w-full px-3 py-2.5 rounded-xl border ${formErrors.contactNumber ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all`}
                       value={newEmployee.contactNumber}
                       onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, '').slice(0, 11)
+                        const val = formatPhoneNumber(e.target.value)
                         setNewEmployee({ ...newEmployee, contactNumber: val })
                         setFormErrors(p => ({ ...p, contactNumber: '' }))
                       }}
@@ -669,13 +729,26 @@ export default function EmployeesPage() {
                       onChange={(e) => setNewEmployee({ ...newEmployee, hireDate: e.target.value })}
                     />
                   </div>
+                  <div>
+                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Work Shift</label>
+                    <select
+                      className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none cursor-pointer transition-all appearance-none"
+                      value={newEmployee.shiftId}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, shiftId: e.target.value })}
+                    >
+                      <option value="">No shift assigned</option>
+                      {shifts.map(s => (
+                        <option key={s.id} value={s.id}>[{s.shiftCode}] {s.name} ({formatTime(s.startTime)} – {formatTime(s.endTime)})</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center justify-center gap-6 px-6 py-4 border-t border-slate-100">
                 <button
                   className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
                   onClick={() => {
-                    setNewEmployee({ firstName: '', lastName: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '' })
+                    setNewEmployee({ firstName: '', lastName: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '', shiftId: '' })
                     setFormErrors({})
                     setIsAddOpen(false)
                   }}
@@ -745,6 +818,7 @@ export default function EmployeesPage() {
               <th className="px-6 py-4 w-16">#</th>
               <th className="px-6 py-4">Employee</th>
               <th className="px-6 py-4">Department</th>
+              <th className="px-6 py-4">Shift</th>
               <th className="px-6 py-4">Branch</th>
               <th className="px-6 py-4">Contact</th>
               <th className="px-6 py-4">Joined</th>
@@ -768,16 +842,26 @@ export default function EmployeesPage() {
                     <p className="font-bold text-slate-700">{employee.firstName} {employee.lastName}</p>
                     <p className="text-xs text-slate-400">{employee.email || '—'}</p>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="text-xs font-medium text-slate-500">
+                  <td className="px-6 py-4 max-w-[120px]">
+                    <span className="text-xs font-medium text-slate-500 block truncate" title={employee.Department?.name || employee.department || undefined}>
                       {employee.Department?.name || employee.department || '—'}
                     </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    {employee.Shift ? (
+                      <div>
+                        <p className="text-xs font-bold text-slate-700 leading-tight">{employee.Shift.name}</p>
+                        <p className="text-[10px] font-medium text-slate-400 mt-0.5">{formatTime(employee.Shift.startTime)} – {formatTime(employee.Shift.endTime)}</p>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-slate-300 font-bold">Unassigned</span>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <span className="text-xs font-medium text-slate-500">{employee.branch || '—'}</span>
                   </td>
                   <td className="px-6 py-4">
-                    <span className="text-xs font-medium text-slate-500">{employee.contactNumber || '—'}</span>
+                    <span className="text-xs font-medium text-slate-500">{employee.contactNumber ? formatPhoneNumber(employee.contactNumber) : '—'}</span>
                   </td>
                   <td className="px-6 py-4">
                     <span className="text-xs font-medium text-slate-500">

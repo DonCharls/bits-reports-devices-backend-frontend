@@ -1,250 +1,269 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { 
-  LayoutDashboard, 
-  Users, 
-  Clock, 
-  FileText, 
-  X, 
+import {
+  LayoutDashboard,
+  Users,
+  Clock,
+  FileText,
+  X,
   Menu,
   ChevronDown,
   UserX,
   History,
-  LucideIcon
 } from 'lucide-react';
-
-
-interface SubmenuItem {
-  name: string;
-  icon: LucideIcon;
-  filter?: string; 
-  href?: string;  
-}
-
-interface MenuItem {
-  name: string;
-  href: string;
-  icon: LucideIcon;
-  hasSubmenu?: boolean;
-  submenu?: SubmenuItem[];
-}
 
 export default function Sidebar({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollapsed }: any) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [isEmployeesOpen, setIsEmployeesOpen] = useState(false);
-  const [isReportsOpen, setIsReportsOpen] = useState(false);
-
-  const menuItems: MenuItem[] = [
-    { name: 'Dashboard', href: '/hr/dashboard', icon: LayoutDashboard },
-    { name: 'Attendance', href: '/hr/attendance', icon: Clock },
-    { 
-      name: 'Employees', 
-      href: '/hr/employees', 
-      icon: Users,
-      hasSubmenu: true,
-      submenu: [{ name: 'Inactive', filter: 'Inactive', icon: UserX }]
-    },
-    { 
-      name: 'Reports', 
-      href: '/hr/reports', 
-      icon: FileText,
-      hasSubmenu: true,
-      submenu: [{ name: 'Adjustment Logs', href: '/hr/adjusts', icon: History }]
-    },
-  ];
+  const listRef = useRef<HTMLUListElement>(null);
+  const [indicator, setIndicator] = useState<{ top: number; height: number } | null>(null);
+  const [hasMounted, setHasMounted] = useState(false);
 
   const currentStatus = searchParams.get('status') || 'Active';
   const isInactivePage = pathname === '/hr/employees' && currentStatus === 'Inactive';
   const isAuditPage = pathname === '/hr/adjusts';
+  const isOnEmployees = pathname === '/hr/employees';
+  const isOnReports = pathname === '/hr/reports' || isAuditPage;
 
-  const activeIndex = menuItems.findIndex(item => {
-    if (item.href === '/hr/employees') {
-        return pathname === item.href && currentStatus === 'Active';
-    }
-    return pathname === item.href;
-  });
+  const [employeesOpen, setEmployeesOpen] = useState(isOnEmployees || isInactivePage);
+  const [reportsOpen, setReportsOpen] = useState(isOnReports);
 
-  const getIndicatorStyles = () => {
-    const itemHeight = 60;
-    const submenuOffset = 52; 
+  // All rendered <li> items in order for indicator measurement
+  const allItems = [
+    { href: '/hr/dashboard' },
+    { href: '/hr/attendance' },
+    { href: '/hr/employees', matchPrefix: '/hr/employees' },
+    { href: '/hr/reports', matchPrefix: '/hr/reports' },
+  ];
 
-    const leftPos = isCollapsed ? '16px' : '14px'; 
-    const width = isCollapsed ? 'calc(100% - 16px)' : 'calc(100% - 14px)';
-    
-    if (isInactivePage) {
-      const topPos = (isCollapsed || !isEmployeesOpen) ? (2 * itemHeight) : ((2 * itemHeight) + 60);
-      const height = (isCollapsed || !isEmployeesOpen) ? '56px' : '44px';
-      const left = (isCollapsed || !isEmployeesOpen) ? leftPos : '35px';
-      const rad = (isCollapsed || !isEmployeesOpen) ? '30px 0 0 30px' : '22px 0 0 22px';
+  const activeIndex = allItems.findIndex(item =>
+    item.matchPrefix ? pathname.startsWith(item.matchPrefix) : pathname === item.href
+  );
 
-      return { 
-        top: `${topPos}px`, 
-        height: height, 
-        left: left, 
-        width: isCollapsed ? width : `calc(100% - ${left})`,
-        borderRadius: rad 
-      };
-    }
+  const updateIndicator = useCallback(() => {
+    if (!listRef.current || activeIndex < 0) return;
+    const items = listRef.current.querySelectorAll<HTMLLIElement>(':scope > li');
+    const activeLi = items[activeIndex];
+    if (!activeLi) return;
+    setIndicator({ top: activeLi.offsetTop, height: activeLi.offsetHeight });
+  }, [activeIndex]);
 
-    if (isAuditPage) {
-      const employeesSubmenuHeight = (isEmployeesOpen && !isCollapsed) ? submenuOffset : 0;
-      const topPos = (isCollapsed || !isReportsOpen) ? (3 * itemHeight + employeesSubmenuHeight) : ((3 * itemHeight) + 60 + employeesSubmenuHeight);
-      const height = (isCollapsed || !isReportsOpen) ? '56px' : '44px';
-      const left = (isCollapsed || !isReportsOpen) ? leftPos : '35px';
-      const rad = (isCollapsed || !isReportsOpen) ? '30px 0 0 30px' : '22px 0 0 22px';
+  useEffect(() => {
+    updateIndicator();
+    const timer = setTimeout(() => setHasMounted(true), 50);
+    return () => clearTimeout(timer);
+  }, [updateIndicator]);
 
-      return { 
-        top: `${topPos}px`, 
-        height: height, 
-        left: left, 
-        width: isCollapsed ? width : `calc(100% - ${left})`,
-        borderRadius: rad 
-      };
-    }
+  // Re-measure after submenu animations complete
+  useEffect(() => {
+    const timer = setTimeout(updateIndicator, 320);
+    return () => clearTimeout(timer);
+  }, [employeesOpen, reportsOpen, isCollapsed, updateIndicator]);
 
-    let baseTop = activeIndex * itemHeight;
-   
-    if (activeIndex > 2 && isEmployeesOpen && !isCollapsed) {
-      baseTop += submenuOffset;
-    }
-
-    return { 
-      top: `${baseTop}px`, 
-      height: '56px', 
-      left: leftPos, 
-      width: width,
-      borderRadius: '30px 0 0 30px' 
-    };
+  const labelStyle = {
+    opacity: isCollapsed ? 0 : 1,
+    width: isCollapsed ? 0 : 'auto',
+    overflow: 'hidden' as const,
+    transition: 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1), width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
   };
-
-  const styles = getIndicatorStyles();
 
   return (
     <aside className={`
-      fixed top-24 bottom-4 left-4 z-[60] bg-[#E60000] flex flex-col transition-all duration-300 ease-in-out overflow-hidden
+      fixed top-24 bottom-4 left-4 z-[10] bg-[#E60000] flex flex-col transition-all duration-300 ease-in-out overflow-hidden
       rounded-[20px]
       ${isMobileOpen ? 'translate-x-0' : '-translate-x-[120%]'} 
       lg:translate-x-0
       ${isCollapsed ? 'lg:w-20' : 'lg:w-63'}
     `}>
 
+      {/* Header */}
       <div className="flex items-center h-20 shrink-0 px-7 justify-start relative">
         <div className="w-6 flex items-center justify-center shrink-0">
-          <button 
+          <button
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="text-white hover:bg-white/10 p-2 rounded-xl transition-colors"
           >
             <Menu size={24} />
           </button>
         </div>
+        <span
+          className="font-bold text-xl text-white whitespace-nowrap ml-4"
+          style={labelStyle}
+        >
+          Timekeeper Panel
+        </span>
         <button onClick={() => setIsMobileOpen(false)} className="lg:hidden absolute right-8 text-white p-2">
           <X size={24} />
         </button>
       </div>
 
+      {/* Navigation */}
       <nav className="flex-1 mt-2 relative flex flex-col h-full">
-        {(activeIndex !== -1 || isInactivePage || isAuditPage) && (
-          <div 
-            className="absolute right-0 bg-slate-50 z-0 hidden lg:block"
-            style={{ 
-              height: styles.height, 
-              top: styles.top, 
-              left: styles.left,
-              width: styles.width,
-              borderRadius: styles.borderRadius,
-              transition: 'all 450ms cubic-bezier(0.4, 0, 0.2, 1)'
-            }}
-          >
-            <div className="absolute right-0 -top-10 w-10 h-10 bg-slate-50 pointer-events-none before:content-[''] before:absolute before:inset-0 before:bg-[#E60000] before:rounded-br-[30px]" />
-            <div className="absolute right-0 -bottom-10 w-10 h-10 bg-slate-50 pointer-events-none before:content-[''] before:absolute before:inset-0 before:bg-[#E60000] before:rounded-tr-[30px]" />
-          </div>
-        )}
+        <ul ref={listRef} className="relative">
 
-        <ul className="space-y-1 relative z-10">
-          {menuItems.map((item) => {
-            const isEmployeeMain = item.href === '/hr/employees';
-            const isReportsMain = item.href === '/hr/reports';
-            
-            const isMainActive = (pathname === item.href && (isEmployeeMain ? currentStatus === 'Active' : true) && !isInactivePage && !isAuditPage) || 
-                                (isEmployeeMain && isInactivePage && !isEmployeesOpen) ||
-                                (isReportsMain && isAuditPage && !isReportsOpen);
-            
-            const IconToDisplay = (isCollapsed && isInactivePage && isEmployeeMain) ? UserX : (isCollapsed && isAuditPage && isReportsMain) ? History : item.icon;
+          {/* Sliding indicator */}
+          {indicator && activeIndex >= 0 && (
+            <div
+              className="absolute left-4 right-0 bg-gray-50 rounded-l-[30px] z-0"
+              style={{
+                top: indicator.top,
+                height: indicator.height,
+                transition: hasMounted
+                  ? 'top 350ms cubic-bezier(0.4, 0, 0.2, 1), height 350ms cubic-bezier(0.4, 0, 0.2, 1)'
+                  : 'none',
+              }}
+            >
+              <div className="absolute right-0 -top-[30px] w-[30px] h-[30px] bg-gray-50 hidden lg:block" style={{ opacity: isCollapsed ? 0 : 1 }}>
+                <div className="absolute inset-0 bg-[#E60000] rounded-br-[30px]" />
+              </div>
+              <div className="absolute right-0 -bottom-[30px] w-[30px] h-[30px] bg-gray-50 hidden lg:block" style={{ opacity: isCollapsed ? 0 : 1 }}>
+                <div className="absolute inset-0 bg-[#E60000] rounded-tr-[30px]" />
+              </div>
+            </div>
+          )}
 
-            return (
-              <li key={item.name} className="flex flex-col">
-                <div className="flex justify-start relative">
+          {/* Dashboard */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <Link
+              href="/hr/dashboard"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-4 py-3 relative z-10 ${pathname === '/hr/dashboard' ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: isCollapsed ? '12px' : '24px' }}
+              title={isCollapsed ? 'Dashboard' : undefined}
+            >
+              <LayoutDashboard size={22} className={`shrink-0 ${pathname === '/hr/dashboard' ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Dashboard</span>
+            </Link>
+          </li>
+
+          {/* Attendance */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <Link
+              href="/hr/attendance"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-4 py-3 relative z-10 ${pathname === '/hr/attendance' ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: isCollapsed ? '12px' : '24px' }}
+              title={isCollapsed ? 'Attendance' : undefined}
+            >
+              <Clock size={22} className={`shrink-0 ${pathname === '/hr/attendance' ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Attendance</span>
+            </Link>
+          </li>
+
+          {/* Employees (with submenu) */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <div className="flex items-center relative z-10">
+              <Link
+                href="/hr/employees?status=Active"
+                onClick={() => setIsMobileOpen(false)}
+                className={`flex items-center gap-4 py-3 flex-1 ${isOnEmployees || isInactivePage ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+                style={{ paddingLeft: '12px' }}
+                title={isCollapsed ? 'Employees' : undefined}
+              >
+                <Users size={22} className={`shrink-0 ${isOnEmployees || isInactivePage ? 'text-[#E60000]' : 'text-white'}`} />
+                <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Employees</span>
+              </Link>
+              {!isCollapsed && (
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEmployeesOpen(o => !o); }}
+                  className={`p-2 mr-2 rounded-lg transition-colors shrink-0 ${isOnEmployees || isInactivePage ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+                  title="Toggle submenu"
+                >
+                  <ChevronDown
+                    size={16}
+                    style={{ transition: 'transform 300ms cubic-bezier(0.4, 0, 0.2, 1)', transform: employeesOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                  />
+                </button>
+              )}
+            </div>
+
+            {/* Inactive sub-item */}
+            {!isCollapsed && (
+              <div
+                style={{
+                  maxHeight: employeesOpen ? '56px' : '0px',
+                  overflow: 'hidden',
+                  transition: 'max-height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+              >
+                <div className="pl-4 pr-3 pb-2 relative z-10">
                   <Link
-                    href={isEmployeeMain && isInactivePage && isCollapsed ? `${item.href}?status=Inactive` : isReportsMain && isAuditPage && isCollapsed ? `/hr/adjusts` : (isEmployeeMain ? `${item.href}?status=Active` : item.href)}
-                    className={`flex items-center h-[56px] w-full transition-all duration-300 rounded-l-[30px] px-7 gap-6
-                      ${isMainActive || (isCollapsed && isInactivePage && isEmployeeMain) || (isCollapsed && isAuditPage && isReportsMain) ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}
-                    `}
+                    href="/hr/employees?status=Inactive"
+                    onClick={() => setIsMobileOpen(false)}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                      isInactivePage
+                        ? 'text-[#E60000]'
+                        : isOnEmployees
+                          ? 'text-[#E60000]/60 hover:text-[#E60000]'
+                          : 'text-white/60 hover:text-white'
+                    }`}
                   >
-                    <div className="w-6 h-6 flex items-center justify-center shrink-0 relative">
-                      {(isMainActive || (isCollapsed && isInactivePage && isEmployeeMain) || (isCollapsed && isAuditPage && isReportsMain)) && (
-                        <div className="absolute inset-[-6px] bg-red-300/50 rounded-full animate-in fade-in zoom-in duration-300" />
-                      )}
-                      <IconToDisplay size={22} className="relative z-10" />
-                    </div>
-                    {!isCollapsed && (
-                      <div className="flex items-center justify-between w-full">
-                        <span className="font-bold text-lg tracking-tight whitespace-nowrap">
-                          {item.name}
-                        </span>
-                        {item.hasSubmenu && (
-                          <button 
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if(isEmployeeMain) setIsEmployeesOpen(!isEmployeesOpen);
-                              if(isReportsMain) setIsReportsOpen(!isReportsOpen);
-                            }}
-                            className="p-1 hover:bg-white/10 rounded-lg transition-colors"
-                          >
-                            <ChevronDown 
-                              size={18} 
-                              className={`${isMainActive ? 'text-[#E60000]' : 'text-white'} transition-transform duration-300 ${(isEmployeeMain && isEmployeesOpen) || (isReportsMain && isReportsOpen) ? 'rotate-180' : ''}`} 
-                            />
-                          </button>
-                        )}
-                      </div>
-                    )}
+                    <UserX size={15} className="shrink-0" />
+                    Inactive Employees
                   </Link>
                 </div>
+              </div>
+            )}
+          </li>
 
-                {item.hasSubmenu && ((isEmployeeMain && isEmployeesOpen) || (isReportsMain && isReportsOpen)) && !isCollapsed && (
-                  <ul className="mt-1 ml-0 space-y-1 animate-in slide-in-from-top-2 duration-300">
-                    {item.submenu?.map((sub) => {
-                      const isSubActive = sub.href ? pathname === sub.href : (pathname === item.href && currentStatus === sub.filter);
-                      return (
-                        <li key={sub.name}>
-                          <Link
-                            href={sub.href || `${item.href}?status=${sub.filter}`}
-                            className={`flex items-center h-[46px] w-full transition-all duration-300 rounded-l-[22px] px-7 gap-5
-                              ${isSubActive ? 'text-[#E60000]' : 'text-white/50 hover:text-white'}
-                            `}
-                          >
-                            <div className="w-6 h-6 flex items-center justify-center shrink-0 ml-5 relative">
-                                {isSubActive && (
-                                    <div className="absolute inset-[-5px] bg-red-400/40 rounded-full animate-in fade-in zoom-in duration-300" />
-                                )}
-                                <sub.icon size={18} className="relative z-10" />
-                            </div>
-                            <span className="font-bold text-md tracking-tight whitespace-nowrap">
-                              {sub.name}
-                            </span>
-                          </Link>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </li>
-            );
-          })}
+          {/* Reports (with submenu) */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <div className="flex items-center relative z-10">
+              <Link
+                href="/hr/reports"
+                onClick={() => setIsMobileOpen(false)}
+                className={`flex items-center gap-4 py-3 flex-1 ${isOnReports ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+                style={{ paddingLeft: '12px' }}
+                title={isCollapsed ? 'Reports' : undefined}
+              >
+                <FileText size={22} className={`shrink-0 ${isOnReports ? 'text-[#E60000]' : 'text-white'}`} />
+                <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Reports</span>
+              </Link>
+              {!isCollapsed && (
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setReportsOpen(o => !o); }}
+                  className={`p-2 mr-2 rounded-lg transition-colors shrink-0 ${isOnReports ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+                  title="Toggle submenu"
+                >
+                  <ChevronDown
+                    size={16}
+                    style={{ transition: 'transform 300ms cubic-bezier(0.4, 0, 0.2, 1)', transform: reportsOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                  />
+                </button>
+              )}
+            </div>
+
+            {/* Adjustment Logs sub-item */}
+            {!isCollapsed && (
+              <div
+                style={{
+                  maxHeight: reportsOpen ? '56px' : '0px',
+                  overflow: 'hidden',
+                  transition: 'max-height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+              >
+                <div className="pl-4 pr-3 pb-2 relative z-10">
+                  <Link
+                    href="/hr/adjusts"
+                    onClick={() => setIsMobileOpen(false)}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                      isAuditPage
+                        ? 'text-[#E60000]'
+                        : isOnReports
+                          ? 'text-[#E60000]/60 hover:text-[#E60000]'
+                          : 'text-white/60 hover:text-white'
+                    }`}
+                  >
+                    <History size={15} className="shrink-0" />
+                    Adjustment Logs
+                  </Link>
+                </div>
+              </div>
+            )}
+          </li>
+
         </ul>
       </nav>
     </aside>

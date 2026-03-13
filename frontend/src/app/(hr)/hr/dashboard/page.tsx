@@ -1,43 +1,78 @@
 "use client"
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Users,
   UserCheck,
   MapPin,
   Fingerprint,
-  Activity,
   AlertCircle,
   Zap,
   ShieldCheck,
-  CalendarDays
+  UserMinus
 } from 'lucide-react';
 
 export default function HRDashboard() {
+  const router = useRouter();
+
   const stats = [
-    { label: "Total Employees", value: "150", sub: "Active", icon: <Users size={20} />, color: "bg-red-500" },
-    { label: "Total Present", value: "138", sub: "Live", icon: <UserCheck size={20} />, color: "bg-emerald-500" },
-    { label: "Total Lates", value: "12", sub: "Today", icon: <AlertCircle size={20} />, color: "bg-amber-500" },
-    { label: "Total On Leave", value: "5", sub: "Approved", icon: <CalendarDays size={20} />, color: "bg-blue-500" },
+    {
+      label: "Total Employees",
+      value: "150",
+      sub: "Active",
+      icon: <Users size={20} />,
+      color: "bg-red-500",
+      path: "/hr/employees"
+    },
+    {
+      label: "Total Present",
+      value: "138",
+      sub: "Live",
+      icon: <UserCheck size={20} />,
+      color: "bg-emerald-500",
+      path: "/hr/attendance?status=Present"
+    },
+    {
+      label: "Total Lates",
+      value: "12",
+      sub: "Today",
+      icon: <AlertCircle size={20} />,
+      color: "bg-amber-500",
+      path: "/hr/attendance?status=Late"
+    },
+    {
+      label: "Total Absents",
+      value: "7",
+      sub: "Today",
+      icon: <UserMinus size={20} />,
+      color: "bg-slate-500",
+      path: "/hr/attendance?status=Absent"
+    },
   ];
 
   const branchPresence = [
     { name: "Main Office", percentage: 94, color: "bg-emerald-500" },
-    { name: "Tayud Branch", percentage: 88, color: "bg-red-500" },
+    { name: "Tayud Branch", percentage: 90, color: "bg-emerald-500" },
     { name: "Makati Branch", percentage: 91, color: "bg-emerald-500" },
   ];
 
+  const handleStatClick = (path: string) => {
+    router.push(path);
+  };
+
+  const handleBranchClick = (branchName: string) => {
+    router.push(`/hr/attendance?branch=${encodeURIComponent(branchName)}`);
+  };
+
   return (
     <div className="space-y-6">
-
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h1 className="text-3xl font-black text-slate-800 tracking-tighter">Dashboard</h1>
-
-      </div>
-
-
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat) => (
-          <div key={stat.label} className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm relative overflow-hidden group hover:border-red-500 transition-all cursor-default">
+          <div
+            key={stat.label}
+            onClick={() => handleStatClick(stat.path)}
+            className="bg-white p-6 rounded-[1rem] border border-slate-200 shadow-sm relative overflow-hidden group hover:border-red-500 transition-all cursor-pointer active:scale-95"
+          >
             <div className={`absolute top-0 right-0 w-24 h-24 ${stat.color} opacity-[0.03] -mr-8 -mt-8 rounded-full group-hover:opacity-[0.08] transition-all`} />
             <div className="flex items-center justify-between mb-4">
               <div className={`${stat.color} text-white p-3 rounded-2xl shadow-lg`}>
@@ -51,15 +86,15 @@ export default function HRDashboard() {
         ))}
       </div>
 
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-
-
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-8">
+          <div
+            onClick={() => router.push('/hr/attendance?status=Present&includeLate=true')}
+            className="bg-white p-8 rounded-[1rem] border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-8 cursor-pointer hover:border-emerald-500 transition-all group active:scale-[0.99]"
+          >
             <div className="relative shrink-0">
-              <div className="w-32 h-32 rounded-full border-[12px] border-slate-50 flex items-center justify-center relative">
-                <div className="absolute inset-0 rounded-full border-[12px] border-red-500 border-t-transparent -rotate-45" />
+              <div className="w-32 h-32 rounded-full border-[12px] border-slate-100 flex items-center justify-center relative">
+                <div className="absolute inset-0 rounded-full border-[12px] border-emerald-500 border-t-transparent -rotate-45" />
                 <p className="text-2xl font-black text-slate-800">92%</p>
               </div>
             </div>
@@ -70,22 +105,22 @@ export default function HRDashboard() {
                   An overview of workforce clock-in trends and biometric compliance for the current shift.
                 </p>
               </div>
-
             </div>
             <div className="hidden xl:block">
-              <Fingerprint size={48} className="text-slate-100" />
+              <Fingerprint size={48} className="text-slate-100 group-hover:text-emerald-50 transition-colors" />
             </div>
           </div>
 
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {branchPresence.map((branch) => (
-              <div key={branch.name} className="bg-slate-900 p-6 rounded-[2.5rem] text-white flex flex-col justify-between h-44 shadow-xl">
+              <div
+                key={branch.name}
+                onClick={() => handleBranchClick(branch.name)}
+                className="bg-slate-900 p-6 rounded-[2.5rem] text-white flex flex-col justify-between h-44 shadow-xl cursor-pointer hover:scale-[1.02] transition-transform active:scale-95"
+              >
                 <div className="flex justify-between items-center">
-                  <div className="flex justify-between items-center">
-                    <div className="p-2.5 bg-white/10 rounded-2xl">
-                      <MapPin size={18} className="text-red-400" />
-                    </div>
+                  <div className="p-2.5 bg-white/10 rounded-2xl">
+                    <MapPin size={18} className="text-red-400" />
                   </div>
                 </div>
                 <div>
@@ -102,7 +137,6 @@ export default function HRDashboard() {
             ))}
           </div>
         </div>
-
 
         <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm p-6 flex flex-col">
           <div className="flex items-center gap-2 mb-6">

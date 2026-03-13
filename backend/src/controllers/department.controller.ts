@@ -42,6 +42,33 @@ export const createDepartment = async (req: Request, res: Response) => {
     }
 };
 
+// PUT /api/departments/:id
+export const renameDepartment = async (req: Request, res: Response) => {
+    try {
+        const id = parseInt(String(req.params.id));
+        if (isNaN(id)) {
+            return res.status(400).json({ success: false, message: 'Invalid department ID' });
+        }
+        const { name } = req.body;
+        if (!name || !name.trim()) {
+            return res.status(400).json({ success: false, message: 'Department name is required' });
+        }
+        const trimmedName = name.trim().toUpperCase();
+        const existing = await prisma.department.findFirst({ where: { name: trimmedName } });
+        if (existing && existing.id !== id) {
+            return res.status(409).json({ success: false, message: 'Department name already exists' });
+        }
+        const department = await prisma.department.update({
+            where: { id },
+            data: { name: trimmedName, updatedAt: new Date() }
+        });
+        res.json({ success: true, department });
+    } catch (error) {
+        console.error('Error renaming department:', error);
+        res.status(500).json({ success: false, message: 'Failed to rename department' });
+    }
+};
+
 // DELETE /api/departments/:id
 export const deleteDepartment = async (req: Request, res: Response) => {
     try {

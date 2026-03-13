@@ -4,7 +4,8 @@ import {
     addUser,
     getAttendance,
     getToday,
-    getEmployeeHistory
+    getEmployeeHistory,
+    updateAttendance
 } from '../controllers/attendance.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { adminOrHR } from '../middleware/role.middleware';
@@ -144,5 +145,41 @@ router.get('/today', getToday);
  */
 router.get('/employee/:id', getEmployeeHistory);
 
+/**
+ * @swagger
+ * /api/attendance/{id}:
+ *   put:
+ *     summary: Manually update an attendance record (HR correction)
+ *     tags: [Attendance]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               checkInTime:
+ *                 type: string
+ *                 format: date-time
+ *               checkOutTime:
+ *                 type: string
+ *                 format: date-time
+ *               status:
+ *                 type: string
+ *               reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Record updated
+ */
+router.put('/:id', updateAttendance);
 
 export default router;

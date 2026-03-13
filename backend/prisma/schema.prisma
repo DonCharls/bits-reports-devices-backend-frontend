@@ -105,6 +105,7 @@ model Employee {
 
   @@index([departmentId])
   @@index([branchId])
+  @@index([shiftId])
   @@index([email])
   @@index([employeeNumber])
   @@index([employmentStatus])
@@ -112,13 +113,23 @@ model Employee {
 }
 
 model Shift {
-  id        Int        @id @default(autoincrement())
-  name      String
-  startTime String
-  endTime   String
-  createdAt DateTime   @default(now())
-  updatedAt DateTime
-  Employee  Employee[]
+  id           Int        @id @default(autoincrement())
+  shiftCode    String     @unique
+  name         String     @unique
+  startTime    String
+  endTime      String
+  graceMinutes Int        @default(0)
+  breakMinutes Int        @default(60)
+  isNightShift Boolean    @default(false)
+  isActive     Boolean    @default(true)
+  description  String?
+  workDays     String     @default("[\"Mon\",\"Tue\",\"Wed\",\"Thu\",\"Fri\"]")
+  halfDays     String     @default("[]")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  Employee     Employee[]
+
+  @@index([isActive])
 }
 
 enum EmploymentStatus {

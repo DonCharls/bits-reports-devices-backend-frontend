@@ -49,7 +49,7 @@ export class ZKDriver {
         const ZKLib = require('node-zklib');
         this.zkInstance = new ZKLib(this.ip, this.port, this.timeout, this.timeout);
 
-        console.log(`[ZKDriver] Initialized ZKLib. Instance has setUser? ${typeof this.zkInstance.setUser}`);
+        console.log(`[ZKDriver] Connected to ${this.ip}:${this.port}`);
 
         await this.zkInstance.createSocket();
     }
@@ -119,16 +119,32 @@ export class ZKDriver {
     }
 
     /**
-     * Get the next available UID for creating a new user
-     * This ensures sequential UID assignment to prevent ghost users
+     * Get the count of enrolled fingerprint templates for a given UID.
+     * Returns 0–10. A user with 0 fingerprints exists on device but cannot scan.
+     * Uses CMD_DELETE_USERTEMP packets to probe each slot — non-destructively
+     * queries by catching the "not found" response (device errors = not enrolled).
+     *
+     * NOTE: This is best-effort. Some firmware versions always ACK the probe
+     * command even for empty slots. Use this as a hint, not a guarantee.
      */
-    async getNextUid(): Promise<number> {
-        const users = await this.getUsers();
-        if (!users || users.length === 0) {
-            return 1;
+    async getFingerCount(uid: number): Promise<number> {
+        if (!this.zkInstance) throw new Error('Not connected');
+        const { COMMANDS } = require('node-zklib/constants');
+        let count = 0;
+        // CMD_USERTEMP_RRQ = read fingerprint template for a UID+finger slot
+        for (let finger = 0; finger <= 9; finger++) {
+            try {
+                const buf = Buffer.alloc(3);
+                buf.writeUInt16LE(uid, 0);
+                buf.writeUInt8(finger, 2);
+                const result = await this.zkInstance.executeCmd(COMMANDS.CMD_USERTEMP_RRQ, buf);
+                // If the reply has data beyond the header, a template exists
+                if (result && result.length > 8) count++;
+            } catch {
+                // Slot empty or not supported — skip
+            }
         }
-        const existingUids = users.map(u => u.uid);
-        return Math.max(...existingUids) + 1;
+        return count;
     }
 
     /**

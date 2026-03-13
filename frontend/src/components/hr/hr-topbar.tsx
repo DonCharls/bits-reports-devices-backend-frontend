@@ -10,7 +10,7 @@ export default function TopBar({ setIsMobileOpen }: { setIsMobileOpen: (val: boo
   const [time, setTime] = useState(new Date());
   const [mounted, setMounted] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [isDeviceOnline, setIsDeviceOnline] = useState(true); 
+  const [isDeviceOnline, setIsDeviceOnline] = useState(true);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [userName, setUserName] = useState('');
 
@@ -55,7 +55,7 @@ export default function TopBar({ setIsMobileOpen }: { setIsMobileOpen: (val: boo
           <Menu size={24} />
         </button>
         <div className="flex items-center gap-3">
-          
+
           <div className="relative h-11 w-11 overflow-hidden rounded-xl border border-red-700 bg-[#FE0908]">
             <Image src="/images/av.jpg" alt="Logo" fill className="object-contain" priority quality={100} />
           </div>
@@ -64,7 +64,7 @@ export default function TopBar({ setIsMobileOpen }: { setIsMobileOpen: (val: boo
       </div>
 
       <div className="flex items-center gap-3 md:gap-6">
-        <button 
+        {/* <button 
           onClick={() => setIsDeviceOnline(!isDeviceOnline)}
           className={`hidden md:flex items-center gap-3 px-3 py-1.5 border rounded-full transition-all duration-300 ${
             isDeviceOnline 
@@ -81,7 +81,7 @@ export default function TopBar({ setIsMobileOpen }: { setIsMobileOpen: (val: boo
               {isDeviceOnline ? 'ZK-Device Online' : 'ZK-Device Offline'}
             </span>
           </div>
-        </button>
+        </button> */}
 
         <div className="hidden sm:block text-right border-l pl-6 border-slate-200">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">System Time</p>

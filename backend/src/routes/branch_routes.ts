@@ -1,5 +1,5 @@
 import express from 'express';
-import { getBranches, createBranch, deleteBranch } from '../controllers/branch.controller';
+import { getBranches, createBranch, renameBranch, deleteBranch } from '../controllers/branch.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { adminOrHR } from '../middleware/role.middleware';
 
@@ -42,6 +42,7 @@ router.post('/', adminOrHR, createBranch);
  *     security:
  *       - bearerAuth: []
  */
+router.put('/:id', adminOrHR, renameBranch);
 router.delete('/:id', adminOrHR, deleteBranch);
 
 export default router;

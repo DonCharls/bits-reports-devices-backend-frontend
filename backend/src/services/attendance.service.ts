@@ -311,7 +311,8 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
                     include: {
                         Department: {
                             select: { name: true }
-                        }
+                        },
+                        Shift: true
                     }
                 }
             },
@@ -321,15 +322,133 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
         })
     ]);
 
-    // Add Philippine Time formatted strings for easier reading
-    const data = records.map((record: any) => ({
-        ...record,
-        // employee relation is already included as 'employee'
-        checkInTimePH: formatToPhilippineTime(record.checkInTime),
-        checkOutTimePH: record.checkOutTime ? formatToPhilippineTime(record.checkOutTime) : null
-    }));
+    // Enrich each record with shift-based calculations
+    const data = records.map((record: any) => {
+        const shift = record.employee?.Shift ?? null;
+        const metrics = calculateAttendanceMetrics(record, shift);
+        return {
+            ...record,
+            checkInTimePH: formatToPhilippineTime(record.checkInTime),
+            checkOutTimePH: record.checkOutTime ? formatToPhilippineTime(record.checkOutTime) : null,
+            ...metrics,
+        };
+    });
 
     return { data, total };
+};
+
+/**
+ * Calculate attendance metrics based on an employee's assigned Shift
+ * All times are stored as UTC where PHT midnight = UTC midnight offset by -8h
+ * i.e. a stored timestamp of 2026-02-10T00:00:00Z represents 2026-02-10T08:00:00+08:00 PHT midnight workaround
+ */
+const calculateAttendanceMetrics = (record: any, shift: any) => {
+    const shiftCode = shift?.shiftCode ?? null;
+
+    if (!shift || !record.checkInTime) {
+        // No shift assigned – fall back to a generic 8-hour day
+        const checkIn = new Date(record.checkInTime);
+        const checkOut = record.checkOutTime ? new Date(record.checkOutTime) : null;
+        const totalMs = checkOut ? checkOut.getTime() - checkIn.getTime() : 0;
+        const totalHours = parseFloat((totalMs / (1000 * 60 * 60)).toFixed(2));
+        const expectedHours = 8;
+        const overtime = Math.max(0, totalHours - expectedHours);
+        const undertime = totalHours > 0 ? Math.max(0, expectedHours - totalHours) : 0;
+
+        // Late: after 08:00 AM PHT
+        const checkInPHT = new Date(checkIn.getTime() + 8 * 60 * 60 * 1000);
+        const lateMinutes = Math.max(0, checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes() - 8 * 60);
+
+        // Anomaly: Tap in is more than 4 hours away from default 08:00 AM
+        const ANOMALY_THRESHOLD_MINS = 4 * 60;
+        const diffMins = Math.abs(checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes() - 8 * 60);
+        const isAnomaly = diffMins > ANOMALY_THRESHOLD_MINS;
+
+        return { shiftCode: null, lateMinutes, overtimeMinutes: parseFloat((overtime * 60).toFixed(1)), undertimeMinutes: parseFloat((undertime * 60).toFixed(1)), totalHours, isAnomaly };
+    }
+
+    // --- Shift-aware calculation ---
+    // record.date is "PHT midnight stored as UTC" e.g. 2026-02-10T16:00:00.000Z = Feb 11 00:00 PHT
+    // We add 8h to get back to the actual PHT calendar date's midnight UTC representation usable for Date math
+    const dateMs = new Date(record.date).getTime() + 8 * 60 * 60 * 1000; // PHT midnight in ms
+
+    // Parse shift start/end ("HH:MM" 24-hour)
+    const [startH, startM] = shift.startTime.split(':').map(Number);
+    const [endH, endM] = shift.endTime.split(':').map(Number);
+
+    // Build expected check-in / check-out as UTC timestamps on that PHT date
+    // Formula: PHT midnight (ms) + hours*3600000 - 8*3600000 (to convert PHT back to UTC)
+    const expectedStart = new Date(dateMs + (startH * 60 + startM) * 60 * 1000 - 8 * 60 * 60 * 1000);
+    let expectedEnd = new Date(dateMs + (endH * 60 + endM) * 60 * 1000 - 8 * 60 * 60 * 1000);
+
+    // Night shift: end time is next day
+    if (shift.isNightShift && endH < startH) {
+        expectedEnd = new Date(expectedEnd.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    // Check if it's a half-day (adjust expected end time to halfway between start and end)
+    let halfDays: string[] = [];
+    try { halfDays = JSON.parse(shift.halfDays || '[]'); } catch { }
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const phtDate = new Date(new Date(record.date).getTime() + 8 * 60 * 60 * 1000);
+    const dayName = dayNames[phtDate.getUTCDay()];
+    const isHalfDay = halfDays.includes(dayName);
+
+    if (isHalfDay) {
+        // Expected end = midpoint between start and full end
+        const halfMs = (expectedEnd.getTime() - expectedStart.getTime()) / 2;
+        expectedEnd = new Date(expectedStart.getTime() + halfMs);
+    }
+
+    // Full expected shift duration (minutes), without break
+    const fullShiftMins = (expectedEnd.getTime() - expectedStart.getTime()) / (1000 * 60);
+
+    const checkIn = new Date(record.checkInTime);
+    const checkOut = record.checkOutTime ? new Date(record.checkOutTime) : null;
+
+    // Only deduct break if employee worked at least HALF of the full shift.
+    // This prevents a lunch deduction for short / partial-day attendances.
+    const rawBreakMins = isHalfDay ? 0 : (shift.breakMinutes ?? 60);
+    const halfShiftMins = fullShiftMins / 2;
+
+    // Late: actual check-in minus (expected start + grace)
+    const graceMins = shift.graceMinutes ?? 0;
+    const lateMs = checkIn.getTime() - (expectedStart.getTime() + graceMins * 60 * 1000);
+    const lateMinutes = Math.max(0, Math.round(lateMs / (1000 * 60)));
+
+    // Expected net worked minutes (after break deduction)
+    const fullExpectedMins = fullShiftMins - rawBreakMins;
+
+    // Total Hours = (checkOut - checkIn) - break (if threshold met), floored at 0
+    let totalHours = 0;
+    let undertimeMinutes = 0;
+    let overtimeMinutes = 0;
+
+    if (checkOut) {
+        const workedMs = checkOut.getTime() - checkIn.getTime();
+        const rawWorkedMins = workedMs / (1000 * 60);
+        // Deduct break only if they worked at least half the shift
+        const breakMins = rawWorkedMins >= halfShiftMins ? rawBreakMins : 0;
+        const workedMins = Math.max(0, rawWorkedMins - breakMins);
+        totalHours = parseFloat((workedMins / 60).toFixed(2));
+
+        // Undertime: employee left early
+        const undertimeDiff = fullExpectedMins - workedMins;
+        undertimeMinutes = Math.max(0, parseFloat(undertimeDiff.toFixed(1)));
+
+        // Overtime: employee stayed beyond expected end
+        const actualEndMs = checkOut.getTime();
+        const expectedEndMs = expectedEnd.getTime();
+        const otMs = Math.max(0, actualEndMs - expectedEndMs);
+        overtimeMinutes = parseFloat((otMs / (1000 * 60)).toFixed(1));
+    }
+
+    // Anomaly: Tap in is more than 4 hours away from expected shift start
+    const ANOMALY_THRESHOLD_MINS = 4 * 60;
+    const diffFromExpectedMins = Math.abs(Math.round((checkIn.getTime() - expectedStart.getTime()) / (1000 * 60)));
+    const isAnomaly = diffFromExpectedMins > ANOMALY_THRESHOLD_MINS;
+
+    return { shiftCode, lateMinutes, undertimeMinutes, overtimeMinutes, totalHours, isAnomaly };
 };
 
 /**
