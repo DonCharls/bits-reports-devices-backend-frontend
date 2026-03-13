@@ -71,15 +71,22 @@ export default function DepartmentsPage() {
     const load = async () => {
       setLoading(true)
       try {
+        // Fetch departments
+        const deptRes = await fetch('/api/departments', { credentials: 'include' })
+        const deptData = await deptRes.json()
+        if (deptData.success) {
+          setDepartments(deptData.departments)
+        }
+
         // Fetch branches
-        const branchRes = await fetch('/api/branches')
+        const branchRes = await fetch('/api/branches', { credentials: 'include' })
         const branchData = await branchRes.json()
         if (branchData.success) {
           setBranches(branchData.branches)
         }
 
         // Fetch employees
-        const empRes = await fetch('/api/employees')
+        const empRes = await fetch('/api/employees', { credentials: 'include' })
         const empData = await empRes.json()
         if (empData.success) {
           const activeEmps = (empData.employees || []).filter((e: any) =>
