@@ -30,21 +30,25 @@ export default function ProfilePage() {
     const savedImage = localStorage.getItem('userProfileImage');
     if (savedImage) setProfileImage(savedImage);
 
-    try {
-      const employee = localStorage.getItem('employee');
-      if (employee) {
-        const parsed = JSON.parse(employee);
-        setUserData({
-          firstName: parsed.firstName || '',
-          lastName: parsed.lastName || '',
-          role: parsed.role || 'HR',
-          email: parsed.email || '',
-          phone: parsed.contactNumber || parsed.phone || '',
-          branch: parsed.branch || '',
-          hireDate: parsed.hireDate ? new Date(parsed.hireDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '',
-        });
-      }
-    } catch { /* fallback */ }
+    const fetchUser = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          const emp = data.employee ?? data;
+          setUserData({
+            firstName: emp.firstName || '',
+            lastName: emp.lastName || '',
+            role: emp.role || 'HR',
+            email: emp.email || '',
+            phone: emp.contactNumber || emp.phone || '',
+            branch: emp.branch || '',
+            hireDate: emp.hireDate ? new Date(emp.hireDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '',
+          });
+        }
+      } catch { /* fallback */ }
+    };
+    fetchUser();
   }, []);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,15 +88,6 @@ export default function ProfilePage() {
 
       const data = await res.json();
       if (data.success) {
-        // Update localStorage
-        const employee = localStorage.getItem('employee');
-        if (employee) {
-          const parsed = JSON.parse(employee);
-          parsed.firstName = userData.firstName;
-          parsed.lastName = userData.lastName;
-          parsed.contactNumber = userData.phone;
-          localStorage.setItem('employee', JSON.stringify(parsed));
-        }
         setIsEditing(false);
         setToastMessage("Profile updated successfully!");
         setShowToast(true);

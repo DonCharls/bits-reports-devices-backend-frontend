@@ -123,11 +123,11 @@ export default function BiometricPage() {
   useEffect(() => {
     const run = async () => {
       try {
-        const res = await fetch('/api/departments')
+        const res = await fetch('/api/branches', { credentials: 'include' })
         if (res.ok) {
           const data = await res.json()
-          if (data.success && data.departments) {
-            setDepartments(data.departments.map((d: any) => d.name))
+          if (data.success && data.branches) {
+            setBranches(data.branches)
           }
         }
       } catch { /* ignore */ }
@@ -139,8 +139,7 @@ export default function BiometricPage() {
   useEffect(() => {
     const run = async () => {
       try {
-        const token = localStorage.getItem('token')
-        const res = await fetch('/api/departments', { headers: { Authorization: `Bearer ${token}` } })
+        const res = await fetch('/api/departments', { credentials: 'include' })
         const data = await res.json()
         if (data.success && data.departments) setDepartments(data.departments)
       } catch { /* ignore */ }
@@ -153,7 +152,6 @@ export default function BiometricPage() {
     setLoading(true)
     setError(null)
     try {
-      const token = localStorage.getItem('token')
       const params = new URLSearchParams({
         startDate: selectedDate,
         endDate: selectedDate,
@@ -224,10 +222,9 @@ export default function BiometricPage() {
         })
 
         // Fetch all active employees and inject absent rows
-        const token2 = localStorage.getItem('token')
         let allEmployees: any[] = []
         try {
-          const empRes = await fetch('/api/employees?limit=9999', { headers: { Authorization: `Bearer ${token2}` } })
+          const empRes = await fetch('/api/employees?limit=9999', { credentials: 'include' })
           const empData = await empRes.json()
           if (empData.success) allEmployees = (empData.employees || empData.data || []).filter((e: any) => (e.role === 'USER' || !e.role) && (e.employmentStatus === 'ACTIVE' || !e.employmentStatus))
         } catch { /* ignore */ }

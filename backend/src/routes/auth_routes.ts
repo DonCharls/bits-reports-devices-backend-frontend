@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { register, login, refreshToken, logout } from '../controllers/auth.controller';
+import { register, login, refreshToken, logout, me } from '../controllers/auth.controller';
 import { validate } from '../middleware/validation.middleware';
 import { registerValidator, loginValidator } from '../validators/auth.validator';
 import { authenticate } from '../middleware/auth.middleware';
@@ -172,5 +172,21 @@ router.post('/refresh', refreshLimiter, refreshToken);
  *         description: Logged out successfully
  */
 router.post('/logout', logout);
+
+/**
+ * @swagger
+ * /api/auth/me:
+ *   get:
+ *     summary: Get the currently authenticated user
+ *     tags: [Auth]
+ *     security:
+ *       - cookieAuth: []
+ *     responses:
+ *       200:
+ *         description: Authenticated user data
+ *       401:
+ *         description: Not authenticated
+ */
+router.get('/me', authenticate, me);
 
 export default router;

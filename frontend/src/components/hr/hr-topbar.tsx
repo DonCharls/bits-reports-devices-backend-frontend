@@ -15,15 +15,19 @@ export default function TopBar({ setIsMobileOpen }: { setIsMobileOpen: (val: boo
 
   useEffect(() => {
     setMounted(true);
-    try {
-      const employee = localStorage.getItem('employee');
-      if (employee) {
-        const parsed = JSON.parse(employee);
-        setUserName(`${parsed.firstName} ${parsed.lastName}`);
+    const fetchUser = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        if (res.ok) {
+          const data = await res.json()
+          const emp = data.employee ?? data
+          setUserName(`${emp.firstName} ${emp.lastName}`)
+        }
+      } catch {
+        setUserName('HR')
       }
-    } catch {
-      setUserName('HR');
     }
+    fetchUser();
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => {
       clearInterval(timer);
@@ -41,10 +45,7 @@ export default function TopBar({ setIsMobileOpen }: { setIsMobileOpen: (val: boo
   }, []);
 
   const handleLogout = async () => {
-    // Clear the HttpOnly cookie via the server-side route handler
     await fetch('/api/auth/logout', { method: 'POST' });
-    // Clear non-sensitive cached user data from localStorage
-    localStorage.removeItem('employee');
     router.push('/login');
   };
 

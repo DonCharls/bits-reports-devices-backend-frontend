@@ -263,8 +263,10 @@ const todayStr = phtStr(new Date())
   }, [router])
 
   useEffect(() => {
-    const employee = localStorage.getItem('employee')
-    if (!employee) { router.replace('/login'); return }
+    // Verify auth via cookie instead of localStorage
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then(r => { if (!r.ok) router.replace('/login') })
+      .catch(() => router.replace('/login'))
     load()
     // Auto-refresh every 30 seconds — load() is fast now (no TCP device pings)
     const t = setInterval(load, 30_000)

@@ -18,9 +18,9 @@ interface AuthState {
 }
 
 /**
- * Auth guard hook. Checks localStorage for cached employee data.
+ * Auth guard hook. Verifies session by calling /api/auth/me (reads HttpOnly cookie).
  * The actual auth token is an HttpOnly cookie — invisible to JS.
- * Redirects to /login if no employee data found or role doesn't match.
+ * Redirects to /login if the session check fails or role doesn't match.
  *
  * @param requiredRole - If provided, only allows users with this role
  */
@@ -33,34 +33,27 @@ export function useAuth(requiredRole?: 'ADMIN' | 'HR'): AuthState {
   })
 
   useEffect(() => {
-    // Token is in an HttpOnly cookie — we can't read it here, and that's the point.
-    // We use the cached employee record (non-sensitive: name, role, id) for UI state.
-    const employeeStr = localStorage.getItem('employee')
+    const verify = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        if (!res.ok) {
+          router.replace('/login')
+          return
+        }
+        const data = await res.json()
+        const employee: Employee = data.employee ?? data
 
-    if (!employeeStr) {
-      router.replace('/login')
-      return
-    }
+        if (requiredRole && employee.role !== requiredRole) {
+          router.replace('/login')
+          return
+        }
 
-    try {
-      const employee: Employee = JSON.parse(employeeStr)
-
-      // Check role if required
-      if (requiredRole && employee.role !== requiredRole) {
+        setState({ isLoading: false, isAuthenticated: true, employee })
+      } catch {
         router.replace('/login')
-        return
       }
-
-      setState({
-        isLoading: false,
-        isAuthenticated: true,
-        employee,
-      })
-    } catch {
-      // Invalid data in localStorage
-      localStorage.removeItem('employee')
-      router.replace('/login')
     }
+    verify()
   }, [router, requiredRole])
 
   return state

@@ -78,8 +78,7 @@ export default function DevicesPage() {
         setLoading(true)
         setError(null)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/devices', { headers: { Authorization: `Bearer ${token}` } })
+            const res = await fetch('/api/devices', { credentials: 'include' })
             const data = await res.json()
             if (data.success) setDevices(data.devices)
             else setError(data.message || 'Failed to fetch devices')
@@ -123,12 +122,12 @@ export default function DevicesPage() {
         setSaving(true)
         setFormError(null)
         try {
-            const token = localStorage.getItem('token')
             const url = editingDevice ? `/api/devices/${editingDevice.id}` : '/api/devices'
             const method = editingDevice ? 'PUT' : 'POST'
             const res = await fetch(url, {
                 method,
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ name: form.name.trim(), ip: form.ip.trim(), port, location: form.location.trim() || null })
             })
             const data = await res.json()
@@ -149,10 +148,9 @@ export default function DevicesPage() {
     const handleDelete = async (id: number) => {
         setDeletingId(id)
         try {
-            const token = localStorage.getItem('token')
             const res = await fetch(`/api/devices/${id}`, {
                 method: 'DELETE',
-                headers: { Authorization: `Bearer ${token}` }
+                credentials: 'include'
             })
             const data = await res.json()
             if (data.success) {
@@ -173,10 +171,9 @@ export default function DevicesPage() {
         setTestingId(device.id)
         setTestResults(prev => ({ ...prev, [device.id]: { success: false, message: 'Connecting...' } }))
         try {
-            const token = localStorage.getItem('token')
             const res = await fetch(`/api/devices/${device.id}/test`, {
                 method: 'POST',
-                headers: { Authorization: `Bearer ${token}` }
+                credentials: 'include'
             })
             const data = await res.json()
             setTestResults(prev => ({ ...prev, [device.id]: { success: data.success, message: data.message, info: data.info } }))
@@ -192,10 +189,9 @@ export default function DevicesPage() {
         setReconcilingId(device.id)
         setReconcileReport(null)
         try {
-            const token = localStorage.getItem('token')
             const res = await fetch(`/api/devices/${device.id}/reconcile`, {
                 method: 'POST',
-                headers: { Authorization: `Bearer ${token}` }
+                credentials: 'include'
             })
             const data = await res.json()
             if (data.success) {

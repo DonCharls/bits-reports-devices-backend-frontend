@@ -293,3 +293,43 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
         res.status(200).json({ success: true, message: 'Logged out successfully' });
     }
 };
+/**
+ * GET /api/auth/me
+ * Returns the currently authenticated user's data from the DB.
+ * Requires a valid auth_token cookie (HttpOnly).
+ */
+export const me = async (req: Request, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            res.status(401).json({ success: false, message: 'Not authenticated.', error: 'unauthorized' });
+            return;
+        }
+
+        const employee = await prisma.employee.findUnique({
+            where: { id: req.user.employeeId },
+            select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                role: true,
+                contactNumber: true,
+                department: true,
+                branch: true,
+                position: true,
+                employmentStatus: true,
+            }
+        });
+
+        if (!employee) {
+            res.status(404).json({ success: false, message: 'Employee not found.' });
+            return;
+        }
+
+        res.status(200).json({ success: true, employee });
+
+    } catch (error: any) {
+        console.error('GET /auth/me failed:', error);
+        res.status(500).json({ success: false, message: 'Failed to fetch user.', error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error' });
+    }
+};

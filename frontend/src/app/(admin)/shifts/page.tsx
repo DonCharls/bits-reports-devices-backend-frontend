@@ -82,8 +82,7 @@ export default function AdminShiftsPage() {
 
     const fetchShifts = useCallback(async () => {
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/shifts', { headers: { Authorization: `Bearer ${token}` } })
+            const res = await fetch('/api/shifts', { credentials: 'include' })
             const data = await res.json()
             if (data.success) setShifts(data.shifts)
         } catch (e) {
@@ -139,12 +138,12 @@ export default function AdminShiftsPage() {
         setFormLoading(true)
         setFormError('')
         try {
-            const token = localStorage.getItem('token')
             const url = editingShift ? `/api/shifts/${editingShift.id}` : '/api/shifts'
             const method = editingShift ? 'PUT' : 'POST'
             const res = await fetch(url, {
                 method,
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify(form)
             })
             const data = await res.json()
@@ -158,9 +157,8 @@ export default function AdminShiftsPage() {
 
     const handleToggle = async (s: Shift) => {
         try {
-            const token = localStorage.getItem('token')
             const res = await fetch(`/api/shifts/${s.id}/toggle`, {
-                method: 'PATCH', headers: { Authorization: `Bearer ${token}` }
+                method: 'PATCH', credentials: 'include'
             })
             const data = await res.json()
             if (data.success) { showToast(data.message); fetchShifts() }
@@ -171,9 +169,8 @@ export default function AdminShiftsPage() {
         if (!deleteTarget) return
         setDeleteLoading(true)
         try {
-            const token = localStorage.getItem('token')
             const res = await fetch(`/api/shifts/${deleteTarget.id}`, {
-                method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
+                method: 'DELETE', credentials: 'include'
             })
             const data = await res.json()
             if (data.success) { showToast('Shift deleted'); setDeleteTarget(null); fetchShifts() }

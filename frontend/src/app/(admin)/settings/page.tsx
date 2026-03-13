@@ -41,20 +41,24 @@ export default function SettingsPage() {
   const [passwordSaved, setPasswordSaved] = useState(false)
 
   useEffect(() => {
-    try {
-      const employee = localStorage.getItem('employee')
-      if (employee) {
-        const parsed = JSON.parse(employee)
-        setFirstName(parsed.firstName || '')
-        setLastName(parsed.lastName || '')
-        setUserName(`${parsed.firstName || ''} ${parsed.lastName || ''}`.trim() || 'Admin')
-        setUserEmail(parsed.email || 'admin@avega.com')
-        setUserRole(parsed.role || 'ADMIN')
-        setPhone(parsed.contactNumber || parsed.phone || '')
+    const fetchUser = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        if (res.ok) {
+          const data = await res.json()
+          const emp = data.employee ?? data
+          setFirstName(emp.firstName || '')
+          setLastName(emp.lastName || '')
+          setUserName(`${emp.firstName || ''} ${emp.lastName || ''}`.trim() || 'Admin')
+          setUserEmail(emp.email || 'admin@avega.com')
+          setUserRole(emp.role || 'ADMIN')
+          setPhone(emp.contactNumber || emp.phone || '')
+        }
+      } catch {
+        // fallback defaults
       }
-    } catch {
-      // fallback defaults
     }
+    fetchUser()
   }, [])
 
   const handleSaveProfile = async () => {
@@ -74,14 +78,6 @@ export default function SettingsPage() {
 
       const data = await res.json()
       if (data.success) {
-        const employee = localStorage.getItem('employee')
-        if (employee) {
-          const parsed = JSON.parse(employee)
-          parsed.firstName = firstName
-          parsed.lastName = lastName
-          parsed.contactNumber = phone
-          localStorage.setItem('employee', JSON.stringify(parsed))
-        }
         setUserName(`${firstName} ${lastName}`.trim() || 'Admin')
         setProfileSaved(true)
         setTimeout(() => setProfileSaved(false), 3000)

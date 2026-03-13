@@ -72,24 +72,6 @@ export default function LoginPage() {
         return
       }
 
-      // Clean up any stale keys left over from the old localStorage-token auth flow
-      localStorage.removeItem('token')
-      localStorage.removeItem('refreshToken')
-      localStorage.removeItem('user')
-
-      // Token is set as HttpOnly cookie by the login route handler.
-      // Only cache non-sensitive employee info for UI display.
-      localStorage.setItem('employee', JSON.stringify(data.employee))
-
-      // Confirm the token is actually readable before navigating
-      // (guards against any edge-case where setItem is async-deferred)
-      const stored = localStorage.getItem('token')
-      if (!stored) {
-        setValidationErrors({ password: 'Failed to save session. Please try again.' })
-        setIsLoading(false)
-        return
-      }
-
       // Determine redirect path
       let path = '/login'
       if (data.employee.role === 'HR') {
@@ -98,10 +80,6 @@ export default function LoginPage() {
         path = '/dashboard'
       }
 
-      // Show loading screen then do a full hard navigation (window.location.href).
-      // This is intentional — unlike router.push(), a hard nav guarantees the new
-      // page boots AFTER localStorage is fully written, fixing the race condition
-      // where the dashboard auth check would read an empty token on first login.
       setRedirectPath(path)
       setShowLoading(true)
       setTimeout(() => {

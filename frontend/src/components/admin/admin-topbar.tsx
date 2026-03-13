@@ -20,10 +20,7 @@ export function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
 
   const checkDevice = async () => {
     try {
-      const token = localStorage.getItem('token')
-      const res = await fetch('/api/health/device', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      })
+      const res = await fetch('/api/health/device', { credentials: 'include' })
       const data = await res.json()
       setDeviceOnline(data.online === true)
     } catch {
@@ -32,16 +29,19 @@ export function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
   }
 
   useEffect(() => {
-    try {
-      const employee = localStorage.getItem('employee')
-      if (employee) {
-        const parsed = JSON.parse(employee)
-        setUserName(`${parsed.firstName} ${parsed.lastName}`)
+    const fetchUser = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        if (res.ok) {
+          const data = await res.json()
+          const emp = data.employee ?? data
+          setUserName(`${emp.firstName} ${emp.lastName}`)
+        }
+      } catch {
+        setUserName('Admin')
       }
-    } catch {
-      setUserName('Admin')
     }
-
+    fetchUser()
     setTime(new Date())
     const timer = setInterval(() => setTime(new Date()), 1000)
     return () => clearInterval(timer)
@@ -64,10 +64,7 @@ export function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
   }, [])
 
   const handleLogout = async () => {
-    // Clear the HttpOnly cookie via the server-side route handler
     await fetch('/api/auth/logout', { method: 'POST' })
-    // Clear non-sensitive cached user data from localStorage
-    localStorage.removeItem('employee')
     router.push('/login')
   }
 

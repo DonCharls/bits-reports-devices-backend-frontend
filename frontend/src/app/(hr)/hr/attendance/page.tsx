@@ -1,5 +1,7 @@
 "use client"
 
+export const dynamic = 'force-dynamic'
+
 import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import * as XLSX from 'xlsx';
@@ -125,7 +127,6 @@ function AttendanceContent() {
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('token');
       const params = new URLSearchParams({
         startDate: selectedDate,
         endDate: selectedDate,
@@ -133,10 +134,8 @@ function AttendanceContent() {
       });
       if (statusFilter !== 'all') params.append('status', statusFilter);
 
-      const res = await fetch(`/api/attendance?${params}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.status === 401) { localStorage.removeItem('token'); window.location.href = '/login'; return; }
+      const res = await fetch(`/api/attendance?${params}`, { credentials: 'include' });
+      if (res.status === 401) { window.location.href = '/login'; return; }
 
       const data = await res.json();
       if (data.success) {
@@ -172,7 +171,7 @@ function AttendanceContent() {
         // Fetch all active employees to inject absent rows
         let allEmployees: any[] = [];
         try {
-          const empRes = await fetch('/api/employees?limit=9999', { headers: { Authorization: `Bearer ${token}` } });
+          const empRes = await fetch('/api/employees?limit=9999', { credentials: 'include' });
           const empData = await empRes.json();
           if (empData.success) allEmployees = (empData.employees || empData.data || []).filter((e: any) =>
             (e.role === 'USER' || !e.role) && (e.employmentStatus === 'ACTIVE' || !e.employmentStatus)
@@ -253,14 +252,14 @@ function AttendanceContent() {
     }
     setActionLoading(true);
     try {
-      const token = localStorage.getItem('token');
       const body: any = { status: editStatus, reason: editReason };
       if (editCheckIn) body.checkInTime = `${editingLog.date}T${editCheckIn}:00+08:00`;
       if (editCheckOut) body.checkOutTime = `${editingLog.date}T${editCheckOut}:00+08:00`;
 
       const res = await fetch(`/api/attendance/${editingLog.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(body),
       });
       const data = await res.json();

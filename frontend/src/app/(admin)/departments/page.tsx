@@ -63,7 +63,6 @@ export default function DepartmentsPage() {
 
   // ── Helpers ──
   const authHeaders = () => ({
-    'Authorization': `Bearer ${localStorage.getItem('token')}`,
     'Content-Type': 'application/json',
   })
 
@@ -126,6 +125,7 @@ export default function DepartmentsPage() {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: authHeaders(),
+        credentials: 'include',
         body: JSON.stringify({ name: trimmed }),
       })
       const data = await res.json()
@@ -156,6 +156,7 @@ export default function DepartmentsPage() {
       const res = await fetch(`/api/departments/${editingDept.id}`, {
         method: 'PUT',
         headers: authHeaders(),
+        credentials: 'include',
         body: JSON.stringify({ name: editName.trim() }),
       })
       const data = await res.json()
@@ -193,6 +194,7 @@ export default function DepartmentsPage() {
       const res = await fetch(`/api/departments/${confirmDeleteDept.id}`, {
         method: 'DELETE',
         headers: authHeaders(),
+        credentials: 'include',
       })
       const data = await res.json()
       if (!data.success) {
@@ -217,6 +219,7 @@ export default function DepartmentsPage() {
       const res = await fetch(`/api/branches/${confirmDeleteBranch.id}`, {
         method: 'DELETE',
         headers: authHeaders(),
+        credentials: 'include',
       })
       const data = await res.json()
       if (!data.success) {

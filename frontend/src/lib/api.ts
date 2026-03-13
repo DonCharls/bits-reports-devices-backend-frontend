@@ -1,6 +1,6 @@
 // ─── Centralized API Client ──────────────────────────────────────────────────
 // Single source of truth for all backend API calls.
-// Automatically attaches the JWT access token from localStorage.
+// Automatically authenticates via HttpOnly cookie (credentials: 'include').
 // Backend base URL is proxied by Next.js rewrites: /api/* → http://backend:3001/api/*
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -81,16 +81,12 @@ async function apiFetch<T = unknown>(
   path: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const token =
-    typeof window !== 'undefined' ? localStorage.getItem('token') : null
-
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...options.headers,
   }
 
-  const res = await fetch(path, { ...options, headers })
+  const res = await fetch(path, { ...options, headers, credentials: 'include' })
 
   if (!res.ok) {
     // Try to parse an error message from the response body

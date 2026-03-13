@@ -56,9 +56,6 @@ export default function SystemLogsPage() {
 
     const fetchLogs = useCallback(async () => {
         try {
-            const token = localStorage.getItem('token')
-            if (!token) { router.replace('/login'); return }
-
             const params = new URLSearchParams({
                 startDate,
                 endDate,
@@ -67,12 +64,9 @@ export default function SystemLogsPage() {
                 limit: String(limit),
             })
 
-            const res = await fetch(`/api/logs?${params}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            })
+            const res = await fetch(`/api/logs?${params}`, { credentials: 'include' })
 
             if (res.status === 401) {
-                localStorage.removeItem('token')
                 router.replace('/login')
                 return
             }

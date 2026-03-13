@@ -73,8 +73,7 @@ export default function HRShiftsPage() {
 
     const fetchShifts = useCallback(async () => {
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch('/api/shifts', { headers: { Authorization: `Bearer ${token}` } })
+            const res = await fetch('/api/shifts', { credentials: 'include' })
             const data = await res.json()
             if (data.success) setShifts(data.shifts)
         } catch (e) { console.error(e) }
@@ -104,10 +103,9 @@ export default function HRShiftsPage() {
         if (!form.shiftCode.trim() || !form.name.trim() || !form.startTime || !form.endTime) { setFormError('Shift Code, Name, Start Time, and End Time are required.'); return }
         setFormLoading(true); setFormError('')
         try {
-            const token = localStorage.getItem('token')
             const url = editingShift ? `/api/shifts/${editingShift.id}` : '/api/shifts'
             const method = editingShift ? 'PUT' : 'POST'
-            const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(form) })
+            const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(form) })
             const data = await res.json()
             if (!data.success) { setFormError(data.message || 'An error occurred'); return }
             showToast(editingShift ? 'Shift updated!' : 'Shift created!')
@@ -118,8 +116,7 @@ export default function HRShiftsPage() {
 
     const handleToggle = async (s: Shift) => {
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/shifts/${s.id}/toggle`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}` } })
+            const res = await fetch(`/api/shifts/${s.id}/toggle`, { method: 'PATCH', credentials: 'include' })
             const data = await res.json()
             if (data.success) { showToast(data.message); fetchShifts() }
         } catch { showToast('Failed to toggle shift', 'error') }
@@ -129,8 +126,7 @@ export default function HRShiftsPage() {
         if (!deleteTarget) return
         setDeleteLoading(true)
         try {
-            const token = localStorage.getItem('token')
-            const res = await fetch(`/api/shifts/${deleteTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+            const res = await fetch(`/api/shifts/${deleteTarget.id}`, { method: 'DELETE', credentials: 'include' })
             const data = await res.json()
             if (data.success) { showToast('Shift deleted'); setDeleteTarget(null); fetchShifts() }
             else showToast(data.message || 'Delete failed', 'error')

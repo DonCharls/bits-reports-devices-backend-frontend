@@ -155,22 +155,73 @@ export default function ReportsPage() {
     setLoading(true);
     try {
       const [empRes, attRes] = await Promise.all([
-        fetch('/api/employees'),
-        fetch(`/api/attendance?startDate=${startDate}&endDate=${endDate}&limit=10000`)
+        fetch('/api/employees', { credentials: 'include' }),
+        fetch(`/api/attendance?startDate=${startDate}&endDate=${endDate}&limit=10000`, { credentials: 'include' })
       ]);
 
       if (empRes.status === 401 || attRes.status === 401) {
         window.location.href = '/login';
         return;
       }
-      const data = await res.json();
-      if (!data.success) {
-        console.error('Failed to fetch report summary:', data.message);
+
+      const empData = await empRes.json();
+      const attData = attRes.ok ? await attRes.json() : { success: false };
+
+      if (!empData.success) {
+        console.error('Failed to fetch employees');
         setLoading(false);
         return;
       }
-      setReportData(data.summary);
-      setAllRecords(data.rawRecords);
+
+      const emps: any[] = empData.employees || empData.data || [];
+      const records: AttendanceRecord[] = attData.success ? (attData.data || []) : [];
+
+      // Store raw records for the individual employee modal
+      setAllRecords(records);
+
+      // Build per-employee report rows
+      const activeEmps = emps.filter((e: any) => e.employmentStatus === 'ACTIVE' && e.role === 'USER');
+      const rowMap = new Map<number, ReportRow>();
+
+      activeEmps.forEach((e: any) => {
+        rowMap.set(e.id, {
+          id: e.id,
+          name: `${e.firstName} ${e.lastName}`.trim(),
+          department: e.Department?.name || e.department || '—',
+          branch: e.branch || '—',
+          totalDays: 0,
+          present: 0,
+          leave: 0,
+          late: 0,
+          lateMinutes: 0,
+          absent: 0,
+          overtime: 0,
+          undertime: 0,
+          totalHours: 0,
+          shift: e.Shift ? { id: e.Shift.id, name: e.Shift.name, startTime: e.Shift.startTime, endTime: e.Shift.endTime, graceMinutes: e.Shift.graceMinutes ?? 0 } : null,
+        });
+      });
+
+      records.forEach((r) => {
+        const row = rowMap.get(r.employeeId);
+        if (!row) return;
+        row.totalDays++;
+        const checkIn = new Date(r.checkInTime);
+        const recordDate = new Date(r.date);
+        const lateMins = getLateByMins(checkIn, row.shift, recordDate);
+        if (lateMins > 0) { row.late++; row.lateMinutes += lateMins; }
+        else row.present++;
+
+        if (r.checkOutTime) {
+          const checkOut = new Date(r.checkOutTime);
+          const hrs = (checkOut.getTime() - checkIn.getTime()) / 3600000;
+          row.totalHours += hrs;
+          if (hrs > 8) row.overtime += Math.round(hrs - 8);
+          else if (hrs < 8) row.undertime += Math.round(8 - hrs);
+        }
+      });
+
+      setReportData(Array.from(rowMap.values()));
     } catch (error) {
       console.error('Error fetching report data:', error);
     } finally {

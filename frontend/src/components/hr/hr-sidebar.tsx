@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
@@ -14,7 +14,7 @@ import {
   History,
 } from 'lucide-react';
 
-export default function Sidebar({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollapsed }: any) {
+function SidebarInner({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollapsed }: any) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const listRef = useRef<HTMLUListElement>(null);
@@ -265,5 +265,13 @@ export default function Sidebar({ isMobileOpen, setIsMobileOpen, isCollapsed, se
         </ul>
       </nav>
     </aside>
+  );
+}
+
+export default function Sidebar(props: any) {
+  return (
+    <Suspense fallback={null}>
+      <SidebarInner {...props} />
+    </Suspense>
   );
 }

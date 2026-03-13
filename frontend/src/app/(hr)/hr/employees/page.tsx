@@ -46,16 +46,14 @@ function EmployeeDirectoryContent() {
     firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: ""
   });
 
-  const getToken = () => localStorage.getItem('token');
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const token = getToken();
       const [empRes, deptRes, branchRes] = await Promise.all([
-        fetch('/api/employees', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/departments', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/branches', { headers: { Authorization: `Bearer ${token}` } })
+        fetch('/api/employees', { credentials: 'include' }),
+        fetch('/api/departments', { credentials: 'include' }),
+        fetch('/api/branches', { credentials: 'include' })
       ]);
 
       const [empData, deptData, branchData] = await Promise.all([
@@ -114,10 +112,10 @@ function EmployeeDirectoryContent() {
     if (!editingEmployee) return;
     setActionLoading(true);
     try {
-      const token = getToken();
       const res = await fetch(`/api/employees/${editingEmployee.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           firstName: editingEmployee.firstName,
           lastName: editingEmployee.lastName,
@@ -153,10 +151,10 @@ function EmployeeDirectoryContent() {
     }
     setActionLoading(true);
     try {
-      const token = getToken();
       const res = await fetch('/api/employees/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           firstName: regForm.firstName,
           lastName: regForm.lastName,
@@ -576,10 +574,10 @@ function EmployeeDirectoryContent() {
                 onClick={async () => {
                   setActionLoading(true);
                   try {
-                    const token = getToken();
                     await fetch(`/api/employees/${editingEmployee.id}`, {
                       method: 'PUT',
-                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                      headers: { 'Content-Type': 'application/json' },
+                      credentials: 'include',
                       body: JSON.stringify({ employmentStatus: 'INACTIVE' })
                     });
                     setShowInactiveConfirm(false);

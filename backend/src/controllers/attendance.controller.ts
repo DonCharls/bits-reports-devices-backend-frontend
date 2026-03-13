@@ -160,7 +160,7 @@ export const getEmployeeHistory = async (req: Request, res: Response) => {
 export const updateAttendance = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const recordId = parseInt(id);
+        const recordId = parseInt(String(id));
 
         if (isNaN(recordId)) {
             res.status(400).json({ success: false, message: 'Invalid attendance record ID' });
@@ -169,7 +169,7 @@ export const updateAttendance = async (req: Request, res: Response) => {
 
         const { checkInTime, checkOutTime, status, reason } = req.body;
 
-        const existing = await prisma.attendanceRecord.findUnique({ where: { id: recordId } });
+        const existing = await prisma.attendance.findUnique({ where: { id: recordId } });
         if (!existing) {
             res.status(404).json({ success: false, message: 'Attendance record not found' });
             return;
@@ -180,7 +180,7 @@ export const updateAttendance = async (req: Request, res: Response) => {
         if (checkOutTime !== undefined) updateData.checkOutTime = checkOutTime ? new Date(checkOutTime) : null;
         if (status) updateData.status = status.toLowerCase();
 
-        const updated = await prisma.attendanceRecord.update({
+        const updated = await prisma.attendance.update({
             where: { id: recordId },
             data: updateData
         });

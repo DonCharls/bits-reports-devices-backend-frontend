@@ -107,10 +107,9 @@ export default function EmployeesPage() {
     setEnrollStatus(prev => ({ ...prev, [employeeId]: 'loading' }))
     setEnrollMsg(prev => ({ ...prev, [employeeId]: '' }))
     try {
-      const token = localStorage.getItem('token')
       const res = await fetch(`/api/employees/${employeeId}/enroll-fingerprint`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include'
       })
       const data = await res.json()
       if (data.success) {
@@ -155,8 +154,7 @@ export default function EmployeesPage() {
 
   const fetchShifts = async () => {
     try {
-      const token = localStorage.getItem('token')
-      const res = await fetch('/api/shifts', { headers: { Authorization: `Bearer ${token}` } })
+      const res = await fetch('/api/shifts', { credentials: 'include' })
       const data = await res.json()
       if (data.success) setShifts(data.shifts.filter((s: ShiftOption) => s))
     } catch (error) {
