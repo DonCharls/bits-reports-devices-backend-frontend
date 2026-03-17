@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
-import { syncEmployeesToDevice, enrollEmployeeFingerprint, addUserToDevice, deleteUserFromDevice } from '../services/zkServices';
+import { syncEmployeesToDevice, enrollEmployeeFingerprint, addUserToDevice, deleteUserFromDevice, findNextSafeZkId } from '../services/zkServices';
 
 // GET /api/employees - Get all employees
 export const getAllEmployees = async (req: Request, res: Response) => {
@@ -279,23 +279,10 @@ export const createEmployee = async (req: Request, res: Response) => {
             });
         }
 
-        // Auto-assign zkId: find the next available zkId
-        // NOTE: zkId 1 is reserved for admin, start from 2 for regular employees
-        const maxZkIdEmployee = await prisma.employee.findFirst({
-            where: {
-                zkId: { not: null }
-            },
-            orderBy: {
-                zkId: 'desc'
-            },
-            select: {
-                zkId: true
-            }
-        });
-        // Start from zkId 2 (skip 1 for admin), or increment from max
-        // SAFETY: zkId 1 is ALWAYS reserved for the device SUPER ADMIN — never assign it
-        let nextZkId = maxZkIdEmployee?.zkId ? maxZkIdEmployee.zkId + 1 : 2;
-        if (nextZkId <= 1) nextZkId = 2;
+        // Delegate zkId assignment to the service layer.
+        // findNextSafeZkId() checks BOTH the DB and all active devices so the
+        // new employee never gets a zkId that collides with a ghost device user.
+        const nextZkId = await findNextSafeZkId();
 
         // Create employee
         const newEmployee = await prisma.employee.create({

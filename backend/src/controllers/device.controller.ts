@@ -221,18 +221,27 @@ export const testDeviceConnection = async (req: Request, res: Response) => {
 };
 
 // ─── POST /api/devices/:id/reconcile ─────────────────────────────────────────
+// Accepts optional query param: ?dryRun=true
+// When dryRun=true the service returns a preview report without writing anything
+// to the device. The UI can show this to the admin for confirmation before
+// calling again without the flag to commit the changes.
 export const reconcileDevice = async (req: Request, res: Response) => {
     const id = parseInt(String(req.params.id));
     if (isNaN(id)) {
         return res.status(400).json({ success: false, message: 'Invalid device ID' });
     }
+
+    // Treat any truthy string ("true", "1", "yes") as dry-run
+    const dryRun = ['true', '1', 'yes'].includes(String(req.query.dryRun).toLowerCase());
+
     try {
-        console.log(`[Devices] Starting reconcile for device ${id}...`);
+        console.log(`[Devices] Starting reconcile for device ${id} (dryRun=${dryRun})...`);
         const { reconcileDeviceWithDB } = await import('../services/zkServices');
-        const report = await reconcileDeviceWithDB(id);
+        const report = await reconcileDeviceWithDB(id, dryRun);
+        const mode = dryRun ? 'Preview (dry run)' : 'Reconcile complete';
         return res.json({
             success: true,
-            message: `Reconcile complete: ${report.pushed.length} pushed, ${report.deleted.length} removed, ${report.needsEnrollment.length} need enrollment.`,
+            message: `${mode}: ${report.pushed.length} to push, ${report.deleted.length} to remove, ${report.needsEnrollment.length} need enrollment.`,
             report,
         });
     } catch (error: any) {
@@ -241,3 +250,4 @@ export const reconcileDevice = async (req: Request, res: Response) => {
         return res.status(500).json({ success: false, message: msg });
     }
 };
+
