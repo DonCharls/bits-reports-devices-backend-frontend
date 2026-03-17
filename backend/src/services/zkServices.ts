@@ -156,7 +156,20 @@ export const syncZkData = async (): Promise<SyncResult> => {
                     data: { isActive: true, updatedAt: new Date() }
                 }).catch(() => { /* ignore */ });
 
-                const logs = await zk.getLogs();
+                const allLogs = await zk.getLogs();
+
+                // Filter to today's logs only (PHT timezone UTC+8)
+                const nowUTC = new Date();
+                const todayPHT = new Date(nowUTC.getTime() + 8 * 60 * 60 * 1000);
+                todayPHT.setHours(0, 0, 0, 0);
+                const todayStartUTC = new Date(todayPHT.getTime() - 8 * 60 * 60 * 1000);
+
+                const logs = allLogs.filter((log: any) => {
+                    const logTime = new Date(log.timestamp);
+                    return logTime >= todayStartUTC;
+                });
+
+                console.log(`[ZK] Fetched ${allLogs.length} total logs, filtered to ${logs.length} logs for today (PHT).`);
 
                 // Sort: Oldest -> Newest
                 logs.sort((a, b) => a.recordTime.getTime() - b.recordTime.getTime());
@@ -480,98 +493,109 @@ const FINGER_MAP: { [key: number]: string } = {
  */
 export const enrollEmployeeFingerprint = async (
     employeeId: number,
-    fingerIndex: number = 0
+    fingerIndex: number = 5,
+    deviceId?: number
 ): Promise<SyncResult> => {
-    console.log(`[Enrollment] Starting for employee ${employeeId}, finger ${fingerIndex}...`);
+    console.log(`[Enrollment] Starting for employee ${employeeId}, finger ${fingerIndex}, device ${deviceId ?? 'auto'}...`);
 
-    // 1. DB lookup — do this BEFORE acquiring the device lock
+    // 1. Load employee from DB
     const employee = await prisma.employee.findUnique({
         where: { id: employeeId },
-        select: {
-            id: true,
-            zkId: true,
-            firstName: true,
-            lastName: true,
-            employmentStatus: true,
-        }
+        select: { id: true, zkId: true, firstName: true, lastName: true },
     });
 
-    if (!employee) return { success: false, message: 'Employee not found', error: 'not_found' };
-    if (!employee.zkId) return { success: false, message: 'No zkId assigned', error: 'no_zkid' };
-    if (employee.employmentStatus !== 'ACTIVE') return { success: false, message: 'Inactive employee', error: 'inactive' };
-    if (fingerIndex < 0 || fingerIndex > 9) return { success: false, message: 'Finger index must be 0–9', error: 'bad_finger' };
-
-    const fullName = `${employee.firstName} ${employee.lastName}`;
-    const visibleId = String(employee.zkId); // This is what CMD_STARTENROLL expects
-    const fingerName = FINGER_MAP[fingerIndex] || `Finger ${fingerIndex}`;
-
-    // 2. Fetch device IP from DB — never trust env var (may be stale after Configure)
-    const dbDevice = await prisma.device.findFirst({
-        where: { isActive: true },
-        orderBy: { id: 'asc' },
-    });
-
-    if (!dbDevice) {
-        return { success: false, message: 'No active devices configured in DB', error: 'no_device' };
+    if (!employee) {
+        return { success: false, message: `Employee ${employeeId} not found in database.` };
     }
 
-    // 3. Acquire device lock — only ONE connection to the device at a time
-    const zk = getDriver(dbDevice.ip, dbDevice.port);
+    if (!employee.zkId) {
+        return { success: false, message: `Employee ${employeeId} has no zkId assigned.` };
+    }
+
+    // 2. Resolve which device to use
+    let dbDevice;
+
+    if (deviceId) {
+        // Use the specific device the HR selected
+        dbDevice = await prisma.device.findUnique({ where: { id: deviceId } });
+        if (!dbDevice) {
+            return { success: false, message: `Device ${deviceId} not found in database.` };
+        }
+    } else {
+        // Fallback: use the first active device (legacy behavior)
+        dbDevice = await prisma.device.findFirst({
+            where: { isActive: true },
+            orderBy: { id: 'asc' },
+        });
+        if (!dbDevice) {
+            return { success: false, message: 'No active devices configured.' };
+        }
+    }
+
+    const fullName = `${employee.firstName} ${employee.lastName}`;
+    const visibleId = employee.zkId.toString();
+
     await acquireDeviceLock();
+    const zk = getDriver(dbDevice.ip, dbDevice.port);
 
     try {
         console.log(`[Enrollment] Connecting to "${dbDevice.name}" (${dbDevice.ip}:${dbDevice.port})...`);
-        await connectWithRetry(zk);
+        await connectWithRetry(zk, 2);
 
-        // ── UID = zkId (same deterministic strategy as addUserToDevice) ──────
-        const deviceUid = employee.zkId!;
-
-        if (PROTECTED_DEVICE_UIDS.includes(deviceUid)) {
-            return { success: false, message: `UID ${deviceUid} is a protected device slot`, error: 'protected_uid' };
-        }
-
-        // 4. Ensure user is correctly written on device (UID = zkId, force-clear first)
+        // 3. Ensure user exists on this specific device
         const deviceUsers = await zk.getUsers();
-        const existingUser = deviceUsers.find((u: any) => u.userId === visibleId);
+        const userExists = deviceUsers.some(
+            (u: any) => String(u.userId) === visibleId
+        );
 
-        if (!existingUser) {
-            console.log(`[Enrollment] User not found on device — force-clearing slot UID=${deviceUid} and adding (visibleId="${visibleId}")...`);
-            try { await zk.deleteUser(deviceUid); } catch { /* slot empty — ok */ }
-            await zk.clearUserFingerprints(deviceUid);
-            await zk.setUser(deviceUid, fullName, '', 0, 0, visibleId);
+        if (!userExists) {
+            console.log(`[Enrollment] User not on device — pushing now...`);
+            const deviceRole = employee ? 0 : 0;
+            try { await zk.deleteUser(employee.zkId); } catch { /* empty slot — ok */ }
+            await zk.clearUserFingerprints(employee.zkId);
+            await zk.setUser(employee.zkId, fullName, '', deviceRole, 0, visibleId);
             await zk.refreshData();
-            console.log(`[Enrollment] User written to UID=${deviceUid}.`);
-        } else if (existingUser.uid !== deviceUid) {
-            // User exists but at wrong UID — move them to the correct slot
-            console.warn(`[Enrollment] ⚠ User found at wrong UID=${existingUser.uid} — re-writing to correct slot UID=${deviceUid}.`);
-            try { await zk.deleteUser(deviceUid); } catch { /* slot may be empty */ }
-            await zk.clearUserFingerprints(deviceUid);
-            await zk.setUser(deviceUid, fullName, '', 0, 0, visibleId);
-            await zk.refreshData();
-            console.log(`[Enrollment] User re-written to UID=${deviceUid}.`);
-        } else {
-            console.log(`[Enrollment] User already at correct slot UID=${deviceUid}. Proceeding to enroll.`);
+            console.log(`[Enrollment] User pushed to device successfully.`);
         }
 
-        // 5. Send CMD_STARTENROLL — visibleId (zkId string) is the correct payload
-        console.log(`[Enrollment] Sending CMD_STARTENROLL: visibleId="${visibleId}", finger="${fingerName}"...`);
+        // 4. Send enrollment command
+        const fingerName = FINGER_MAP[fingerIndex] || `Finger ${fingerIndex}`;
+        console.log(`[Enrollment] Sending CMD_STARTENROLL for "${fullName}" (${fingerName}) on "${dbDevice.name}"...`);
         await zk.startEnrollment(visibleId, fingerIndex);
 
-        console.log(`[Enrollment] ✓ Enrollment command sent. Employee should now place their ${fingerName} on the device.`);
+        // 5. Record enrollment in DB
+        await prisma.employeeDeviceEnrollment.upsert({
+            where: {
+                employeeId_deviceId: {
+                    employeeId: employee.id,
+                    deviceId: dbDevice.id,
+                },
+            },
+            update: {
+                enrolledAt: new Date(),
+            },
+            create: {
+                employeeId: employee.id,
+                deviceId: dbDevice.id,
+            },
+        });
+
+        console.log(`[Enrollment] ✓ Enrollment recorded in DB for employee ${employeeId} on device "${dbDevice.name}".`);
+
         return {
             success: true,
-            message: `Enrollment started for ${fullName}. Please place their ${fingerName} on the scanner 3 times.`
+            message: `Enrollment started for ${fullName} on device "${dbDevice.name}". Please scan finger now.`,
         };
 
     } catch (error: any) {
-        console.error(`[Enrollment] Error:`, zkErrMsg(error));
+        console.error(`[Enrollment] Error:`, error);
         return {
             success: false,
-            message: zkErrMsg(error) || 'Enrollment failed',
-            error: 'enrollment_error'
+            message: 'Enrollment failed',
+            error: error.message,
         };
     } finally {
-        try { await zk.disconnect(); } catch { /* ignore disconnect errors */ }
+        try { await zk.disconnect(); } catch { /* ignore */ }
         releaseDeviceLock();
     }
 };
