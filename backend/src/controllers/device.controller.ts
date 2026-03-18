@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { ZKDriver } from '../lib/zk-driver';
+import { forceReleaseLock } from '../services/zkServices';
 
 /** Unwrap node-zklib's ZKError: { err: Error, ip, command } → readable string */
 function zkErrMsg(err: any): string {
@@ -250,4 +251,33 @@ export const reconcileDevice = async (req: Request, res: Response) => {
         return res.status(500).json({ success: false, message: msg });
     }
 };
+
+// ─── PATCH /api/devices/:id/toggle ───────────────────────────────────────────
+// Flips syncEnabled for a device. When disabled, the cron skips the device
+// for attendance syncs. Does NOT affect isActive or the device connection.
+export const toggleDevice = async (req: Request, res: Response) => {
+    const id = parseInt(String(req.params.id));
+    if (isNaN(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid device ID' });
+    }
+    try {
+        const existing = await prisma.device.findUnique({ where: { id } });
+        if (!existing) {
+            return res.status(404).json({ success: false, message: 'Device not found' });
+        }
+
+        const updated = await prisma.device.update({
+            where: { id },
+            data: { syncEnabled: !existing.syncEnabled, updatedAt: new Date() },
+        });
+
+        const state = updated.syncEnabled ? 'enabled' : 'disabled';
+        console.log(`[Devices] Sync ${state} for "${updated.name}" (${updated.ip})`);
+        return res.json({ success: true, message: `Sync ${state} for "${updated.name}"`, device: updated });
+    } catch (error: any) {
+        console.error(`[Devices] Toggle failed for device ${id}:`, error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 

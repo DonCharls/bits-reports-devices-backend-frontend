@@ -42,16 +42,23 @@ export class ZKDriver {
     }
 
     /**
-     * Connect to the device
+     * Connect to the device using TCP only.
+     * We bypass node-zklib's auto-fallback logic (which goes to UDP when TCP's
+     * protocol handshake times out) by directly instantiating ZKLibTCP instead
+     * of the combined ZKLib class.
      */
     async connect(): Promise<void> {
-        // dynamic require to match previous working code's behavior
-        const ZKLib = require('node-zklib');
-        this.zkInstance = new ZKLib(this.ip, this.port, this.timeout, this.timeout);
-
-        console.log(`[ZKDriver] Connected to ${this.ip}:${this.port}`);
+        const ZKLibTCP = require('node-zklib/zklibtcp');
+        this.zkInstance = new ZKLibTCP(this.ip, this.port, this.timeout);
 
         await this.zkInstance.createSocket();
+        await this.zkInstance.connect();
+
+        // Expose a connectionType so functionWrapper-style calls still work
+        // if any internal node-zklib helpers check for it.
+        this.zkInstance.connectionType = 'tcp';
+
+        console.log(`[ZKDriver] Connected to ${this.ip}:${this.port} (TCP)`);
     }
 
     /**

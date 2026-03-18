@@ -15,5 +15,12 @@ export const employeeQueryValidator = [
 ];
 
 export const enrollFingerprintValidator = [
-    body('fingerIndex').optional().isInt({ min: 0, max: 9 }).withMessage('Finger index must be between 0 and 9'),
+    body('fingerIndex')
+        .optional()
+        .isInt({ min: 0, max: 9 })
+        .withMessage('Finger index must be between 0 and 9'),
+    body('deviceId')
+        .optional()
+        .isInt({ min: 1 })
+        .withMessage('Device ID must be a positive integer'),
 ];

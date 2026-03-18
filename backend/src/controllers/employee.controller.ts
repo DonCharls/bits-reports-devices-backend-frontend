@@ -24,9 +24,20 @@ export const getAllEmployees = async (req: Request, res: Response) => {
                 employmentStatus: true,
                 shiftId: true,
                 Shift: { select: { id: true, name: true, shiftCode: true, startTime: true, endTime: true } },
-                createdAt: true,
+                createdAt: true, EmployeeDeviceEnrollment: {
+                    select: {
+                        enrolledAt: true,
+                        device: {
+                            select: {
+                                id: true,
+                                name: true,
+                                location: true,
+                                isActive: true,
+                            },
+                        },
+                    },
+                },
             },
-            // Order by ZK ID ascending
             orderBy: {
                 zkId: 'asc',
             },
@@ -373,10 +384,8 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
         }
 
         const body = req.body || {};
-        const { fingerIndex } = body;
+        const { fingerIndex, deviceId } = body;
 
-        // Default finger is 5 (Right Thumb) — ZKTeco standard primary enrollment finger.
-        // Previous default was 0 (Left Little Finger) which was incorrect.
         const finger = fingerIndex !== undefined ? parseInt(fingerIndex) : 5;
 
         if (finger < 0 || finger > 9) {
@@ -386,15 +395,11 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
             });
         }
 
-        console.log(`[API] Starting fingerprint enrollment for employee ${employeeId} (finger: ${finger})...`);
+        const device = deviceId ? parseInt(deviceId) : undefined;
 
-        // Synchronously await the enrollment result.
-        // CMD_STARTENROLL on a local LAN completes in 3–8 seconds.
-        // The employee pressing their finger happens AFTER this returns —
-        // the device handles physical scanning independently once in enrollment mode.
-        // We must NOT use fire-and-forget here — the frontend needs to know
-        // whether the device accepted the command so it can show a retry on failure.
-        const result = await enrollEmployeeFingerprint(employeeId, finger);
+        console.log(`[API] Starting fingerprint enrollment for employee ${employeeId} (finger: ${finger}, device: ${device ?? 'auto'})...`);
+
+        const result = await enrollEmployeeFingerprint(employeeId, finger, device);
 
         if (result.success) {
             return res.status(200).json({
@@ -414,7 +419,7 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
         return res.status(500).json({
             success: false,
             message: 'Failed to start enrollment',
-            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
         });
     }
 };

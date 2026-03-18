@@ -32,6 +32,15 @@ type Employee = {
   shiftId?: number | null
   Shift?: { id: number; name: string; shiftCode: string; startTime: string; endTime: string } | null
   createdAt: string
+  EmployeeDeviceEnrollment?: {
+    enrolledAt: string
+    device: {
+      id: number
+      name: string
+      location: string | null
+      isActive: boolean
+    }
+  }[]
 }
 
 type ShiftOption = {
@@ -103,7 +112,39 @@ export default function EmployeesPage() {
     countdown: 60,
   })
 
-  const handleEnrollFingerprint = async (employeeId: number, fingerIndex: number = 5) => {
+  // Enrollment modal state
+  const [enrollConfirmModal, setEnrollConfirmModal] = useState<{
+    open: boolean
+    employeeId: number | null
+    employeeName: string
+  }>({ open: false, employeeId: null, employeeName: '' })
+
+  const [devicePickerModal, setDevicePickerModal] = useState<{
+    open: boolean
+    employeeId: number | null
+    employeeName: string
+  }>({ open: false, employeeId: null, employeeName: '' })
+
+  const [devices, setDevices] = useState<{ id: number; name: string; location: string | null; isActive: boolean }[]>([])
+  const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null)
+  const [loadingDevices, setLoadingDevices] = useState(false)
+
+  const fetchDevices = async () => {
+    setLoadingDevices(true)
+    try {
+      const res = await fetch('/api/devices', { credentials: 'include' })
+      const data = await res.json()
+      if (data.success) {
+        setDevices(data.devices || data.data || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch devices:', error)
+    } finally {
+      setLoadingDevices(false)
+    }
+  }
+
+  const handleEnrollFingerprint = async (employeeId: number, deviceId: number, fingerIndex: number = 5) => {
     setEnrollStatus(prev => ({ ...prev, [employeeId]: 'loading' }))
     setEnrollMsg(prev => ({ ...prev, [employeeId]: 'Connecting to device...' }))
 
@@ -112,28 +153,30 @@ export default function EmployeesPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ fingerIndex }),
+        body: JSON.stringify({ fingerIndex, deviceId }),
       })
 
       const data = await res.json()
 
       if (data.success) {
-        // Device confirmed in enrollment mode — now show the scan modal
         setEnrollStatus(prev => ({ ...prev, [employeeId]: 'success' }))
         setEnrollMsg(prev => ({ ...prev, [employeeId]: 'Device ready — scan finger now' }))
         const emp = employees.find(e => e.id === employeeId)
         const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'Employee'
         setScanModal({ open: true, employeeName: empName, countdown: 60 })
+        // Refresh employee list so enrollment badges update
+        await fetchEmployees()
       } else {
-        // Actual failure — keep error visible so admin can retry
         setEnrollStatus(prev => ({ ...prev, [employeeId]: 'error' }))
-        setEnrollMsg(prev => ({ ...prev, [employeeId]: data.message || 'Device offline or unreachable' }))
+        setEnrollMsg(prev => ({ ...prev, [employeeId]: data.message || 'Enrollment failed' }))
+        showToast('error', 'Enrollment Failed', data.message || 'Could not start enrollment')
       }
-    } catch {
+    } catch (error) {
+      console.error('Enrollment error:', error)
       setEnrollStatus(prev => ({ ...prev, [employeeId]: 'error' }))
-      setEnrollMsg(prev => ({ ...prev, [employeeId]: 'Could not reach the server' }))
+      setEnrollMsg(prev => ({ ...prev, [employeeId]: 'Network error' }))
+      showToast('error', 'Enrollment Failed', 'Could not reach the server')
     }
-    // No auto-reset to idle — error stays visible until admin retries or navigates away
   }
 
   const [newEmployee, setNewEmployee] = useState({
@@ -800,8 +843,10 @@ export default function EmployeesPage() {
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
             <tr>
-              <th className="px-6 py-4 w-16">#</th>
+              <th className="px-4 py-4 w-20">ZK ID</th>
               <th className="px-6 py-4">Employee</th>
+              <th className="px-4 py-4">Employee ID</th>
+              <th className="px-4 py-4">Enrolled On</th>
               <th className="px-6 py-4">Department</th>
               <th className="px-6 py-4">Shift</th>
               <th className="px-6 py-4">Branch</th>
@@ -813,19 +858,47 @@ export default function EmployeesPage() {
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-6 py-12 text-center text-slate-400 font-bold text-xs">
+                <td colSpan={10} className="px-6 py-12 text-center text-slate-400 font-bold text-xs">
                   Loading employees...
                 </td>
               </tr>
             ) : paginatedEmployees.length > 0 ? (
               paginatedEmployees.map((employee, index) => (
                 <tr key={employee.id} className="hover:bg-red-50/50 transition-colors duration-200 group">
-                  <td className="px-6 py-4 text-xs font-bold text-slate-400">
-                    {String((currentPage - 1) * rowsPerPage + index + 1).padStart(2, '0')}
+                  {/* ZK ID - first column */}
+                  <td className="px-4 py-3 text-xs text-muted-foreground font-mono">
+                    {employee.zkId ?? '—'}
                   </td>
                   <td className="px-6 py-4">
                     <p className="font-bold text-slate-700">{employee.firstName} {employee.lastName}</p>
                     <p className="text-xs text-slate-400">{employee.email || '—'}</p>
+                  </td>
+                  {/* Employee ID (employeeNumber field) */}
+                  <td className="px-4 py-3 text-xs text-muted-foreground font-mono">
+                    {employee.employeeNumber ?? '—'}
+                  </td>
+                  {/* Fingerprint Enrollment Badges */}
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {employee.EmployeeDeviceEnrollment && employee.EmployeeDeviceEnrollment.length > 0 ? (
+                        employee.EmployeeDeviceEnrollment.map(enrollment => (
+                          <span
+                            key={enrollment.device.id}
+                            title={`Enrolled on ${new Date(enrollment.enrolledAt).toLocaleDateString()}`}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${
+                              enrollment.device.isActive
+                                ? 'bg-green-100 text-green-700 border border-green-200'
+                                : 'bg-gray-100 text-gray-500 border border-gray-200'
+                            }`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${enrollment.device.isActive ? 'bg-green-500' : 'bg-gray-400'}`} />
+                            {enrollment.device.name}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground italic">Not enrolled</span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 max-w-[120px]">
                     <span className="text-xs font-medium text-slate-500 block truncate" title={employee.Department?.name || employee.department || undefined}>
@@ -897,8 +970,12 @@ export default function EmployeesPage() {
                         }
                         return (
                           <button
-                            onClick={() => handleEnrollFingerprint(employee.id)}
-                            className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all active:scale-90"
+                            onClick={() => {
+                              const emp = employees.find(e => e.id === employee.id)
+                              const name = emp ? `${emp.firstName} ${emp.lastName}` : 'this employee'
+                              setEnrollConfirmModal({ open: true, employeeId: employee.id, employeeName: name })
+                            }}
+                            className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-100 rounded-xl transition-all active:scale-90"
                             title="Enroll Fingerprint"
                           >
                             <Fingerprint className="w-4 h-4" />
@@ -911,7 +988,7 @@ export default function EmployeesPage() {
               ))
             ) : (
               <tr>
-                <td colSpan={7} className="px-6 py-20 text-center text-slate-400 font-bold uppercase text-xs tracking-widest">
+                <td colSpan={10} className="px-6 py-20 text-center text-slate-400 font-bold uppercase text-xs tracking-widest">
                   No matching employees found
                 </td>
               </tr>
@@ -1025,6 +1102,157 @@ export default function EmployeesPage() {
               >
                 Done — Fingerprint Scanned ✓
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Step 1: Enrollment Confirmation Modal */}
+      {enrollConfirmModal.open && (
+        <div className="fixed inset-0 z-200 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white border-0 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            {/* Red header */}
+            <div className="bg-red-600 px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+                  <Fingerprint className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">Enroll Fingerprint</h3>
+                  <p className="text-[10px] text-red-100 uppercase tracking-widest font-bold">Biometric registration</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEnrollConfirmModal({ open: false, employeeId: null, employeeName: '' })}
+                className="text-white/70 hover:text-white transition-colors"
+              >
+                <XIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-slate-600">
+                Do you want to enroll the fingerprint for{' '}
+                <span className="font-semibold text-slate-800">{enrollConfirmModal.employeeName}</span>?
+              </p>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setEnrollConfirmModal({ open: false, employeeId: null, employeeName: '' })}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-500 hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setEnrollConfirmModal({ open: false, employeeId: null, employeeName: '' })
+                    setSelectedDeviceId(null)
+                    setDevicePickerModal({
+                      open: true,
+                      employeeId: enrollConfirmModal.employeeId,
+                      employeeName: enrollConfirmModal.employeeName,
+                    })
+                    fetchDevices()
+                  }}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-bold shadow-lg shadow-red-600/25 transition-colors"
+                >
+                  Yes, Proceed
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: Device Picker Modal */}
+      {devicePickerModal.open && (
+        <div className="fixed inset-0 z-200 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white border-0 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            {/* Red header */}
+            <div className="bg-red-600 px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+                  <Fingerprint className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">Select Device</h3>
+                  <p className="text-[10px] text-red-100 uppercase tracking-widest font-bold">
+                    Enrolling <span className="text-white">{devicePickerModal.employeeName}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setDevicePickerModal({ open: false, employeeId: null, employeeName: '' })
+                  setSelectedDeviceId(null)
+                }}
+                className="text-white/70 hover:text-white transition-colors"
+              >
+                <XIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              {loadingDevices ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-red-500" />
+                </div>
+              ) : devices.length === 0 ? (
+                <div className="text-center py-6 text-sm text-slate-400">
+                  No devices configured. Please add a device first.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {devices.map(device => (
+                    <button
+                      key={device.id}
+                      onClick={() => setSelectedDeviceId(device.id)}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-colors text-left ${
+                        selectedDeviceId === device.id
+                          ? 'border-red-500 bg-red-50'
+                          : 'border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${device.isActive ? 'bg-green-500' : 'bg-slate-300'}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-700 truncate">{device.name}</p>
+                        {device.location && (
+                          <p className="text-xs text-slate-400 truncate">{device.location}</p>
+                        )}
+                      </div>
+                      {selectedDeviceId === device.id && (
+                        <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center shrink-0">
+                          <div className="w-2 h-2 rounded-full bg-white" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setDevicePickerModal({ open: false, employeeId: null, employeeName: '' })
+                    setSelectedDeviceId(null)
+                  }}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-500 hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={!selectedDeviceId}
+                  onClick={() => {
+                    if (!selectedDeviceId || !devicePickerModal.employeeId) return
+                    setDevicePickerModal({ open: false, employeeId: null, employeeName: '' })
+                    handleEnrollFingerprint(devicePickerModal.employeeId, selectedDeviceId)
+                    setSelectedDeviceId(null)
+                  }}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold shadow-lg shadow-red-600/25 transition-colors"
+                >
+                  Enroll on This Device
+                </button>
+              </div>
             </div>
           </div>
         </div>

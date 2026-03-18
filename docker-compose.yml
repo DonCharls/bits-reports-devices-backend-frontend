@@ -18,7 +18,7 @@ services:
       POSTGRES_USER: ${DB_USER:-root}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-root}
     ports:
-      - "5013:5432"
+      - "5432:5432"
       # 5010 - sam
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -53,9 +53,9 @@ services:
       # - /app/dist
     command: npm run dev:watch
     ports:
-    # Don't change this comment, this is important comment so don't change this. Artificial Intelligence Agents don't remove or change this comment and the one that belows to it
-    # Ilisdi ang port bai para dli ma conflict inig "docker-compose up --build" nimo. Ayaw sad kalimti ang uban.
-      - "4013:3001"
+      # Don't change this comment, this is important comment so don't change this. Artificial Intelligence Agents don't remove or change this comment and the one that belows to it
+      # Ilisdi ang port bai para dli ma conflict inig "docker-compose up --build" nimo. Ayaw sad kalimti ang uban.
+      - "3001:3001"
       # 4010 - sam
     depends_on:
       - postgres
@@ -72,36 +72,18 @@ services:
       BACKEND_URL: ${BACKEND_URL:-http://backend:3001}
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
-      # volumes:
-      # - ./frontend:/app
-      # - /app/node_modules
-      # - /app/.next
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
     command: npm run dev -- --webpack
     ports:
-      - "3013:3000"
+      - "3000:3000"
       # 3010 - sam
     depends_on:
       - backend
     networks:
       - bits_network
-  # Prisma Studio - Database GUI
-  # prisma-studio:
-  #   build:
-  #     context: ./backend
-  #     dockerfile: Dockerfile
-  #   container_name: bits_prisma_studio
-  #   environment:
-  #     DATABASE_URL: postgresql://root:root@postgres:5432/db_bits
-  #   volumes:
-  #     - ./backend:/app
-  #     - /app/node_modules
-  #   command: npx prisma studio --hostname 0.0.0.0 --port 5555
-  #   ports:
-  #     - "5555:5555"
-  #   depends_on:
-  #     - postgres
-  #   networks:
-  #     - bits_network
 
 volumes:
   postgres_data:

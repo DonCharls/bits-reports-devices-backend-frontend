@@ -66,11 +66,14 @@ model Device {
   port          Int             @default(4370)
   location      String?
   isActive      Boolean         @default(true)
+  syncEnabled   Boolean         @default(true)
   createdAt     DateTime        @default(now())
   updatedAt     DateTime
   AttendanceLog AttendanceLog[]
+  EmployeeDeviceEnrollment EmployeeDeviceEnrollment[]
 
   @@index([isActive])
+  @@index([syncEnabled])
 }
 
 model Employee {
@@ -100,6 +103,7 @@ model Employee {
   Attendance     Attendance[]
   AttendanceLog  AttendanceLog[]
   RefreshToken   RefreshToken[]
+  EmployeeDeviceEnrollment EmployeeDeviceEnrollment[]
   Department     Department?     @relation(fields: [departmentId], references: [id])
   Branch         Branch?         @relation(fields: [branchId], references: [id])
   Shift          Shift?          @relation(fields: [shiftId], references: [id])
@@ -144,6 +148,20 @@ model RefreshToken {
   @@index([employeeId])
   @@index([token])
   @@index([expiresAt])
+}
+
+model EmployeeDeviceEnrollment {
+  id         Int      @id @default(autoincrement())
+  employeeId Int
+  deviceId   Int
+  enrolledAt DateTime @default(now())
+
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  device     Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, deviceId])
+  @@index([employeeId])
+  @@index([deviceId])
 }
 
 enum EmploymentStatus {

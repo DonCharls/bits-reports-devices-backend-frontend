@@ -51,8 +51,14 @@ interface AttendanceFilters {
  */
 export const processAttendanceLogs = async (): Promise<ProcessResult> => {
     try {
-        // Get all logs ordered by timestamp
+        // Only process logs from the last 2 days — records older than that are
+        // already settled (check-in + check-out completed) and re-processing them
+        // on every 30-second cron tick wastes DB I/O and can cause duplicates.
+        const cutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
+        // Get recent logs ordered by timestamp
         const logs = await prisma.attendanceLog.findMany({
+            where: { timestamp: { gte: cutoff } },
             orderBy: { timestamp: 'asc' },
             include: { employee: true }
         });
@@ -473,11 +479,13 @@ const formatToPhilippineTime = (utcDate: Date): string => {
  * Get today's attendance
  */
 export const getTodayAttendance = async () => {
-    const today = getTodayPHT();
+    const todayStart = getTodayPHT();
+    // End of today = start of tomorrow minus 1ms
+    const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
 
     const result = await getAttendanceRecords({
-        startDate: today,
-        endDate: today
+        startDate: todayStart,
+        endDate: todayEnd
     });
     return result.data;
 };

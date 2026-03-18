@@ -1,6 +1,5 @@
 import { prisma } from '../lib/prisma';
 import { ZKDriver } from '../lib/zk-driver';
-import { EnrollmentResult } from './fingerprintEnrollment.service';
 import { processAttendanceLogs } from './attendance.service';
 
 interface SyncResult {
@@ -118,6 +117,12 @@ const getDriver = (ip?: string, port?: number): ZKDriver => {
 // ─────────────────────────────────────────────────────────────────────────────
 let _deviceBusy = false;
 const _deviceQueue: Array<() => void> = [];
+let _lockTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+// Safety timeout: if the lock is held for more than 90 seconds,
+// auto-release it. This prevents permanent deadlock if a request
+// crashes before reaching its finally{} block.
+const LOCK_TIMEOUT_MS = 90_000;
 
 // True while an interactive (UI-triggered) operation owns or is waiting for the lock.
 // The cron job checks this flag before attempting to acquire — if set, it skips its tick
@@ -156,11 +161,19 @@ function acquireDeviceLock(): Promise<void> {
     return new Promise((resolve) => {
         if (!_deviceBusy) {
             _deviceBusy = true;
+            _lockTimeoutHandle = setTimeout(() => {
+                console.warn('[ZK] ⚠ Lock auto-released after timeout (90s). Previous operation may have crashed.');
+                releaseDeviceLock();
+            }, LOCK_TIMEOUT_MS);
             resolve();
         } else {
             console.log('[ZK] Device busy — queuing request...');
             _deviceQueue.push(() => {
                 _deviceBusy = true;
+                _lockTimeoutHandle = setTimeout(() => {
+                    console.warn('[ZK] ⚠ Lock auto-released after timeout (90s).');
+                    releaseDeviceLock();
+                }, LOCK_TIMEOUT_MS);
                 resolve();
             });
         }
@@ -172,6 +185,10 @@ function acquireDeviceLock(): Promise<void> {
  * Always call this in a finally block.
  */
 function releaseDeviceLock(): void {
+    if (_lockTimeoutHandle) {
+        clearTimeout(_lockTimeoutHandle);
+        _lockTimeoutHandle = null;
+    }
     const next = _deviceQueue.shift();
     if (next) {
         // Small delay so the device can fully close the previous TCP socket
@@ -187,10 +204,6 @@ function releaseDeviceLock(): void {
 // ─────────────────────────────────────────────────────────────────────────────
 // Non-blocking lock attempt — used by the cron job.
 // Returns true if the lock was acquired, false if the device is already busy.
-// Cron jobs should SKIP (not queue) when the device is busy; the next cron
-// tick 10 seconds later will try again. This prevents an ever-growing queue
-// of pending syncs from stacking up while enrollment or another operation
-// is holding the lock.
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * Non-blocking lock attempt for the cron job.
@@ -200,11 +213,28 @@ function releaseDeviceLock(): void {
  * This ensures cron ticks never block or delay UI-triggered operations.
  */
 function tryAcquireDeviceLock(): boolean {
+    // Skip if device is busy OR if an interactive operation is pending/active.
+    // _interactiveLockActive ensures a queued enrollment/addUser is never
+    // pushed back by a cron tick that sneaks in before it resolves.
     if (_deviceBusy || _interactiveLockActive) {
         return false;
     }
     _deviceBusy = true;
+    // Apply the same safety timeout as interactive and background locks so a
+    // crashed cron tick never leaves the device permanently locked.
+    _lockTimeoutHandle = setTimeout(() => {
+        console.warn('[ZK] ⚠ Cron lock auto-released after timeout (90s).');
+        releaseDeviceLock();
+    }, LOCK_TIMEOUT_MS);
     return true;
+}
+
+// Force-release the lock from an external endpoint (e.g. POST /api/devices/unlock)
+export function forceReleaseLock(): void {
+    console.warn('[ZK] Force-releasing device lock via API.');
+    _deviceQueue.length = 0;
+    if (_lockTimeoutHandle) { clearTimeout(_lockTimeoutHandle); _lockTimeoutHandle = null; }
+    _deviceBusy = false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -263,14 +293,24 @@ export const syncZkData = async (): Promise<SyncResult> => {
         }
 
         for (const dbDevice of dbDevices) {
+            // Skip devices that have been manually disabled by an admin.
+            if (dbDevice.syncEnabled === false) {
+                console.debug(`[ZK] Skipping "${dbDevice.name}" — sync is disabled.`);
+                continue;
+            }
             const zk = getDriver(dbDevice.ip, dbDevice.port);
             console.log(`[ZK] Syncing device "${dbDevice.name}" at ${dbDevice.ip}:${dbDevice.port}...`);
 
             try {
                 await connectWithRetry(zk);
 
-                const info = await zk.getInfo();
-                console.log(`[ZK] Connected! Serial: ${info.serialNumber}`);
+                // getInfo() uses UDP — non-fatal if it fails (device still works via TCP)
+                try {
+                    const info = await zk.getInfo();
+                    console.log(`[ZK] Connected! Serial: ${info?.serialNumber ?? 'N/A'}`);
+                } catch {
+                    console.warn(`[ZK] getInfo() failed (UDP may be blocked) — continuing with TCP only.`);
+                }
 
                 // Mark ONLINE using device.id (not the env-var IP) so Configure changes apply immediately
                 await prisma.device.update({
@@ -278,7 +318,20 @@ export const syncZkData = async (): Promise<SyncResult> => {
                     data: { isActive: true, updatedAt: new Date() }
                 }).catch(() => { /* ignore */ });
 
-                const logs = await zk.getLogs();
+                const allLogs = await zk.getLogs();
+
+                // Filter to today's logs only (PHT timezone UTC+8)
+                const nowUTC = new Date();
+                const todayPHT = new Date(nowUTC.getTime() + 8 * 60 * 60 * 1000);
+                todayPHT.setUTCHours(0, 0, 0, 0);
+                const todayStartUTC = new Date(todayPHT.getTime() - 8 * 60 * 60 * 1000);
+
+                const logs = allLogs.filter((log: any) => {
+                    const logTime = new Date(log.recordTime);
+                    return logTime >= todayStartUTC;
+                });
+
+                console.log(`[ZK] Fetched ${allLogs.length} total logs, filtered to ${logs.length} logs for today (PHT).`);
 
                 // Sort: Oldest -> Newest
                 logs.sort((a, b) => a.recordTime.getTime() - b.recordTime.getTime());
@@ -386,7 +439,7 @@ export const addUserToDevice = async (zkId: number, name: string, role: string =
         console.log(`[ZK] Adding User with zkId=${zkId} (${name})...`);
 
         const dbDevices = await prisma.device.findMany({
-            where: { isActive: true },
+            where: { isActive: true, syncEnabled: true },
             orderBy: { id: 'asc' },
         });
 
@@ -492,7 +545,7 @@ export const deleteUserFromDevice = async (zkId: number): Promise<SyncResult> =>
         console.log(`[ZK] Deleting User with zkId=${zkId} from all devices...`);
 
         const dbDevices = await prisma.device.findMany({
-            where: { isActive: true },
+            where: { isActive: true, syncEnabled: true },
             orderBy: { id: 'asc' },
         });
 
@@ -551,7 +604,7 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
         }
 
         const dbDevices = await prisma.device.findMany({
-            where: { isActive: true },
+            where: { isActive: true, syncEnabled: true },
             orderBy: { id: 'asc' },
         });
 
@@ -663,61 +716,63 @@ const FINGER_MAP: { [key: number]: string } = {
  */
 export const enrollEmployeeFingerprint = async (
     employeeId: number,
-    fingerIndex: number = 0
+    fingerIndex: number = 5,
+    deviceId?: number
 ): Promise<SyncResult> => {
-    console.log(`[Enrollment] Starting for employee ${employeeId}, finger ${fingerIndex}...`);
+    console.log(`[Enrollment] Starting for employee ${employeeId}, finger ${fingerIndex}, device ${deviceId ?? 'auto'}...`);
 
-    // 1. DB lookup — do this BEFORE acquiring the device lock
+    // 1. Load employee from DB
     const employee = await prisma.employee.findUnique({
         where: { id: employeeId },
-        select: {
-            id: true,
-            zkId: true,
-            firstName: true,
-            lastName: true,
-            employmentStatus: true,
-        }
+        select: { id: true, zkId: true, firstName: true, lastName: true },
     });
 
-    if (!employee) return { success: false, message: 'Employee not found', error: 'not_found' };
-    if (!employee.zkId) return { success: false, message: 'No zkId assigned', error: 'no_zkid' };
-    if (employee.employmentStatus !== 'ACTIVE') return { success: false, message: 'Inactive employee', error: 'inactive' };
-    if (fingerIndex < 0 || fingerIndex > 9) return { success: false, message: 'Finger index must be 0–9', error: 'bad_finger' };
-
-    const fullName = `${employee.firstName} ${employee.lastName}`;
-    const visibleId = String(employee.zkId); // This is what CMD_STARTENROLL expects
-    const fingerName = FINGER_MAP[fingerIndex] || `Finger ${fingerIndex}`;
-
-    // 2. Fetch device IP from DB — never trust env var (may be stale after Configure)
-    const dbDevice = await prisma.device.findFirst({
-        where: { isActive: true },
-        orderBy: { id: 'asc' },
-    });
-
-    if (!dbDevice) {
-        return { success: false, message: 'No active devices configured in DB', error: 'no_device' };
+    if (!employee) {
+        return { success: false, message: `Employee ${employeeId} not found in database.` };
     }
 
-    // 3. Acquire interactive device lock — enrollment is a UI-triggered, time-sensitive
-    // operation. acquireInteractiveDeviceLock() places this at the FRONT of the queue
-    // and sets _interactiveLockActive so the cron job skips its next ticks until we finish.
-    const zk = getDriver(dbDevice.ip, dbDevice.port);
+    if (!employee.zkId) {
+        return { success: false, message: `Employee ${employeeId} has no zkId assigned.` };
+    }
+
+    // 2. Resolve which device to use
+    let dbDevice;
+
+    if (deviceId) {
+        // Use the specific device HR selected from the UI
+        dbDevice = await prisma.device.findUnique({ where: { id: deviceId } });
+        if (!dbDevice) {
+            return { success: false, message: `Device ${deviceId} not found in database.` };
+        }
+    } else {
+        // Fallback: use the first active device (legacy behaviour)
+        dbDevice = await prisma.device.findFirst({
+            where: { isActive: true },
+            orderBy: { id: 'asc' },
+        });
+        if (!dbDevice) {
+            return { success: false, message: 'No active devices configured.' };
+        }
+    }
+
+    const fullName = `${employee.firstName} ${employee.lastName}`;
+    const visibleId = employee.zkId.toString();
+    // UID = zkId — deterministic 1-to-1 mapping (matches addUserToDevice strategy)
+    const deviceUid = employee.zkId;
+
+    // 3. Acquire interactive device lock — enrollment is UI-triggered and time-sensitive.
+    // acquireInteractiveDeviceLock() places this at the FRONT of the queue so cron syncs
+    // can never delay fingerprint capture.
     await acquireInteractiveDeviceLock();
+    const zk = getDriver(dbDevice.ip, dbDevice.port);
+
 
     try {
         console.log(`[Enrollment] Connecting to "${dbDevice.name}" (${dbDevice.ip}:${dbDevice.port})...`);
-        await connectWithRetry(zk);
+        await connectWithRetry(zk, 2);
 
-        // ── UID = zkId (same deterministic strategy as addUserToDevice) ──────
-        const deviceUid = employee.zkId!;
-
-        if (PROTECTED_DEVICE_UIDS.includes(deviceUid)) {
-            return { success: false, message: `UID ${deviceUid} is a protected device slot`, error: 'protected_uid' };
-        }
-
-        // 4. Ensure user is correctly written on device (UID = zkId, force-clear first)
+        // 3. Ensure user exists on this specific device
         const deviceUsers = await zk.getUsers();
-
         // ── Pre-write occupancy check (uid-based) ───────────────────────────
         // WHY: The previous code searched ONLY by visible userId string, which
         // meant that if the target UID slot was held by a DIFFERENT user whose
@@ -739,11 +794,9 @@ export const enrollEmployeeFingerprint = async (
         }
 
         if (slotOccupant && String(slotOccupant.userId).trim() === visibleId.trim()) {
-            // Guard 2 (short-circuit): The correct user is already sitting in the correct
-            // slot. Do NOT fall through to the userByVisibleId lookup — that lookup uses
-            // Array.find() which could return a ghost user with the same userId at a
-            // DIFFERENT uid, triggering a false "wrong UID" rewrite that would delete and
-            // redundantly re-write this slot (and could corrupt the ghost's uid).
+            // Guard 2 (short-circuit): The correct user is already in the correct slot.
+            // Do NOT fall through to userByVisibleId — that Array.find() could return a
+            // ghost user with the same userId at a different uid, triggering a false rewrite.
             console.log(`[Enrollment] User already at correct slot UID=${deviceUid}. Proceeding to enroll.`);
         } else if (!userByVisibleId) {
             // Slot is empty and no other record claims this visibleId — safe to write fresh.
@@ -754,8 +807,7 @@ export const enrollEmployeeFingerprint = async (
             await zk.refreshData();
             console.log(`[Enrollment] User written to UID=${deviceUid}.`);
         } else if (userByVisibleId.uid !== deviceUid) {
-            // User exists at the wrong UID (and we confirmed above the target slot is empty).
-            // Safe to move them to the correct slot.
+            // User exists at the wrong UID (target slot is confirmed empty from Guard 1 pass).
             console.warn(`[Enrollment] ⚠ User found at wrong UID=${userByVisibleId.uid} — re-writing to correct slot UID=${deviceUid}.`);
             try { await zk.deleteUser(deviceUid); } catch { /* slot may be empty */ }
             await zk.clearUserFingerprints(deviceUid);
@@ -766,25 +818,44 @@ export const enrollEmployeeFingerprint = async (
             console.log(`[Enrollment] User already at correct slot UID=${deviceUid}. Proceeding to enroll.`);
         }
 
-        // 5. Send CMD_STARTENROLL — visibleId (zkId string) is the correct payload
-        console.log(`[Enrollment] Sending CMD_STARTENROLL: visibleId="${visibleId}", finger="${fingerName}"...`);
+        // 4. Send enrollment command
+        const fingerName = FINGER_MAP[fingerIndex] || `Finger ${fingerIndex}`;
+        console.log(`[Enrollment] Sending CMD_STARTENROLL for "${fullName}" (${fingerName}) on "${dbDevice.name}"...`);
         await zk.startEnrollment(visibleId, fingerIndex);
 
-        console.log(`[Enrollment] ✓ Enrollment command sent. Employee should now place their ${fingerName} on the device.`);
+        // 5. Record enrollment in DB
+        await prisma.employeeDeviceEnrollment.upsert({
+            where: {
+                employeeId_deviceId: {
+                    employeeId: employee.id,
+                    deviceId: dbDevice.id,
+                },
+            },
+            update: {
+                enrolledAt: new Date(),
+            },
+            create: {
+                employeeId: employee.id,
+                deviceId: dbDevice.id,
+            },
+        });
+
+        console.log(`[Enrollment] ✓ Enrollment recorded in DB for employee ${employeeId} on device "${dbDevice.name}".`);
+
         return {
             success: true,
-            message: `Enrollment started for ${fullName}. Please place their ${fingerName} on the scanner 3 times.`
+            message: `Enrollment started for ${fullName} on device "${dbDevice.name}". Please scan finger now.`,
         };
 
     } catch (error: any) {
-        console.error(`[Enrollment] Error:`, zkErrMsg(error));
+        console.error(`[Enrollment] Error:`, error);
         return {
             success: false,
-            message: zkErrMsg(error) || 'Enrollment failed',
-            error: 'enrollment_error'
+            message: 'Enrollment failed',
+            error: error.message,
         };
     } finally {
-        try { await zk.disconnect(); } catch { /* ignore disconnect errors */ }
+        try { await zk.disconnect(); } catch { /* ignore */ }
         releaseDeviceLock();
     }
 };
@@ -795,9 +866,24 @@ export const testDeviceConnection = async (): Promise<SyncResult> => {
     await acquireDeviceLock();
     try {
         await connectWithRetry(zk);
-        const info = await zk.getInfo();
-        const time = await zk.getTime();
-        return { success: true, message: `Connected! Serial: ${info.serialNumber}, Time: ${JSON.stringify(time)}` };
+
+        let serial = 'N/A';
+        try {
+            const info = await zk.getInfo();
+            serial = info?.serialNumber ?? 'N/A';
+        } catch {
+            console.warn('[ZK] getInfo() failed (UDP may be blocked) — serial unavailable.');
+        }
+
+        let timePart = '';
+        try {
+            const time = await zk.getTime();
+            timePart = `, Time: ${JSON.stringify(time)}`;
+        } catch {
+            // getTime() failure is non-fatal
+        }
+
+        return { success: true, message: `Connected! Serial: ${serial}${timePart}` };
     } catch (error: any) {
         return { success: false, error: error.message };
     } finally {
@@ -807,56 +893,83 @@ export const testDeviceConnection = async (): Promise<SyncResult> => {
 };
 
 export const syncEmployeesFromDevice = async (): Promise<SyncResult> => {
-    const zk = getDriver();
     await acquireDeviceLock();
     try {
-        await connectWithRetry(zk);
-        const users = await zk.getUsers();
+        const dbDevices = await prisma.device.findMany({
+            where: { isActive: true, syncEnabled: true },
+            orderBy: { id: 'asc' },
+        });
 
-        console.log(`[ZK] Found ${users.length} users on device.`);
-        let updateCount = 0;
-        let skippedCount = 0;
+        if (dbDevices.length === 0) {
+            return { success: true, message: 'No active, sync-enabled devices configured.' };
+        }
 
-        for (const user of users) {
-            let zkId = parseInt(user.userId);
-            if (isNaN(zkId)) continue;
+        let totalUpdateCount = 0;
+        let totalSkippedCount = 0;
 
-            // SPECIAL CASE: Map Device Admin (2948876) to Database Admin (1)
-            if (zkId === 2948876) {
-                zkId = 1;
-            }
+        for (const dbDevice of dbDevices) {
+            const zk = getDriver(dbDevice.ip, dbDevice.port);
+            try {
+                console.log(`[ZK] syncEmployeesFromDevice — connecting to "${dbDevice.name}" (${dbDevice.ip}:${dbDevice.port})...`);
+                await connectWithRetry(zk);
+                const users = await zk.getUsers();
 
-            const existing = await prisma.employee.findUnique({ where: { zkId } });
+                console.log(`[ZK] Found ${users.length} users on "${dbDevice.name}".`);
+                let updateCount = 0;
+                let skippedCount = 0;
 
-            if (existing) {
-                // Update names if they exist on device
-                const nameParts = user.name.split(' ');
-                const firstName = nameParts[0] || existing.firstName;
-                const lastName = nameParts.slice(1).join(' ') || existing.lastName;
+                for (const user of users) {
+                    let zkId = parseInt(user.userId);
+                    if (isNaN(zkId)) continue;
 
-                // Only update if names are different/better (simple check)
-                if (user.name && (existing.firstName !== firstName || existing.lastName !== lastName)) {
-                    await prisma.employee.update({
-                        where: { id: existing.id },
-                        data: { firstName, lastName }
-                    });
-                    console.log(`[ZK] Updated Name for ID ${zkId}: ${user.name}`);
+                    // SPECIAL CASE: Map Device Admin (2948876) to Database Admin (1)
+                    if (zkId === 2948876) {
+                        zkId = 1;
+                    }
+
+                    const existing = await prisma.employee.findUnique({ where: { zkId } });
+
+                    if (existing) {
+                        const nameParts = user.name.split(' ');
+                        const firstName = nameParts[0] || existing.firstName;
+                        const lastName = nameParts.slice(1).join(' ') || existing.lastName;
+
+                        if (user.name && (existing.firstName !== firstName || existing.lastName !== lastName)) {
+                            await prisma.employee.update({
+                                where: { id: existing.id },
+                                data: { firstName, lastName }
+                            });
+                            console.log(`[ZK] Updated Name for zkId=${zkId}: ${user.name}`);
+                        }
+                        updateCount++;
+                    } else {
+                        // Unknown device user — do NOT auto-create in DB.
+                        // Ghost users are handled by reconcileDeviceWithDB, not this function.
+                        console.log(`[ZK] Skipping unknown zkId ${zkId} — not in database`);
+                        skippedCount++;
+                    }
                 }
-                updateCount++;
-            } else {
-                // Unknown device user — do NOT auto-create in DB.
-                // Ghost users are handled by reconcileDeviceWithDB, not this function.
-                console.log(`[ZK] Skipping unknown zkId ${zkId} — not in database`);
-                skippedCount++;
+
+                totalUpdateCount += updateCount;
+                totalSkippedCount += skippedCount;
+                console.log(`[ZK] "${dbDevice.name}" done. Matched: ${updateCount}, Skipped: ${skippedCount}.`);
+
+            } catch (err: any) {
+                console.error(`[ZK] Failed to read users from "${dbDevice.name}": ${zkErrMsg(err)}`);
+            } finally {
+                try { await zk.disconnect(); } catch { /* ignore */ }
             }
         }
 
-        return { success: true, message: `Scanned ${users.length}. Matched ${updateCount}, Skipped ${skippedCount} unknown.`, count: updateCount };
+        return {
+            success: true,
+            message: `Scanned ${dbDevices.length} device(s). Matched ${totalUpdateCount}, Skipped ${totalSkippedCount} unknown.`,
+            count: totalUpdateCount,
+        };
 
     } catch (error: any) {
         return { success: false, error: error.message };
     } finally {
-        try { await zk.disconnect(); } catch { /* ignore disconnect errors */ }
         releaseDeviceLock();
     }
 };
