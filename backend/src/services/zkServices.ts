@@ -90,13 +90,23 @@ export const findNextSafeZkId = async (): Promise<number> => {
 };
 
 /**
- * Convert Philippine Time to UTC
+ * Convert Philippine Time to UTC reliably
  * ZKTeco device returns timestamps in Philippine Time (UTC+8)
- * We need to subtract 8 hours to get UTC for proper storage
+ * node-zklib creates a completely local Date object. This guarantees we use
+ * the raw PHT hour components to compute true UTC without subtracting 8 hours twice.
  */
-const convertPHTtoUTC = (phtDate: Date): Date => {
-    const utcTime = new Date(phtDate.getTime() - (8 * 60 * 60 * 1000));
-    return utcTime;
+const convertPHTtoUTC = (deviceDate: Date): Date => {
+    // Extract what the device screen actually printed (which was mapped blindly to local OS components)
+    const year = deviceDate.getFullYear();
+    const month = deviceDate.getMonth();
+    const date = deviceDate.getDate();
+    const hours = deviceDate.getHours();
+    const minutes = deviceDate.getMinutes();
+    const seconds = deviceDate.getSeconds();
+
+    // Map those raw screen components to a UTC string format, then subtract exactly 8 hours.
+    const rawUTC = new Date(Date.UTC(year, month, date, hours, minutes, seconds));
+    return new Date(rawUTC.getTime() - (8 * 60 * 60 * 1000));
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -317,6 +327,16 @@ export const syncZkData = async (): Promise<SyncResult> => {
                     where: { id: dbDevice.id },
                     data: { isActive: true, updatedAt: new Date() }
                 }).catch(() => { /* ignore */ });
+
+                // ENFORCE SOURCE OF TRUTH: Force the device's clock to match the Backend Server Time
+                // This prevents physical clock drift on the hardware. 
+                // The device expects the time in its local timezone (PHT UTC+8), so we send it raw 'new Date()'.
+                try {
+                    await zk.setTime(new Date());
+                    console.log(`[ZK] Enforced Centralized Server Time on "${dbDevice.name}"`);
+                } catch (timeErr) {
+                    console.warn(`[ZK] setTime failed on "${dbDevice.name}" - continuing anyway: ${zkErrMsg(timeErr)}`);
+                }
 
                 const allLogs = await zk.getLogs();
 

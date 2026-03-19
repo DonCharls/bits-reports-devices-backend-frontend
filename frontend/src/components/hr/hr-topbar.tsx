@@ -4,10 +4,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { User, Menu, Settings, LogOut, ChevronDown } from 'lucide-react';
 import Image from 'next/image';
+import { useServerTime } from '@/hooks/useServerTime';
 
 export default function TopBar({ setIsMobileOpen }: { setIsMobileOpen: (val: boolean) => void }) {
   const router = useRouter();
-  const [time, setTime] = useState(new Date());
+  const { serverTime: time, isSynced } = useServerTime(1000);
   const [mounted, setMounted] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -28,10 +29,6 @@ export default function TopBar({ setIsMobileOpen }: { setIsMobileOpen: (val: boo
       }
     }
     fetchUser();
-    const timer = setInterval(() => setTime(new Date()), 1000);
-    return () => {
-      clearInterval(timer);
-    };
   }, []);
 
   useEffect(() => {

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, Menu, Settings, LogOut, ChevronDown } from 'lucide-react'
 import Image from 'next/image'
+import { useServerTime } from '@/hooks/useServerTime'
 
 interface AdminTopbarProps {
   onMenuClick: () => void
@@ -11,7 +12,7 @@ interface AdminTopbarProps {
 
 export function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
   const router = useRouter()
-  const [time, setTime] = useState<Date | null>(null)
+  const { serverTime: time, isSynced } = useServerTime(1000)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [profileImage, setProfileImage] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -42,9 +43,6 @@ export function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
       }
     }
     fetchUser()
-    setTime(new Date())
-    const timer = setInterval(() => setTime(new Date()), 1000)
-    return () => clearInterval(timer)
   }, [])
 
   useEffect(() => {
