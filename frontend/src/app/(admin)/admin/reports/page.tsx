@@ -19,6 +19,7 @@ type EmployeeShift = {
   startTime: string    // e.g. "08:00"
   endTime: string
   graceMinutes: number
+  breakMinutes: number
 }
 
 type AttendanceRecord = {
@@ -107,6 +108,14 @@ const formatLateHrs = (mins: number) => {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
+const formatHrsMins = (hrs: number) => {
+  if (hrs === 0) return '—';
+  const totalMins = Math.round(hrs * 60);
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  return h > 0 && m > 0 ? `${h}h ${m}m` : h > 0 ? `${h}h` : `${m}m`;
 };
 
 const formatDateShort = (d: string) => {
@@ -198,7 +207,7 @@ export default function ReportsPage() {
           overtime: 0,
           undertime: 0,
           totalHours: 0,
-          shift: e.Shift ? { id: e.Shift.id, name: e.Shift.name, startTime: e.Shift.startTime, endTime: e.Shift.endTime, graceMinutes: e.Shift.graceMinutes ?? 0 } : null,
+          shift: e.Shift ? { id: e.Shift.id, name: e.Shift.name, startTime: e.Shift.startTime, endTime: e.Shift.endTime, graceMinutes: e.Shift.graceMinutes ?? 0, breakMinutes: e.Shift.breakMinutes ?? 60 } : null,
         });
       });
 
@@ -214,10 +223,25 @@ export default function ReportsPage() {
 
         if (r.checkOutTime) {
           const checkOut = new Date(r.checkOutTime);
-          const hrs = (checkOut.getTime() - checkIn.getTime()) / 3600000;
+          const rawMins = (checkOut.getTime() - checkIn.getTime()) / (1000 * 60);
+
+          // Shift-aware expected hours and break deduction
+          const breakMins = row.shift?.breakMinutes ?? 60;
+          const shiftMins = row.shift
+            ? (() => {
+                const [sh, sm] = row.shift.startTime.split(':').map(Number);
+                const [eh, em] = row.shift.endTime.split(':').map(Number);
+                return (eh * 60 + em) - (sh * 60 + sm);
+              })()
+            : 480;
+          const deductedBreak = rawMins >= (shiftMins / 2) ? breakMins : 0;
+          const workedMins = Math.max(0, rawMins - deductedBreak);
+          const hrs = workedMins / 60;
+          const expectedHrs = (shiftMins - breakMins) / 60;
+
           row.totalHours += hrs;
-          if (hrs > 8) row.overtime += Math.round(hrs - 8);
-          else if (hrs < 8) row.undertime += Math.round(8 - hrs);
+          if (hrs > expectedHrs) row.overtime += parseFloat((hrs - expectedHrs).toFixed(1));
+          else if (hrs < expectedHrs) row.undertime += parseFloat((expectedHrs - hrs).toFixed(1));
         }
       });
 
@@ -276,7 +300,7 @@ export default function ReportsPage() {
     allRows.push(['Employee', 'Shift', 'Leave', 'Absents', 'Late (Days)', 'Late (Duration)', 'Overtime', 'Undertime', 'Total (Hrs)']);
     filteredData.forEach(e => {
       const shiftLabel = e.shift ? `${e.shift.name} (${formatShiftTime(e.shift.startTime)}–${formatShiftTime(e.shift.endTime)})` : 'No Shift';
-      allRows.push([e.name, shiftLabel, e.leave, e.absent, e.late, formatLateHrs(e.lateMinutes), `+${e.overtime}h`, `-${e.undertime}h`, e.totalHours.toFixed(2)]);
+      allRows.push([e.name, shiftLabel, e.leave, e.absent, e.late, formatLateHrs(e.lateMinutes), e.overtime > 0 ? `+${formatHrsMins(e.overtime)}` : '—', e.undertime > 0 ? `-${formatHrsMins(e.undertime)}` : '—', e.totalHours.toFixed(2)]);
     });
 
     const worksheet = XLSX.utils.aoa_to_sheet(allRows);
@@ -649,10 +673,10 @@ export default function ReportsPage() {
                         <span className={`text-sm font-bold ${employee.lateMinutes > 0 ? 'text-yellow-600' : 'text-slate-700'}`}>{formatLateHrs(employee.lateMinutes)}</span>
                       </td>
                       <td className="px-6 py-5 text-center">
-                        <span className={`text-sm font-bold ${employee.overtime > 0 ? 'text-blue-600' : 'text-slate-700'}`}>+{employee.overtime}h</span>
+                        <span className={`text-sm font-bold ${employee.overtime > 0 ? 'text-blue-600' : 'text-slate-700'}`}>{employee.overtime > 0 ? `+${formatHrsMins(employee.overtime)}` : '—'}</span>
                       </td>
                       <td className="px-6 py-5 text-center">
-                        <span className={`text-sm font-bold ${employee.undertime > 0 ? 'text-red-500' : 'text-slate-700'}`}>-{employee.undertime}h</span>
+                        <span className={`text-sm font-bold ${employee.undertime > 0 ? 'text-red-500' : 'text-slate-700'}`}>{employee.undertime > 0 ? `-${formatHrsMins(employee.undertime)}` : '—'}</span>
                       </td>
                       <td className="px-6 py-5 text-center">
                         <span className="text-sm font-bold font-mono text-slate-800">{employee.totalHours.toFixed(2)}</span>
