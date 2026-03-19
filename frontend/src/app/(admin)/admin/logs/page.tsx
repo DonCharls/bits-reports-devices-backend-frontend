@@ -173,9 +173,9 @@ export default function SystemLogsPage() {
             </div>
 
             {/* ── Filters Bar ── */}
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-2 shrink-0">
                 {/* Type Tabs */}
-                <div className="flex bg-slate-100 rounded-lg p-0.5">
+                <div className="flex bg-slate-100 rounded-lg p-0.5 w-full sm:w-auto">
                     {([
                         { key: 'all', label: 'All', count: meta ? meta.counts.timekeeping + meta.counts.system : 0 },
                         { key: 'timekeeping', label: 'Timekeeping', count: meta?.counts.timekeeping ?? 0 },
@@ -184,7 +184,7 @@ export default function SystemLogsPage() {
                         <button
                             key={tab.key}
                             onClick={() => handleTabChange(tab.key)}
-                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === tab.key
+                            className={`flex-1 sm:flex-none px-3 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === tab.key
                                     ? 'bg-white text-slate-900 shadow-sm'
                                     : 'text-slate-500 hover:text-slate-700'
                                 }`}
@@ -200,40 +200,41 @@ export default function SystemLogsPage() {
                 <div className="h-6 w-px bg-slate-200 hidden sm:block" />
 
                 {/* Date Filters */}
-                <div className="flex items-center gap-1.5">
-                    <CalendarDays className="w-3.5 h-3.5 text-slate-400" />
+                <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                    <CalendarDays className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <input
                         type="date"
                         value={startDate}
                         onChange={e => { setStartDate(e.target.value); setPage(1) }}
-                        className="px-2 py-1 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-red-300 focus:ring-1 focus:ring-red-100"
+                        className="px-2 py-1 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-red-300 focus:ring-1 focus:ring-red-100 flex-1 sm:flex-none min-w-0"
                     />
                     <span className="text-slate-400 text-xs">to</span>
                     <input
                         type="date"
                         value={endDate}
                         onChange={e => { setEndDate(e.target.value); setPage(1) }}
-                        className="px-2 py-1 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-red-300 focus:ring-1 focus:ring-red-100"
+                        className="px-2 py-1 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-red-300 focus:ring-1 focus:ring-red-100 flex-1 sm:flex-none min-w-0"
                     />
                 </div>
 
                 {/* Search */}
-                <div className="relative ml-auto">
+                <div className="relative w-full sm:w-auto sm:ml-auto">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                     <input
                         type="text"
                         placeholder="Search logs..."
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
-                        className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-red-300 focus:ring-1 focus:ring-red-100 w-44"
+                        className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-red-300 focus:ring-1 focus:ring-red-100 w-full sm:w-44"
                     />
                 </div>
             </div>
 
-            {/* ── Logs Table ── */}
+            {/* ── Logs ── */}
             <div className="flex-1 bg-white rounded-xl border border-slate-100 shadow-sm flex flex-col min-h-0 overflow-hidden">
-                {/* Table Header */}
-                <div className="grid grid-cols-[140px_1fr_120px_1fr_120px_100px] gap-3 px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest shrink-0">
+
+                {/* Desktop Table Header (hidden on mobile) */}
+                <div className="hidden lg:grid grid-cols-[140px_1fr_120px_1fr_120px_100px] gap-3 px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest shrink-0">
                     <span>Timestamp</span>
                     <span>Employee</span>
                     <span>Action</span>
@@ -242,7 +243,12 @@ export default function SystemLogsPage() {
                     <span>Type</span>
                 </div>
 
-                {/* Table Body */}
+                {/* Mobile Header */}
+                <div className="lg:hidden px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest shrink-0">
+                    Log Entries
+                </div>
+
+                {/* Body */}
                 <div className="flex-1 overflow-y-auto min-h-0">
                     {filteredLogs.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full gap-3 py-16">
@@ -260,44 +266,80 @@ export default function SystemLogsPage() {
                         filteredLogs.map(log => {
                             const { date, time } = formatTimestamp(log.timestamp)
                             return (
-                                <div
-                                    key={log.id}
-                                    className="grid grid-cols-[140px_1fr_120px_1fr_120px_100px] gap-3 px-4 py-2.5 border-b border-slate-50 hover:bg-slate-50/50 transition-colors items-center"
-                                >
-                                    {/* Timestamp */}
-                                    <div>
-                                        <p className="text-xs font-semibold text-slate-700">{time}</p>
-                                        <p className="text-[10px] text-slate-400 font-medium">{date}</p>
-                                    </div>
+                                <div key={log.id}>
+                                    {/* Desktop row (lg+) */}
+                                    <div className="hidden lg:grid grid-cols-[140px_1fr_120px_1fr_120px_100px] gap-3 px-4 py-2.5 border-b border-slate-50 hover:bg-slate-50/50 transition-colors items-center">
+                                        {/* Timestamp */}
+                                        <div>
+                                            <p className="text-xs font-semibold text-slate-700">{time}</p>
+                                            <p className="text-[10px] text-slate-400 font-medium">{date}</p>
+                                        </div>
 
-                                    {/* Employee */}
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <div className="w-7 h-7 rounded-full bg-linear-to-br from-red-500 to-rose-600 flex items-center justify-center shrink-0">
-                                            <span className="text-white text-[9px] font-black">
-                                                {log.employeeName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '??'}
+                                        {/* Employee */}
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <div className="w-7 h-7 rounded-full bg-linear-to-br from-red-500 to-rose-600 flex items-center justify-center shrink-0">
+                                                <span className="text-white text-[9px] font-black">
+                                                    {log.employeeName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '??'}
+                                                </span>
+                                            </div>
+                                            <span className="text-xs font-bold text-slate-800 truncate">{log.employeeName}</span>
+                                        </div>
+
+                                        {/* Action */}
+                                        <div className="flex items-center gap-1.5">
+                                            {getActionIcon(log.action)}
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getActionBadge(log.action, log.status)}`}>
+                                                {log.action}
                                             </span>
                                         </div>
-                                        <span className="text-xs font-bold text-slate-800 truncate">{log.employeeName}</span>
-                                    </div>
 
-                                    {/* Action */}
-                                    <div className="flex items-center gap-1.5">
-                                        {getActionIcon(log.action)}
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getActionBadge(log.action, log.status)}`}>
-                                            {log.action}
+                                        {/* Details */}
+                                        <p className="text-xs text-slate-500 truncate">{log.details}</p>
+
+                                        {/* Source */}
+                                        <p className="text-xs font-semibold text-slate-600 truncate">{log.source}</p>
+
+                                        {/* Type */}
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit ${getTypeBadge(log.type)}`}>
+                                            {log.type === 'timekeeping' ? 'Timekeeping' : 'System'}
                                         </span>
                                     </div>
 
-                                    {/* Details */}
-                                    <p className="text-xs text-slate-500 truncate">{log.details}</p>
-
-                                    {/* Source */}
-                                    <p className="text-xs font-semibold text-slate-600 truncate">{log.source}</p>
-
-                                    {/* Type */}
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit ${getTypeBadge(log.type)}`}>
-                                        {log.type === 'timekeeping' ? 'Timekeeping' : 'System'}
-                                    </span>
+                                    {/* Mobile card (< lg) */}
+                                    <div className="lg:hidden px-4 py-3 border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                <div className="w-8 h-8 rounded-full bg-linear-to-br from-red-500 to-rose-600 flex items-center justify-center shrink-0">
+                                                    <span className="text-white text-[10px] font-black">
+                                                        {log.employeeName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '??'}
+                                                    </span>
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-bold text-slate-800 truncate">{log.employeeName}</p>
+                                                    <p className="text-[10px] text-slate-400 font-medium">{date} · {time}</p>
+                                                </div>
+                                            </div>
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${getTypeBadge(log.type)}`}>
+                                                {log.type === 'timekeeping' ? 'Time' : 'Sys'}
+                                            </span>
+                                        </div>
+                                        <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                            <div className="flex items-center gap-1">
+                                                {getActionIcon(log.action)}
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getActionBadge(log.action, log.status)}`}>
+                                                    {log.action}
+                                                </span>
+                                            </div>
+                                            {log.source && (
+                                                <span className="text-[10px] font-semibold text-slate-400">
+                                                    via {log.source}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {log.details && (
+                                            <p className="text-xs text-slate-500 mt-1.5 truncate">{log.details}</p>
+                                        )}
+                                    </div>
                                 </div>
                             )
                         })
@@ -308,8 +350,8 @@ export default function SystemLogsPage() {
                 {meta && meta.totalPages > 1 && (
                     <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-t border-slate-100 shrink-0">
                         <p className="text-xs text-slate-500 font-semibold">
-                            Showing <span className="font-bold text-slate-700">{(page - 1) * limit + 1}–{Math.min(page * limit, meta.total)}</span> of{' '}
-                            <span className="font-bold text-slate-700">{meta.total}</span> entries
+                            <span className="hidden sm:inline">Showing </span><span className="font-bold text-slate-700">{(page - 1) * limit + 1}–{Math.min(page * limit, meta.total)}</span> of{' '}
+                            <span className="font-bold text-slate-700">{meta.total}</span>
                         </p>
                         <div className="flex items-center gap-1">
                             <button

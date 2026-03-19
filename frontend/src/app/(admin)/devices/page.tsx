@@ -312,15 +312,13 @@ export default function DevicesPage() {
                                         onClick={() => handleToggleSync(device)}
                                         disabled={isToggling}
                                         title={device.syncEnabled ? 'Disable sync for this device' : 'Enable sync for this device'}
-                                        className={`relative flex items-center shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
-                                            device.syncEnabled
+                                        className={`relative flex items-center shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${device.syncEnabled
                                                 ? 'bg-primary'
                                                 : 'bg-secondary border border-border'
-                                        } ${isToggling ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                                            } ${isToggling ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                                     >
-                                        <span className={`inline-block w-4 h-4 bg-white rounded-full shadow transform transition-transform duration-200 ${
-                                            device.syncEnabled ? 'translate-x-6' : 'translate-x-1'
-                                        }`} />
+                                        <span className={`inline-block w-4 h-4 bg-white rounded-full shadow transform transition-transform duration-200 ${device.syncEnabled ? 'translate-x-6' : 'translate-x-1'
+                                            }`} />
                                     </button>
                                 </div>
 
@@ -428,7 +426,7 @@ export default function DevicesPage() {
 
             {/* Add / Edit Modal */}
             {showModal && (
-                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
                     <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
 
                         {/* Modal Header */}
