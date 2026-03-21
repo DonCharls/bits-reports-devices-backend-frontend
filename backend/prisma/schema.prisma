@@ -67,6 +67,7 @@ model Device {
   location      String?
   isActive      Boolean         @default(true)
   syncEnabled   Boolean         @default(true)
+  lastSyncedAt  DateTime?                              // UTC timestamp of last processed log; null = never synced
   createdAt     DateTime        @default(now())
   updatedAt     DateTime
   AttendanceLog AttendanceLog[]

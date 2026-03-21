@@ -334,6 +334,27 @@ async function syncSingleDevice(dbDevice: {
         return { deviceId: dbDevice.id, newLogs: 0, skipped: true };
     }
 
+    // ── Read the sync watermark for this device ───────────────────────────
+    // We re-query the device record here (not trusting the stale snapshot passed
+    // in from syncZkData's findMany) to ensure we have the absolute latest
+    // lastSyncedAt value, even if a previous tick updated it mid-cycle.
+    const deviceRecord = await prisma.device.findUnique({
+        where: { id: dbDevice.id },
+        select: { lastSyncedAt: true },
+    });
+
+    // Determine the watermark: use lastSyncedAt if it exists, otherwise fall back
+    // to 48 hours ago. The 48-hour window is deliberately wide to:
+    //   1. Catch logs that span the midnight boundary (preventing the "today only" gap)
+    //   2. Recover logs from any server downtime up to 48 hours
+    // The @@unique([timestamp, employeeId]) constraint on AttendanceLog guarantees
+    // that any log already in the DB will be silently skipped on insert — so fetching
+    // a wide window is safe and never creates duplicates.
+    const FALLBACK_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
+    const watermark: Date = deviceRecord?.lastSyncedAt ?? new Date(Date.now() - FALLBACK_WINDOW_MS);
+
+    console.log(`[ZK] "${dbDevice.name}" watermark: ${watermark.toISOString()} (${deviceRecord?.lastSyncedAt ? 'from DB' : '48h fallback'})`);
+
     const zk = getDriver(dbDevice.ip, dbDevice.port);
     try {
         console.log(`[ZK] Syncing device "${dbDevice.name}" at ${dbDevice.ip}:${dbDevice.port}...`);
@@ -366,22 +387,27 @@ async function syncSingleDevice(dbDevice: {
 
         const allLogs = await zk.getLogs();
 
-        // Filter to today's logs only (PHT timezone UTC+8)
-        const nowUTC = new Date();
-        const todayPHT = new Date(nowUTC.getTime() + 8 * 60 * 60 * 1000);
-        todayPHT.setUTCHours(0, 0, 0, 0);
-        const todayStartUTC = new Date(todayPHT.getTime() - 8 * 60 * 60 * 1000);
+        // ── Filter logs using the watermark ──────────────────────────────────
+        // Convert each device log's recordTime to UTC using convertPHTtoUTC before
+        // comparing against the watermark (which is already stored in UTC).
+        // This ensures the comparison is timezone-safe regardless of how node-zklib
+        // represents the device's local time internally.
+        const logs = allLogs
+            .filter((log: any) => {
+                const logUTC = convertPHTtoUTC(log.recordTime);
+                return logUTC > watermark;
+            })
+            .sort((a: any, b: any) =>
+                convertPHTtoUTC(a.recordTime).getTime() -
+                convertPHTtoUTC(b.recordTime).getTime()
+            );
 
-        const logs = allLogs.filter((log: any) => {
-            const logTime = new Date(log.recordTime);
-            return logTime >= todayStartUTC;
-        });
+        console.log(`[ZK] Fetched ${allLogs.length} total logs, filtered to ${logs.length} logs newer than watermark.`);
 
-        console.log(`[ZK] Fetched ${allLogs.length} total logs, filtered to ${logs.length} logs for today (PHT).`);
-
-        // Sort: Oldest -> Newest
-        logs.sort((a: any, b: any) => a.recordTime.getTime() - b.recordTime.getTime());
-
+        // Track the timestamp of the most recently inserted log so we can
+        // advance the watermark after the loop. We only advance on successful
+        // inserts — a failed insert does not move the watermark forward.
+        let latestInsertedTimestamp: Date | null = null;
         let newCount = 0;
         for (const log of logs) {
             try {
@@ -437,10 +463,32 @@ async function syncSingleDevice(dbDevice: {
                         },
                     });
                     newCount++;
+
+                    // ── Advance the in-memory watermark tracker ───────────
+                    // We track the maximum UTC timestamp across all successfully
+                    // inserted logs so that after the loop we can persist the new
+                    // high-water mark. Using a null-check + comparison ensures we
+                    // always end up with the latest timestamp even if logs arrive
+                    // out of order.
+                    if (latestInsertedTimestamp === null || utcTime > latestInsertedTimestamp) {
+                        latestInsertedTimestamp = utcTime;
+                    }
                 }
             } catch (logErr) {
                 console.error(`[ZK] Error processing log:`, logErr);
             }
+        }
+
+        // ── Persist the watermark if any new logs were inserted ──────────────
+        // Only update lastSyncedAt when at least one log was successfully written.
+        // This ensures that a sync cycle that finds no new logs does not
+        // accidentally reset the watermark to null or move it backwards.
+        if (latestInsertedTimestamp !== null) {
+            await prisma.device.update({
+                where: { id: dbDevice.id },
+                data: { lastSyncedAt: latestInsertedTimestamp },
+            });
+            console.log(`[ZK] "${dbDevice.name}" watermark advanced to ${latestInsertedTimestamp.toISOString()}`);
         }
 
         console.log(`[ZK] Device "${dbDevice.name}" sync complete. ${newCount} new logs.`);
