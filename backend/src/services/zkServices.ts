@@ -121,42 +121,57 @@ const getDriver = (ip?: string, port?: number): ZKDriver => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FIX 2: Device-busy lock
-// The ZKTeco device only accepts ONE TCP connection at a time.
-// This mutex ensures that concurrent API calls are queued instead of racing.
+// Per-device lock system
+// Each ZKTeco device only accepts ONE TCP connection at a time.
+// This Map-based mutex ensures that concurrent API calls to the SAME device
+// are queued, while operations targeting DIFFERENT devices run in parallel.
 // ─────────────────────────────────────────────────────────────────────────────
-let _deviceBusy = false;
-const _deviceQueue: Array<() => void> = [];
-let _lockTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+interface DeviceLockState {
+    busy: boolean;
+    interactivePending: boolean;
+    queue: Array<() => void>;
+    timeoutHandle: ReturnType<typeof setTimeout> | null;
+}
+
+// Key = device database ID (number). Created on first use.
+const _deviceLocks = new Map<number, DeviceLockState>();
+
+function getDeviceLockState(deviceId: number): DeviceLockState {
+    if (!_deviceLocks.has(deviceId)) {
+        _deviceLocks.set(deviceId, {
+            busy: false,
+            interactivePending: false,
+            queue: [],
+            timeoutHandle: null,
+        });
+    }
+    return _deviceLocks.get(deviceId)!;
+}
 
 // Safety timeout: if the lock is held for more than 90 seconds,
 // auto-release it. This prevents permanent deadlock if a request
 // crashes before reaching its finally{} block.
 const LOCK_TIMEOUT_MS = 90_000;
 
-// True while an interactive (UI-triggered) operation owns or is waiting for the lock.
-// The cron job checks this flag before attempting to acquire — if set, it skips its tick
-// entirely rather than queuing, ensuring the interactive operation is never delayed by
-// a background sync that snuck in ahead of it.
-let _interactiveLockActive = false;
-
 /**
  * Blocking lock for interactive UI operations (enrollment, addUser).
  * Jumps to the FRONT of the queue so it is not delayed by already-queued cron syncs.
- * Sets _interactiveLockActive so subsequent cron ticks skip while this is pending/held.
+ * Sets interactivePending so subsequent cron ticks skip while this is pending/held.
  */
-function acquireInteractiveDeviceLock(): Promise<void> {
-    _interactiveLockActive = true;
+function acquireInteractiveDeviceLock(deviceId: number): Promise<void> {
+    const state = getDeviceLockState(deviceId);
+    state.interactivePending = true;
     return new Promise((resolve) => {
-        if (!_deviceBusy) {
-            _deviceBusy = true;
-            console.log('[ZK] Interactive lock acquired.');
+        if (!state.busy) {
+            state.busy = true;
+            console.log(`[ZK] Interactive lock acquired for device ${deviceId}.`);
             resolve();
         } else {
-            console.log('[ZK] Device busy — interactive request jumping to front of queue...');
+            console.log(`[ZK] Device ${deviceId} busy — interactive request jumping to front of queue...`);
             // Unshift = front of queue, so this resolves before any already-queued cron syncs
-            _deviceQueue.unshift(() => {
-                _deviceBusy = true;
+            state.queue.unshift(() => {
+                state.busy = true;
                 resolve();
             });
         }
@@ -167,22 +182,23 @@ function acquireInteractiveDeviceLock(): Promise<void> {
  * Blocking lock for background operations (syncEmployeesToDevice, deleteUserFromDevice, etc.).
  * Queues at the BACK — waits its turn behind any interactive operations.
  */
-function acquireDeviceLock(): Promise<void> {
+function acquireDeviceLock(deviceId: number): Promise<void> {
+    const state = getDeviceLockState(deviceId);
     return new Promise((resolve) => {
-        if (!_deviceBusy) {
-            _deviceBusy = true;
-            _lockTimeoutHandle = setTimeout(() => {
-                console.warn('[ZK] ⚠ Lock auto-released after timeout (90s). Previous operation may have crashed.');
-                releaseDeviceLock();
+        if (!state.busy) {
+            state.busy = true;
+            state.timeoutHandle = setTimeout(() => {
+                console.warn(`[ZK] ⚠ Lock auto-released after timeout (90s) for device ${deviceId}.`);
+                releaseDeviceLock(deviceId);
             }, LOCK_TIMEOUT_MS);
             resolve();
         } else {
-            console.log('[ZK] Device busy — queuing request...');
-            _deviceQueue.push(() => {
-                _deviceBusy = true;
-                _lockTimeoutHandle = setTimeout(() => {
-                    console.warn('[ZK] ⚠ Lock auto-released after timeout (90s).');
-                    releaseDeviceLock();
+            console.log(`[ZK] Device ${deviceId} busy — queuing background request...`);
+            state.queue.push(() => {
+                state.busy = true;
+                state.timeoutHandle = setTimeout(() => {
+                    console.warn(`[ZK] ⚠ Lock auto-released after timeout (90s) for device ${deviceId}.`);
+                    releaseDeviceLock(deviceId);
                 }, LOCK_TIMEOUT_MS);
                 resolve();
             });
@@ -194,20 +210,21 @@ function acquireDeviceLock(): Promise<void> {
  * Release the device lock and hand off to the next queued operation.
  * Always call this in a finally block.
  */
-function releaseDeviceLock(): void {
-    if (_lockTimeoutHandle) {
-        clearTimeout(_lockTimeoutHandle);
-        _lockTimeoutHandle = null;
+function releaseDeviceLock(deviceId: number): void {
+    const state = getDeviceLockState(deviceId);
+    if (state.timeoutHandle) {
+        clearTimeout(state.timeoutHandle);
+        state.timeoutHandle = null;
     }
-    const next = _deviceQueue.shift();
+    const next = state.queue.shift();
     if (next) {
         // Small delay so the device can fully close the previous TCP socket
         setTimeout(next, 500);
     } else {
-        _deviceBusy = false;
+        state.busy = false;
         // Only clear the interactive flag when the queue is fully drained —
         // if another interactive op is queued, it will set the flag again when it resolves.
-        _interactiveLockActive = false;
+        state.interactivePending = false;
     }
 }
 
@@ -222,29 +239,44 @@ function releaseDeviceLock(): void {
  *   - An interactive operation is pending in the queue
  * This ensures cron ticks never block or delay UI-triggered operations.
  */
-function tryAcquireDeviceLock(): boolean {
+function tryAcquireDeviceLock(deviceId: number): boolean {
+    const state = getDeviceLockState(deviceId);
     // Skip if device is busy OR if an interactive operation is pending/active.
-    // _interactiveLockActive ensures a queued enrollment/addUser is never
+    // interactivePending ensures a queued enrollment/addUser is never
     // pushed back by a cron tick that sneaks in before it resolves.
-    if (_deviceBusy || _interactiveLockActive) {
+    if (state.busy || state.interactivePending) {
         return false;
     }
-    _deviceBusy = true;
+    state.busy = true;
     // Apply the same safety timeout as interactive and background locks so a
     // crashed cron tick never leaves the device permanently locked.
-    _lockTimeoutHandle = setTimeout(() => {
-        console.warn('[ZK] ⚠ Cron lock auto-released after timeout (90s).');
-        releaseDeviceLock();
+    state.timeoutHandle = setTimeout(() => {
+        console.warn(`[ZK] ⚠ Cron lock auto-released after timeout (90s) for device ${deviceId}.`);
+        releaseDeviceLock(deviceId);
     }, LOCK_TIMEOUT_MS);
     return true;
 }
 
 // Force-release the lock from an external endpoint (e.g. POST /api/devices/unlock)
-export function forceReleaseLock(): void {
-    console.warn('[ZK] Force-releasing device lock via API.');
-    _deviceQueue.length = 0;
-    if (_lockTimeoutHandle) { clearTimeout(_lockTimeoutHandle); _lockTimeoutHandle = null; }
-    _deviceBusy = false;
+// If deviceId is provided, releases only that device. Otherwise releases ALL devices (emergency).
+export function forceReleaseLock(deviceId?: number): void {
+    if (deviceId !== undefined) {
+        console.warn(`[ZK] Force-releasing device lock for device ${deviceId} via API.`);
+        const state = getDeviceLockState(deviceId);
+        state.queue.length = 0;
+        if (state.timeoutHandle) { clearTimeout(state.timeoutHandle); state.timeoutHandle = null; }
+        state.busy = false;
+        state.interactivePending = false;
+    } else {
+        // No specific device — release all (emergency fallback)
+        console.warn(`[ZK] Force-releasing ALL device locks via API.`);
+        _deviceLocks.forEach((state, id) => {
+            state.queue.length = 0;
+            if (state.timeoutHandle) { clearTimeout(state.timeoutHandle); state.timeoutHandle = null; }
+            state.busy = false;
+            state.interactivePending = false;
+        });
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -279,54 +311,47 @@ async function connectWithRetry(zk: ZKDriver, maxRetries: number = 2): Promise<v
     throw lastError;
 }
 
-export const syncZkData = async (): Promise<SyncResult> => {
-    // ── Cron-safe lock: SKIP if device is already busy ──────────────────────
-    // The cron fires every 10 seconds. If a previous sync, enrollment, or
-    // any other device operation is still running, we skip this tick instead
-    // of queuing — the next cron tick will try again. This prevents an
-    // ever-growing backlog of pending syncs from piling up.
-    // ────────────────────────────────────────────────────────────────────────
-    if (!tryAcquireDeviceLock()) {
-        console.debug('[ZK] Cron sync skipped — device is busy with another operation.');
-        return { success: true, message: 'Skipped — device busy' };
+// ─────────────────────────────────────────────────────────────────────────────
+// Private helper: sync a single device (connect → getLogs → insert → disconnect).
+// Manages its own per-device lock. NOT exported — only called by syncZkData().
+// ─────────────────────────────────────────────────────────────────────────────
+async function syncSingleDevice(dbDevice: {
+    id: number;
+    name: string;
+    ip: string;
+    port: number;
+    isActive: boolean;
+    syncEnabled: boolean;
+}): Promise<{ deviceId: number; newLogs: number; skipped: boolean; error?: string }> {
+    if (dbDevice.syncEnabled === false) {
+        console.debug(`[ZK] Skipping "${dbDevice.name}" — sync is disabled.`);
+        return { deviceId: dbDevice.id, newLogs: 0, skipped: true };
     }
 
-    let totalNewLogs = 0;
+    // Non-blocking lock: skip this device if it is already being used
+    if (!tryAcquireDeviceLock(dbDevice.id)) {
+        console.debug(`[ZK] Cron sync skipped for "${dbDevice.name}" — device is busy.`);
+        return { deviceId: dbDevice.id, newLogs: 0, skipped: true };
+    }
 
+    const zk = getDriver(dbDevice.ip, dbDevice.port);
     try {
-        // Load ALL devices from the DB — this way IP changes via Configure take effect immediately
-        const dbDevices = await prisma.device.findMany({ orderBy: { id: 'asc' } });
+        console.log(`[ZK] Syncing device "${dbDevice.name}" at ${dbDevice.ip}:${dbDevice.port}...`);
+        await connectWithRetry(zk);
 
-        if (dbDevices.length === 0) {
-            console.warn('[ZK] No devices found in DB — skipping sync.');
-            return { success: true, message: 'No devices configured', newLogs: 0 };
+        // getInfo() uses UDP — non-fatal if it fails (device still works via TCP)
+        try {
+            const info = await zk.getInfo();
+            console.log(`[ZK] Connected! Serial: ${info?.serialNumber ?? 'N/A'}`);
+        } catch {
+            console.warn(`[ZK] getInfo() failed (UDP may be blocked) — continuing with TCP only.`);
         }
 
-        for (const dbDevice of dbDevices) {
-            // Skip devices that have been manually disabled by an admin.
-            if (dbDevice.syncEnabled === false) {
-                console.debug(`[ZK] Skipping "${dbDevice.name}" — sync is disabled.`);
-                continue;
-            }
-            const zk = getDriver(dbDevice.ip, dbDevice.port);
-            console.log(`[ZK] Syncing device "${dbDevice.name}" at ${dbDevice.ip}:${dbDevice.port}...`);
-
-            try {
-                await connectWithRetry(zk);
-
-                // getInfo() uses UDP — non-fatal if it fails (device still works via TCP)
-                try {
-                    const info = await zk.getInfo();
-                    console.log(`[ZK] Connected! Serial: ${info?.serialNumber ?? 'N/A'}`);
-                } catch {
-                    console.warn(`[ZK] getInfo() failed (UDP may be blocked) — continuing with TCP only.`);
-                }
-
-                // Mark ONLINE using device.id (not the env-var IP) so Configure changes apply immediately
-                await prisma.device.update({
-                    where: { id: dbDevice.id },
-                    data: { isActive: true, updatedAt: new Date() }
-                }).catch(() => { /* ignore */ });
+        // Mark ONLINE using device.id (not the env-var IP) so Configure changes apply immediately
+        await prisma.device.update({
+            where: { id: dbDevice.id },
+            data: { isActive: true, updatedAt: new Date() }
+        }).catch(() => { /* ignore */ });
 
                 // ENFORCE SOURCE OF TRUTH: Force the device's clock to match the Backend Server Time
                 // This prevents physical clock drift on the hardware. 
@@ -339,123 +364,147 @@ export const syncZkData = async (): Promise<SyncResult> => {
                     console.warn(`[ZK] setTime failed on "${dbDevice.name}" - continuing anyway: ${zkErrMsg(timeErr)}`);
                 }
 
-                const allLogs = await zk.getLogs();
+        const allLogs = await zk.getLogs();
 
-                // Filter to today's logs only (PHT timezone UTC+8)
-                const nowUTC = new Date();
-                const todayPHT = new Date(nowUTC.getTime() + 8 * 60 * 60 * 1000);
-                todayPHT.setUTCHours(0, 0, 0, 0);
-                const todayStartUTC = new Date(todayPHT.getTime() - 8 * 60 * 60 * 1000);
+        // Filter to today's logs only (PHT timezone UTC+8)
+        const nowUTC = new Date();
+        const todayPHT = new Date(nowUTC.getTime() + 8 * 60 * 60 * 1000);
+        todayPHT.setUTCHours(0, 0, 0, 0);
+        const todayStartUTC = new Date(todayPHT.getTime() - 8 * 60 * 60 * 1000);
 
-                const logs = allLogs.filter((log: any) => {
-                    const logTime = new Date(log.recordTime);
-                    return logTime >= todayStartUTC;
+        const logs = allLogs.filter((log: any) => {
+            const logTime = new Date(log.recordTime);
+            return logTime >= todayStartUTC;
+        });
+
+        console.log(`[ZK] Fetched ${allLogs.length} total logs, filtered to ${logs.length} logs for today (PHT).`);
+
+        // Sort: Oldest -> Newest
+        logs.sort((a: any, b: any) => a.recordTime.getTime() - b.recordTime.getTime());
+
+        let newCount = 0;
+        for (const log of logs) {
+            try {
+                const zkUserId = parseInt(log.deviceUserId);
+
+                if (isNaN(zkUserId)) continue;
+
+                // 1. Find Employee by zkId — SKIP if not in DB (prevents ghost re-creation)
+                const employee = await prisma.employee.findUnique({
+                    where: { zkId: zkUserId }
                 });
 
-                console.log(`[ZK] Fetched ${allLogs.length} total logs, filtered to ${logs.length} logs for today (PHT).`);
-
-                // Sort: Oldest -> Newest
-                logs.sort((a, b) => a.recordTime.getTime() - b.recordTime.getTime());
-
-                let newCount = 0;
-                for (const log of logs) {
-                    try {
-                        const zkUserId = parseInt(log.deviceUserId);
-
-                        if (isNaN(zkUserId)) continue;
-
-                        // 1. Find Employee by zkId — SKIP if not in DB (prevents ghost re-creation)
-                        const employee = await prisma.employee.findUnique({
-                            where: { zkId: zkUserId }
-                        });
-
-                        if (!employee) {
-                            // This zkId was removed from the DB intentionally. Do not re-create.
-                            console.log(`[ZK] Skipping unknown zkId ${zkUserId} — not in database`);
-                            continue;
-                        }
-
-                        // 2. Fetch Last Log to prevent duplicates
-                        const lastLog = await prisma.attendanceLog.findFirst({
-                            where: { employeeId: employee.id },
-                            orderBy: { timestamp: 'desc' }
-                        });
-
-                        // Convert PHT to UTC for storage and comparison
-                        const utcTime = convertPHTtoUTC(log.recordTime);
-
-                        // Logic: Prevent duplicates within 1 minute (accidental double-scans)
-                        if (lastLog) {
-                            const diffMs = utcTime.getTime() - lastLog.timestamp.getTime();
-                            const diffMinutes = diffMs / (1000 * 60);
-
-                            // Only skip if it's within 1 minute (likely accidental double-scan)
-                            if (diffMinutes < 1) continue;
-                        }
-
-                        // 3. Check for exact duplicate in DB
-                        const exists = await prisma.attendanceLog.findUnique({
-                            where: {
-                                timestamp_employeeId: {
-                                    timestamp: utcTime,
-                                    employeeId: employee.id
-                                }
-                            }
-                        });
-
-                        if (!exists) {
-                            await prisma.attendanceLog.create({
-                                data: {
-                                    timestamp: utcTime,  // Store UTC time
-                                    employeeId: employee.id,
-                                    status: log.status,
-                                },
-                            });
-                            newCount++;
-                        }
-                    } catch (logErr) {
-                        console.error(`[ZK] Error processing log:`, logErr);
-                    }
+                if (!employee) {
+                    // This zkId was removed from the DB intentionally. Do not re-create.
+                    console.log(`[ZK] Skipping unknown zkId ${zkUserId} — not in database`);
+                    continue;
                 }
 
-                console.log(`[ZK] Device "${dbDevice.name}" sync complete. ${newCount} new logs.`);
-                totalNewLogs += newCount;
+                // 2. Fetch Last Log to prevent duplicates
+                const lastLog = await prisma.attendanceLog.findFirst({
+                    where: { employeeId: employee.id },
+                    orderBy: { timestamp: 'desc' }
+                });
 
-            } catch (deviceErr: any) {
-                console.error(`[ZK] Error syncing "${dbDevice.name}" (${dbDevice.ip}): ${zkErrMsg(deviceErr)}`);
-                // Mark this specific device as OFFLINE
-                await prisma.device.update({
-                    where: { id: dbDevice.id },
-                    data: { isActive: false, updatedAt: new Date() }
-                }).catch(() => { /* ignore */ });
-            } finally {
-                try { await zk.disconnect(); } catch { /* ignore */ }
+                // Convert PHT to UTC for storage and comparison
+                const utcTime = convertPHTtoUTC(log.recordTime);
+
+                // Logic: Prevent duplicates within 1 minute (accidental double-scans)
+                if (lastLog) {
+                    const diffMs = utcTime.getTime() - lastLog.timestamp.getTime();
+                    const diffMinutes = diffMs / (1000 * 60);
+
+                    // Only skip if it's within 1 minute (likely accidental double-scan)
+                    if (diffMinutes < 1) continue;
+                }
+
+                // 3. Check for exact duplicate in DB
+                const exists = await prisma.attendanceLog.findUnique({
+                    where: {
+                        timestamp_employeeId: {
+                            timestamp: utcTime,
+                            employeeId: employee.id
+                        }
+                    }
+                });
+
+                if (!exists) {
+                    await prisma.attendanceLog.create({
+                        data: {
+                            timestamp: utcTime,  // Store UTC time
+                            employeeId: employee.id,
+                            status: log.status,
+                        },
+                    });
+                    newCount++;
+                }
+            } catch (logErr) {
+                console.error(`[ZK] Error processing log:`, logErr);
             }
         }
 
-        // Always process logs into Attendance records (handles both new and existing logs)
-        console.log(`[ZK] Processing ${totalNewLogs} new logs into attendance records...`);
-        await processAttendanceLogs();
+        console.log(`[ZK] Device "${dbDevice.name}" sync complete. ${newCount} new logs.`);
+        return { deviceId: dbDevice.id, newLogs: newCount, skipped: false };
+
+    } catch (deviceErr: any) {
+        console.error(`[ZK] Error syncing "${dbDevice.name}" (${dbDevice.ip}): ${zkErrMsg(deviceErr)}`);
+        // Mark this specific device as OFFLINE
+        await prisma.device.update({
+            where: { id: dbDevice.id },
+            data: { isActive: false, updatedAt: new Date() }
+        }).catch(() => { /* ignore */ });
+        return { deviceId: dbDevice.id, newLogs: 0, skipped: false, error: zkErrMsg(deviceErr) };
+    } finally {
+        try { await zk.disconnect(); } catch { /* ignore */ }
+        releaseDeviceLock(dbDevice.id);
+    }
+}
+
+export const syncZkData = async (): Promise<SyncResult> => {
+    try {
+        // Load ALL devices from the DB — this way IP changes via Configure take effect immediately
+        const dbDevices = await prisma.device.findMany({ orderBy: { id: 'asc' } });
+
+        if (dbDevices.length === 0) {
+            console.warn('[ZK] No devices found in DB — skipping sync.');
+            return { success: true, message: 'No devices configured', newLogs: 0 };
+        }
+
+        // Run all device syncs in PARALLEL — each device manages its own lock
+        const results = await Promise.allSettled(
+            dbDevices.map(dbDevice => syncSingleDevice(dbDevice))
+        );
+
+        let totalNewLogs = 0;
+        for (const result of results) {
+            if (result.status === 'fulfilled') {
+                totalNewLogs += result.value.newLogs;
+            } else {
+                // Promise.allSettled() should not reject because syncSingleDevice
+                // catches its own errors, but log just in case
+                console.error('[ZK] Unexpected rejection in syncSingleDevice:', result.reason);
+            }
+        }
+
+        // Process all new logs into Attendance records once, after all devices are done
+        if (totalNewLogs > 0) {
+            console.log(`[ZK] Processing ${totalNewLogs} total new logs across all devices...`);
+            await processAttendanceLogs();
+        }
 
         return { success: true, newLogs: totalNewLogs };
 
     } catch (error: any) {
-        console.error('[ZK] Sync fatal error:', zkErrMsg(error));
+        console.error('[ZK] syncZkData fatal error:', zkErrMsg(error));
         return { success: false, error: `Sync Error: ${zkErrMsg(error)}`, message: 'Failed to sync attendance data' };
-    } finally {
-        releaseDeviceLock();
     }
+    // NOTE: No top-level releaseDeviceLock() here — each device releases its own lock
 };
 
 export const addUserToDevice = async (zkId: number, name: string, role: string = 'USER', badgeNumber: string = ""): Promise<SyncResult> => {
     // addUserToDevice is triggered from the UI after employee creation.
-    // Use the interactive priority lock so this jumps ahead of any already-queued
-    // cron syncs, eliminating the P4 race window between the setImmediate background
-    // call and the 10-second cron tick. Enrollment also uses this same lock, so all
-    // dashboard-initiated device writes share one VIP lane over background cron work.
-    await acquireInteractiveDeviceLock();
-
-
+    // Each device gets its own interactive lock inside the loop so that
+    // writing to Device 1 does not block access to Device 2.
     try {
         console.log(`[ZK] Adding User with zkId=${zkId} (${name})...`);
 
@@ -473,6 +522,7 @@ export const addUserToDevice = async (zkId: number, name: string, role: string =
         let addedToAtLeastOne = false;
 
         for (const dbDevice of dbDevices) {
+            await acquireInteractiveDeviceLock(dbDevice.id);
             const zk = getDriver(dbDevice.ip, dbDevice.port);
             try {
                 console.log(`[ZK] Connecting to "${dbDevice.name}" (${dbDevice.ip}:${dbDevice.port})...`);
@@ -541,6 +591,7 @@ export const addUserToDevice = async (zkId: number, name: string, role: string =
                 console.error(`[ZK] Failed to add user to "${dbDevice.name}": ${zkErrMsg(err)}`);
             } finally {
                 try { await zk.disconnect(); } catch { /* ignore */ }
+                releaseDeviceLock(dbDevice.id);
             }
         }
 
@@ -552,8 +603,6 @@ export const addUserToDevice = async (zkId: number, name: string, role: string =
     } catch (error: any) {
         console.error('[ZK] Add User Error:', zkErrMsg(error));
         throw new Error(`Failed to add employee: ${zkErrMsg(error)}`);
-    } finally {
-        releaseDeviceLock();
     }
 };
 
@@ -561,7 +610,6 @@ export const addUserToDevice = async (zkId: number, name: string, role: string =
 
 
 export const deleteUserFromDevice = async (zkId: number): Promise<SyncResult> => {
-    await acquireDeviceLock();
     try {
         console.log(`[ZK] Deleting User with zkId=${zkId} from all devices...`);
 
@@ -575,6 +623,7 @@ export const deleteUserFromDevice = async (zkId: number): Promise<SyncResult> =>
         }
 
         for (const dbDevice of dbDevices) {
+            await acquireDeviceLock(dbDevice.id);
             const zk = getDriver(dbDevice.ip, dbDevice.port);
             try {
                 await connectWithRetry(zk, 2);
@@ -595,6 +644,7 @@ export const deleteUserFromDevice = async (zkId: number): Promise<SyncResult> =>
                 console.error(`[ZK] Failed to delete from "${dbDevice.name}": ${zkErrMsg(err)}`);
             } finally {
                 try { await zk.disconnect(); } catch { /* ignore */ }
+                releaseDeviceLock(dbDevice.id);
             }
         }
 
@@ -602,14 +652,10 @@ export const deleteUserFromDevice = async (zkId: number): Promise<SyncResult> =>
     } catch (error: any) {
         console.error('[ZK] Delete User Error:', zkErrMsg(error));
         return { success: false, message: `Failed to delete user: ${zkErrMsg(error)}`, error: zkErrMsg(error) };
-    } finally {
-        releaseDeviceLock();
     }
 };
 
 export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
-    await acquireDeviceLock();
-
     try {
         console.log(`[ZK] syncEmployeesToDevice — fetching DB employees...`);
         const employees = await prisma.employee.findMany({
@@ -636,6 +682,7 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
         let totalSuccess = 0;
 
         for (const dbDevice of dbDevices) {
+            await acquireDeviceLock(dbDevice.id);
             const zk = getDriver(dbDevice.ip, dbDevice.port);
             let successCount = 0;
             try {
@@ -698,6 +745,7 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
                 console.error(`[ZK] Could not sync to "${dbDevice.name}": ${zkErrMsg(err)}`);
             } finally {
                 try { await zk.disconnect(); } catch { /* ignore */ }
+                releaseDeviceLock(dbDevice.id);
             }
         }
 
@@ -709,8 +757,6 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
 
     } catch (error: any) {
         throw new Error(`Sync failed: ${error.message}`);
-    } finally {
-        releaseDeviceLock();
     }
 };
 
@@ -784,7 +830,7 @@ export const enrollEmployeeFingerprint = async (
     // 3. Acquire interactive device lock — enrollment is UI-triggered and time-sensitive.
     // acquireInteractiveDeviceLock() places this at the FRONT of the queue so cron syncs
     // can never delay fingerprint capture.
-    await acquireInteractiveDeviceLock();
+    await acquireInteractiveDeviceLock(dbDevice.id);
     const zk = getDriver(dbDevice.ip, dbDevice.port);
 
 
@@ -877,14 +923,16 @@ export const enrollEmployeeFingerprint = async (
         };
     } finally {
         try { await zk.disconnect(); } catch { /* ignore */ }
-        releaseDeviceLock();
+        releaseDeviceLock(dbDevice.id);
     }
 };
 
 
 export const testDeviceConnection = async (): Promise<SyncResult> => {
     const zk = getDriver();
-    await acquireDeviceLock();
+    // Sentinel device ID 0 — testDeviceConnection uses env-var defaults, not a DB device,
+    // so it gets its own lock slot that never conflicts with real DB device IDs (which start at 1).
+    await acquireDeviceLock(0);
     try {
         await connectWithRetry(zk);
 
@@ -909,12 +957,11 @@ export const testDeviceConnection = async (): Promise<SyncResult> => {
         return { success: false, error: error.message };
     } finally {
         try { await zk.disconnect(); } catch { /* ignore disconnect errors */ }
-        releaseDeviceLock();
+        releaseDeviceLock(0);
     }
 };
 
 export const syncEmployeesFromDevice = async (): Promise<SyncResult> => {
-    await acquireDeviceLock();
     try {
         const dbDevices = await prisma.device.findMany({
             where: { isActive: true, syncEnabled: true },
@@ -929,6 +976,7 @@ export const syncEmployeesFromDevice = async (): Promise<SyncResult> => {
         let totalSkippedCount = 0;
 
         for (const dbDevice of dbDevices) {
+            await acquireDeviceLock(dbDevice.id);
             const zk = getDriver(dbDevice.ip, dbDevice.port);
             try {
                 console.log(`[ZK] syncEmployeesFromDevice — connecting to "${dbDevice.name}" (${dbDevice.ip}:${dbDevice.port})...`);
@@ -979,6 +1027,7 @@ export const syncEmployeesFromDevice = async (): Promise<SyncResult> => {
                 console.error(`[ZK] Failed to read users from "${dbDevice.name}": ${zkErrMsg(err)}`);
             } finally {
                 try { await zk.disconnect(); } catch { /* ignore */ }
+                releaseDeviceLock(dbDevice.id);
             }
         }
 
@@ -990,8 +1039,6 @@ export const syncEmployeesFromDevice = async (): Promise<SyncResult> => {
 
     } catch (error: any) {
         return { success: false, error: error.message };
-    } finally {
-        releaseDeviceLock();
     }
 };
 
@@ -1059,7 +1106,7 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
     });
     const dbByZkId = new Map(dbEmployees.map(e => [e.zkId!.toString(), e]));
 
-    await acquireDeviceLock();
+    await acquireDeviceLock(deviceId);
     const zk = getDriver(dbDevice.ip, dbDevice.port);
 
     try {
@@ -1181,7 +1228,7 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
         throw new Error(`Reconcile failed: ${msg}`);
     } finally {
         try { await zk.disconnect(); } catch { /* ignore */ }
-        releaseDeviceLock();
+        releaseDeviceLock(deviceId);
     }
 };
 
@@ -1203,7 +1250,7 @@ export const syncAllDeviceClocks = async (): Promise<void> => {
 
     for (const device of activeDevices) {
         // Use non-blocking lock — skip this device if already busy with attendance sync or enrollment
-        if (!tryAcquireDeviceLock()) {
+        if (!tryAcquireDeviceLock(device.id)) {
             console.warn(`[ClockSync] Skipping "${device.name}" — device busy.`);
             continue;
         }
@@ -1220,7 +1267,7 @@ export const syncAllDeviceClocks = async (): Promise<void> => {
         } catch (err: any) {
             console.warn(`[ClockSync] ✗ "${device.name}" (${device.ip}) — failed: ${err.message}`);
         } finally {
-            releaseDeviceLock();
+            releaseDeviceLock(device.id);
         }
     }
 
