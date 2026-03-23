@@ -20,6 +20,55 @@ const PROTECTED_DEVICE_UIDS = [1];
 // ─────────────────────────────────────────────────────────────────────────────
 const MIN_EMPLOYEE_ZK_ID = 2;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Registration mutex — prevents concurrent findNextSafeZkId() calls from
+// racing to assign the same zkId to two different employees.
+//
+// WHY this is needed: findNextSafeZkId() is an async function that takes
+// time (it connects to every active device). If two POST /api/employees
+// requests arrive simultaneously, both calls read the same "current max zkId"
+// before either has written its new employee to the DB. Both return the same
+// next safe ID. The second prisma.employee.create() then fails with a P2002
+// unique constraint violation.
+//
+// This mutex ensures the read-then-write sequence (findNextSafeZkId → create)
+// is atomic from the perspective of concurrent registrations.
+// ─────────────────────────────────────────────────────────────────────────────
+let _registrationMutexBusy = false;
+const _registrationMutexQueue: Array<() => void> = [];
+
+/**
+ * Acquires the registration mutex.
+ * Returns a release function that MUST be called in a finally block.
+ * Queues the caller if the mutex is already held — callers are served
+ * in FIFO order so no request starves.
+ */
+export async function acquireRegistrationMutex(): Promise<() => void> {
+    return new Promise((resolve) => {
+        const release = () => {
+            // Hand off to the next queued caller, if any.
+            const next = _registrationMutexQueue.shift();
+            if (next) {
+                setTimeout(next, 50);
+            } else {
+                _registrationMutexBusy = false;
+            }
+        };
+
+        if (!_registrationMutexBusy) {
+            _registrationMutexBusy = true;
+            resolve(release);
+        } else {
+            // FIFO: push to end of queue so registrations are processed
+            // in the order they arrived
+            _registrationMutexQueue.push(() => {
+                _registrationMutexBusy = true;
+                resolve(release);
+            });
+        }
+    });
+}
+
 /**
  * Finds the lowest safe zkId to assign to a new employee.
  *

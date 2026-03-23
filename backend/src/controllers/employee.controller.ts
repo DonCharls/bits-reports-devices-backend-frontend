@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
-import { syncEmployeesToDevice, enrollEmployeeFingerprint, addUserToDevice, deleteUserFromDevice, findNextSafeZkId } from '../services/zkServices';
+import { syncEmployeesToDevice, enrollEmployeeFingerprint, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex } from '../services/zkServices';
 
 // GET /api/employees - Get all employees
 export const getAllEmployees = async (req: Request, res: Response) => {
@@ -279,46 +279,63 @@ export const createEmployee = async (req: Request, res: Response) => {
             });
         }
 
-        // Delegate zkId assignment to the service layer.
-        // findNextSafeZkId() checks BOTH the DB and all active devices so the
-        // new employee never gets a zkId that collides with a ghost device user.
-        const nextZkId = await findNextSafeZkId();
+        // ── Acquire registration mutex before zkId assignment ─────────────────────
+        // findNextSafeZkId() + prisma.employee.create() must run as an atomic unit.
+        // Without this mutex, two simultaneous POST /api/employees requests both call
+        // findNextSafeZkId() before either has written to the DB, both receive the
+        // same integer, and one of the prisma.employee.create() calls fails with a
+        // P2002 unique constraint violation on Employee.zkId.
+        const release = await acquireRegistrationMutex();
+        let newEmployee;
+        try {
+            const nextZkId = await findNextSafeZkId();
 
-        // Create employee
-        const newEmployee = await prisma.employee.create({
-            data: {
-                employeeNumber,
-                firstName,
-                lastName,
-                email,
-                role: role || 'USER',
-                department,
-                position,
-                branch,
-                contactNumber,
-                hireDate: hireDate ? new Date(hireDate) : undefined,
-                employmentStatus: employmentStatus || 'ACTIVE',
-                zkId: nextZkId,
-                shiftId: shiftId ? parseInt(shiftId, 10) : null,
-                updatedAt: new Date()
-            },
-            select: {
-                id: true,
-                zkId: true,
-                employeeNumber: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-                role: true,
-                department: true,
-                position: true,
-                branch: true,
-                contactNumber: true,
-                hireDate: true,
-                employmentStatus: true,
-                createdAt: true,
-            }
-        });
+            newEmployee = await prisma.employee.create({
+                data: {
+                    employeeNumber,
+                    firstName,
+                    lastName,
+                    email,
+                    role: role || 'USER',
+                    department,
+                    position,
+                    branch,
+                    contactNumber,
+                    hireDate: hireDate ? new Date(hireDate) : undefined,
+                    employmentStatus: employmentStatus || 'ACTIVE',
+                    zkId: nextZkId,
+                    shiftId: shiftId ? parseInt(shiftId, 10) : null,
+                    updatedAt: new Date()
+                },
+                select: {
+                    id: true,
+                    zkId: true,
+                    employeeNumber: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                    role: true,
+                    department: true,
+                    position: true,
+                    branch: true,
+                    contactNumber: true,
+                    hireDate: true,
+                    employmentStatus: true,
+                    createdAt: true,
+                }
+            });
+        } finally {
+            // Always release — even on error — to prevent deadlocking future registrations
+            release();
+        }
+
+        // Guard: if the mutex block threw, the outer try/catch handles it
+        if (!newEmployee) {
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to create employee — unexpected state after registration.',
+            });
+        }
 
         console.log(`[API] Created employee: ${newEmployee.firstName} ${newEmployee.lastName} (zkId: ${newEmployee.zkId})`);
 
