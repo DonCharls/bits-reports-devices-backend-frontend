@@ -190,15 +190,16 @@ export default function BiometricPage() {
           const checkIn = new Date(log.checkInTime)
           const checkOut = log.checkOutTime ? new Date(log.checkOutTime) : null
 
-          // Prefer backend-calculated values (shift-aware); fall back to raw time diff
-          const totalHours: number = log.totalHours ?? (checkOut ? (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60) : 0)
+          // STRICTLY USE BACKEND SHIFT-AWARE VALUES. No frontend fallback math.
+          const totalHours: number = log.totalHours ?? 0
           const lateMinutes: number = log.lateMinutes ?? 0
-          const overtimeMinutes: number = log.overtimeMinutes ?? (totalHours > 8 ? (totalHours - 8) * 60 : 0)
-          const undertimeMinutes: number = log.undertimeMinutes ?? (totalHours > 0 && totalHours < 8 ? (8 - totalHours) * 60 : 0)
+          const overtimeMinutes: number = log.overtimeMinutes ?? 0
+          const undertimeMinutes: number = log.undertimeMinutes ?? 0
           const shiftCode: string | null = log.shiftCode ?? emp.Shift?.shiftCode ?? null
           const isAnomaly: boolean = log.isAnomaly ?? false
+          const isEarlyOut: boolean = log.isEarlyOut ?? false
 
-          const status = isAnomaly ? 'anomaly' : lateMinutes > 0 ? 'late' : undertimeMinutes > 0 ? 'undertime' : (log.status || 'present')
+          const status = isEarlyOut ? 'early-out' : isAnomaly ? 'anomaly' : lateMinutes > 0 ? 'late' : undertimeMinutes > 0 ? 'undertime' : (log.status || 'present')
 
           return {
             id: log.id,

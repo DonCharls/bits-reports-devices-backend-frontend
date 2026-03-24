@@ -1,7 +1,7 @@
 import React from 'react';
 import { ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { ReportRow } from '../types';
-import { formatHrsMins, formatShiftTime } from '../utils/formatters';
+import { formatHrsMins, formatShiftTime, formatLateHrs } from '../utils/formatters';
 
 interface ReportTableProps {
   paginatedData: ReportRow[];
@@ -116,16 +116,11 @@ export const ReportTable: React.FC<ReportTableProps> = ({
                       {employee.present}
                     </span>
                   </td>
-                  <td className="px-6 py-5 text-center rounded-lg">
-                    {employee.late > 0 ? (
-                      <div className="flex flex-col items-center">
-                        <span className="text-sm font-bold text-yellow-600">
-                          {employee.late} days
-                        </span>
-                        <span className="text-[10px] font-medium text-yellow-600/70">
-                          {Math.floor(employee.lateMinutes / 60)}h {employee.lateMinutes % 60}m
-                        </span>
-                      </div>
+                  <td className="px-6 py-5 text-center">
+                    {employee.lateMinutes > 0 ? (
+                      <span className="text-sm font-bold text-yellow-600">
+                        {formatLateHrs(employee.lateMinutes)}
+                      </span>
                     ) : (
                       <span className="text-sm font-bold text-slate-300">—</span>
                     )}

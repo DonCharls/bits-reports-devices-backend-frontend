@@ -62,7 +62,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
         const logs = await prisma.attendanceLog.findMany({
             where: { timestamp: { gte: cutoff } },
             orderBy: { timestamp: 'asc' },
-            include: { employee: true }
+            include: { employee: { include: { Shift: true } } }
         });
 
         let created = 0;
@@ -84,13 +84,15 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
 
             if (!existingAttendance) {
                 // No record exists → This is a CHECK-IN
-                // Determine if late: check-in after 08:00 AM PHT
-                // AttendanceLog timestamps are stored as UTC where PHT midnight = UTC midnight
-                // (because convertPHTtoUTC subtracts 8 hours from device-reported PHT time)
-                // So PHT 08:00 AM = UTC 00:00 AM in our stored representation.
+                // Determine if late using SHIFT-AWARE logic (not hardcoded 8 AM)
                 const checkInPHT = new Date(log.timestamp.getTime() + 8 * 60 * 60 * 1000);
-                const isLate = checkInPHT.getUTCHours() > 8 ||
-                    (checkInPHT.getUTCHours() === 8 && checkInPHT.getUTCMinutes() > 0);
+                const empShift = log.employee?.Shift;
+                const shiftStartMins = empShift
+                    ? Number(empShift.startTime.split(':')[0]) * 60 + Number(empShift.startTime.split(':')[1])
+                    : 8 * 60; // fallback to 8:00 AM if no shift
+                const graceMins = empShift?.graceMinutes ?? 0;
+                const checkInMins = checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes();
+                const isLate = checkInMins > (shiftStartMins + graceMins);
 
                 try {
                     const createdRecord = await prisma.attendance.create({
@@ -461,7 +463,7 @@ function calculateAttendanceMetrics(record: any, shift: any) {
         const diffMins = Math.abs(checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes() - 8 * 60);
         const isAnomaly = diffMins > ANOMALY_THRESHOLD_MINS;
 
-        return { shiftCode: null, lateMinutes, overtimeMinutes: parseFloat((overtime * 60).toFixed(1)), undertimeMinutes: parseFloat((undertime * 60).toFixed(1)), totalHours, isAnomaly };
+        return { shiftCode: null, lateMinutes, overtimeMinutes: parseFloat((overtime * 60).toFixed(1)), undertimeMinutes: parseFloat((undertime * 60).toFixed(1)), totalHours, isAnomaly, isEarlyOut: false };
     }
 
     // --- Shift-aware calculation ---
@@ -516,13 +518,30 @@ function calculateAttendanceMetrics(record: any, shift: any) {
     // Expected net worked minutes (after break deduction)
     const fullExpectedMins = fullShiftMins - rawBreakMins;
 
-    // Total Hours = (checkOut - checkIn) - break (if threshold met), floored at 0
+    // Anomaly: Tap in is more than 4 hours away from expected shift start
+    const ANOMALY_THRESHOLD_MINS = 4 * 60;
+    const diffFromExpectedMins = Math.abs(Math.round((checkIn.getTime() - expectedStart.getTime()) / (1000 * 60)));
+    const isAnomaly = diffFromExpectedMins > ANOMALY_THRESHOLD_MINS;
+
+    // Total Hours = (checkOut - effectiveCheckIn) - break (if threshold met), floored at 0
     let totalHours = 0;
     let undertimeMinutes = 0;
     let overtimeMinutes = 0;
+    let isEarlyOut = false;
 
     if (checkOut) {
-        const workedMs = checkOut.getTime() - checkIn.getTime();
+        // GUARD: If employee checked out BEFORE their shift even started,
+        // they did not work any shift hours.
+        if (checkOut.getTime() <= expectedStart.getTime()) {
+            return {
+                shiftCode, lateMinutes: 0, undertimeMinutes: parseFloat(fullExpectedMins.toFixed(1)),
+                overtimeMinutes: 0, totalHours: 0, isAnomaly, isEarlyOut: true,
+            };
+        }
+
+        // CAP: Working hours only start from shift start, not from an early check-in
+        const effectiveCheckIn = new Date(Math.max(checkIn.getTime(), expectedStart.getTime()));
+        const workedMs = checkOut.getTime() - effectiveCheckIn.getTime();
         const rawWorkedMins = workedMs / (1000 * 60);
         // Deduct break only if they worked at least half the shift
         const breakMins = rawWorkedMins >= halfShiftMins ? rawBreakMins : 0;
@@ -540,12 +559,7 @@ function calculateAttendanceMetrics(record: any, shift: any) {
         overtimeMinutes = parseFloat((otMs / (1000 * 60)).toFixed(1));
     }
 
-    // Anomaly: Tap in is more than 4 hours away from expected shift start
-    const ANOMALY_THRESHOLD_MINS = 4 * 60;
-    const diffFromExpectedMins = Math.abs(Math.round((checkIn.getTime() - expectedStart.getTime()) / (1000 * 60)));
-    const isAnomaly = diffFromExpectedMins > ANOMALY_THRESHOLD_MINS;
-
-    return { shiftCode, lateMinutes, undertimeMinutes, overtimeMinutes, totalHours, isAnomaly };
+    return { shiftCode, lateMinutes, undertimeMinutes, overtimeMinutes, totalHours, isAnomaly, isEarlyOut };
 };
 
 /**

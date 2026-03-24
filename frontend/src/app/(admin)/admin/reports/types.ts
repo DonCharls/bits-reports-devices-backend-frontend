@@ -19,6 +19,7 @@ export type AttendanceRecord = {
   overtimeMinutes?: number;
   undertimeMinutes?: number;
   isAnomaly?: boolean;
+  isEarlyOut?: boolean;
   shiftCode?: string | null;
   employee: {
     id: number;

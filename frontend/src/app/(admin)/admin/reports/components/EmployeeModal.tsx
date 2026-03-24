@@ -93,7 +93,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         {/* Modal Body */}
         <div className="overflow-y-auto flex-1 min-h-0">
           {/* Summary Stats */}
-          <div className="grid grid-cols-7 divide-x divide-slate-100 border-b border-slate-100">
+          <div className="grid grid-cols-6 divide-x divide-slate-100 border-b border-slate-100">
             {[
               {
                 label: 'Attendance Rate',
@@ -107,9 +107,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
               },
               {
                 label: 'Late',
-                value: `${employee.late}d (${formatLateHrs(
-                  employee.lateMinutes
-                )})`,
+                value: employee.lateMinutes > 0 ? formatLateHrs(employee.lateMinutes) : '—',
                 color: 'text-yellow-500',
                 small: true,
               },
@@ -171,16 +169,18 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                 <th className="px-5 py-3">Date</th>
                 <th className="px-5 py-3">Check In</th>
                 <th className="px-5 py-3">Check Out</th>
-                <th className="px-5 py-3">Hours</th>
+                <th className="px-5 py-3">Worked Hrs</th>
+                <th className="px-5 py-3">Late</th>
+                <th className="px-5 py-3">OT</th>
+                <th className="px-5 py-3">UT</th>
                 <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Note</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {records.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={8}
                     className="px-5 py-16 text-center text-slate-400 font-bold uppercase text-xs tracking-widest"
                   >
                     No attendance records found
@@ -197,6 +197,8 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                   const hoursWorked = record.totalHours ?? 0;
                   const statusType = getRecordStatusFromBackend(record);
                   const lateMins = record.lateMinutes ?? 0;
+                  const otMins = record.overtimeMinutes ?? 0;
+                  const utMins = record.undertimeMinutes ?? 0;
 
                   // Row highlight for anomaly
                   const rowBg =
@@ -242,33 +244,43 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                         </span>
                       </td>
                       <td className="px-5 py-3.5">
-                        {statusType === 'anomaly' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200">
-                            <AlertTriangle className="w-3 h-3" />
-                            Anomaly
-                          </span>
+                        <span className="text-xs font-bold text-yellow-600">
+                          {lateMins > 0 ? formatLateHrs(lateMins) : '—'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className="text-xs font-bold text-blue-600">
+                          {otMins > 0 ? formatHrsMins(otMins / 60) : '—'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className="text-xs font-bold text-red-500">
+                          {utMins > 0 ? formatHrsMins(utMins / 60) : '—'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {statusType === 'early-out' ? (
+                          <div className="flex flex-col">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-700 border border-purple-200">
+                              Early Out
+                            </span>
+                            <span className="text-[9px] font-bold text-purple-500 mt-1">Left before shift</span>
+                          </div>
+                        ) : statusType === 'anomaly' ? (
+                          <div className="flex flex-col">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200">
+                              <AlertTriangle className="w-3 h-3" />
+                              Anomaly
+                            </span>
+                            <span className="text-[9px] font-bold text-orange-600 mt-1">Out of shift</span>
+                          </div>
                         ) : statusType === 'late' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-yellow-50 text-yellow-600 border border-yellow-200">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-yellow-50 text-yellow-600 border border-yellow-200 w-fit">
                             Late
                           </span>
                         ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-green-50 text-green-600 border border-green-200">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-green-50 text-green-600 border border-green-200 w-fit">
                             On Time
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        {statusType === 'anomaly' ? (
-                          <span className="text-[10px] font-bold text-orange-600">
-                            Out of shift window
-                          </span>
-                        ) : statusType === 'late' ? (
-                          <span className="text-xs font-bold text-yellow-600">
-                            {formatLateHrs(lateMins > 0 ? lateMins : 0)}
-                          </span>
-                        ) : (
-                          <span className="text-xs font-bold text-slate-300">
-                            —
                           </span>
                         )}
                       </td>

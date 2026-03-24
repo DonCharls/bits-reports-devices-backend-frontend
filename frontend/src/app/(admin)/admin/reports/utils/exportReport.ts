@@ -53,7 +53,6 @@ export const handleExport = (
   allRows.push([
     'Employee',
     'Shift',
-    'Late (Count)',
     'Late (Duration)',
     'Overtime',
     'Undertime',
@@ -69,7 +68,6 @@ export const handleExport = (
     allRows.push([
       e.name,
       shiftLabel,
-      e.late,
       formatLateHrs(e.lateMinutes),
       e.overtime > 0 ? formatHrsMins(e.overtime) : '—', // Removed + sign
       e.undertime > 0 ? formatHrsMins(e.undertime) : '—', // Removed - sign
@@ -81,7 +79,6 @@ export const handleExport = (
   worksheet['!cols'] = [
     { wch: 25 },
     { wch: 25 },
-    { wch: 12 },
     { wch: 15 },
     { wch: 12 },
     { wch: 12 },
@@ -145,8 +142,10 @@ export const handleExportIndividual = (
     'Check In',
     'Check Out',
     'Hours',
+    'Late',
+    'OT',
+    'UT',
     'Status',
-    'Late By / Note',
   ]);
   records.forEach((r) => {
     const checkIn = new Date(r.checkInTime);
@@ -168,16 +167,14 @@ export const handleExportIndividual = (
           })
         : '—',
       hoursWorked,
+      lateMins > 0 ? formatLateHrs(lateMins) : '—',
+      r.overtimeMinutes && r.overtimeMinutes > 0 ? formatHrsMins(r.overtimeMinutes / 60) : '—',
+      r.undertimeMinutes && r.undertimeMinutes > 0 ? formatHrsMins(r.undertimeMinutes / 60) : '—',
       statusLabel === 'anomaly'
         ? 'ANOMALY – Out of Shift'
         : statusLabel === 'late'
         ? 'Late'
         : 'On Time',
-      statusLabel === 'anomaly'
-        ? 'Check-in is >4h from expected shift start'
-        : statusLabel === 'late'
-        ? formatLateHrs(lateMins)
-        : '—',
     ]);
   });
 
@@ -195,8 +192,10 @@ export const handleExportIndividual = (
     { wch: 12 },
     { wch: 12 },
     { wch: 12 },
+    { wch: 12 },
+    { wch: 10 },
+    { wch: 10 },
     { wch: 22 },
-    { wch: 30 },
   ];
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance');
