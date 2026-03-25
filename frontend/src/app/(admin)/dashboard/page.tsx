@@ -137,9 +137,16 @@ export default function Dashboard() {
 
       const branchList: Branch[] = bd.success ? (bd.branches || bd.data || []) : []
       const deviceList: Device[] = dd.success ? (dd.devices || dd.data || []) : []
-      const emps: any[] = ed.success ? (ed.employees || ed.data || []) : []
-      const atts: any[] = ad.success ? (ad.data || []) : []
-      const weekAtts: any[] = wd.success ? (wd.data || []) : []
+      const allEmps: any[] = ed.success ? (ed.employees || ed.data || []) : []
+      const emps = allEmps.filter((e: any) => e.role === 'USER' || !e.role)
+      const atts: any[] = (ad.success ? (ad.data || []) : []).filter((a: any) => {
+        const emp = a.employee || a.Employee || {}
+        return emp.role === 'USER' || !emp.role
+      })
+      const weekAtts: any[] = (wd.success ? (wd.data || []) : []).filter((a: any) => {
+        const emp = a.employee || a.Employee || {}
+        return emp.role === 'USER' || !emp.role
+      })
 
       const activeCount = emps.filter(e => e.employmentStatus === 'ACTIVE').length
       const todayPHTStr = phtStr(new Date())

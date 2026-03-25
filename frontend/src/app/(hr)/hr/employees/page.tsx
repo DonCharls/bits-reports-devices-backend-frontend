@@ -38,6 +38,14 @@ interface Employee {
   }[];
 }
 
+type ShiftOption = {
+  id: number
+  shiftCode: string
+  name: string
+  startTime: string
+  endTime: string
+}
+
 function formatTime(t: string) {
   if (!t) return '';
   const [h] = t.split(':');
@@ -45,6 +53,14 @@ function formatTime(t: string) {
   const suffix = hour >= 12 ? 'PM' : 'AM';
   const display = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
   return `${display}:${t.split(':')[1]} ${suffix}`;
+}
+
+function formatPhoneNumber(value: string | null) {
+  if (!value) return '';
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 4)} ${digits.slice(4)}`;
+  return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
 }
 
 function EmployeeDirectoryContent() {
@@ -94,6 +110,17 @@ function EmployeeDirectoryContent() {
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
   const [loadingDevices, setLoadingDevices] = useState(false);
   const dragScrollRef = useHorizontalDragScroll();
+  const [shifts, setShifts] = useState<ShiftOption[]>([]);
+
+  const fetchShifts = async () => {
+    try {
+      const res = await fetch('/api/shifts');
+      const data = await res.json();
+      if (data.success) setShifts(data.shifts.filter((s: ShiftOption) => s));
+    } catch (error) {
+      console.error('Error fetching shifts:', error);
+    }
+  };
 
   // Scan modal countdown
   useEffect(() => {
@@ -152,8 +179,9 @@ function EmployeeDirectoryContent() {
   };
 
   const [regForm, setRegForm] = useState({
-    firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: ""
+    firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: ""
   });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -201,6 +229,7 @@ function EmployeeDirectoryContent() {
 
   useEffect(() => {
     fetchData();
+    fetchShifts();
   }, [fetchData]);
 
   const filteredEmployees = useMemo(() => {
@@ -249,28 +278,55 @@ function EmployeeDirectoryContent() {
   };
 
   const handleRegister = async () => {
+    const errors: Record<string, string> = {};
+    if (!regForm.firstName.trim()) errors.firstName = 'First name is required';
+    if (!regForm.lastName.trim()) errors.lastName = 'Last name is required';
+    if (!regForm.phone.trim()) errors.phone = 'Contact number is required';
+    else if (regForm.phone.replace(/\D/g, '').length !== 11) errors.phone = 'Must be exactly 11 digits';
+    if (regForm.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regForm.email.trim())) errors.email = 'Enter a valid email address';
+    if (!regForm.dept) errors.dept = 'Department is required';
+    if (!regForm.branch) errors.branch = 'Branch is required';
+    if (Object.keys(errors).length > 0) { setFormErrors(errors); return; }
+    setFormErrors({});
     setActionLoading(true);
     try {
-      const res = await fetch('/api/employees/register', {
+      const res = await fetch('/api/employees', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           firstName: regForm.firstName,
           lastName: regForm.lastName,
-          email: regForm.email,
-          contactNumber: regForm.phone,
+          email: regForm.email || undefined,
+          contactNumber: regForm.phone || undefined,
           department: regForm.dept,
           branch: regForm.branch,
-          hireDate: regForm.hireDate
+          hireDate: regForm.hireDate || undefined,
+          shiftId: regForm.shiftId ? parseInt(regForm.shiftId) : undefined,
         })
       });
-      if ((await res.json()).success) {
-        showToast('success', 'Registered', 'New employee registered successfully!');
+      const data = await res.json();
+      if (data.success) {
+        const name = `${data.employee?.firstName || ''} ${data.employee?.lastName || ''}`.trim();
+        if (data.deviceSync?.success === false) {
+          showToast('warning', 'Registered — Device Offline',
+            `${name} was saved but couldn't sync to the device. Use the 🔵 fingerprint button when the device is back online.`);
+        } else {
+          showToast('success', 'Employee Registered',
+            `${name} has been saved. Device sync is running in the background — click the 🔵 fingerprint button on their row when ready to scan.`);
+        }
         setIsRegistering(false);
-        setRegForm({ firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "" });
+        setRegForm({ firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "" });
+        setFormErrors({});
         fetchData();
+      } else {
+        showToast('error', 'Registration Failed', data.message || 'Unknown error');
       }
-    } catch (e) { console.error(e); } finally { setActionLoading(false); }
+    } catch (error) {
+      showToast('error', 'Registration Failed', 'Could not reach the server. Please try again.');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const confirmCancel = () => {
@@ -559,37 +615,128 @@ function EmployeeDirectoryContent() {
       {/* Register Modal */}
       {isRegistering && (
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-5 bg-red-600 text-white flex justify-between items-center shrink-0">
-              <h3 className="font-bold text-lg">New Employee Registration</h3>
-              <button onClick={() => setIsRegistering(false)} className="hover:opacity-70"><X size={20} /></button>
+              <div>
+                <h3 className="font-bold text-lg leading-tight tracking-tight">New Employee Registration</h3>
+                <p className="text-[10px] text-red-100 opacity-90 uppercase font-black tracking-widest mt-0.5">Add to employee directory</p>
+              </div>
+              <button onClick={() => { setIsRegistering(false); setRegForm({ firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "" }); setFormErrors({}) }} className="text-white/80 hover:text-white transition-colors">
+                <X size={20} />
+              </button>
             </div>
-            <div className="p-6 space-y-6 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-3">
-                <input type="text" placeholder="First Name" value={regForm.firstName} onChange={(e) => setRegForm({ ...regForm, firstName: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none" />
-                <input type="text" placeholder="Last Name" value={regForm.lastName} onChange={(e) => setRegForm({ ...regForm, lastName: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none" />
+            <div className="px-6 py-5 space-y-4 overflow-y-auto">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">First Name *</label>
+                  <input
+                    placeholder="First Name"
+                    className={`mt-1.5 w-full px-3 py-2.5 rounded-xl border ${formErrors.firstName ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all`}
+                    value={regForm.firstName}
+                    onChange={(e) => { setRegForm({ ...regForm, firstName: e.target.value }); setFormErrors(p => ({ ...p, firstName: '' })) }}
+                  />
+                  {formErrors.firstName && <p className="mt-1 text-[11px] text-red-500 font-semibold">{formErrors.firstName}</p>}
+                </div>
+                <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Last Name *</label>
+                  <input
+                    placeholder="Last Name"
+                    className={`mt-1.5 w-full px-3 py-2.5 rounded-xl border ${formErrors.lastName ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all`}
+                    value={regForm.lastName}
+                    onChange={(e) => { setRegForm({ ...regForm, lastName: e.target.value }); setFormErrors(p => ({ ...p, lastName: '' })) }}
+                  />
+                  {formErrors.lastName && <p className="mt-1 text-[11px] text-red-500 font-semibold">{formErrors.lastName}</p>}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <input type="email" placeholder="Email Address" value={regForm.email} onChange={(e) => setRegForm({ ...regForm, email: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none" />
-                <input type="text" placeholder="Phone Number" value={regForm.phone} onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Email Address</label>
+                  <input
+                    type="email"
+                    placeholder="example@email.com"
+                    className={`mt-1.5 w-full px-3 py-2.5 rounded-xl border ${formErrors.email ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all`}
+                    value={regForm.email}
+                    onChange={(e) => { setRegForm({ ...regForm, email: e.target.value }); setFormErrors(p => ({ ...p, email: '' })) }}
+                  />
+                  {formErrors.email && <p className="mt-1 text-[11px] text-red-500 font-semibold">{formErrors.email}</p>}
+                </div>
+                <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Contact Number *</label>
+                  <input
+                    type="tel"
+                    placeholder="09XX XXX XXXX"
+                    maxLength={13}
+                    className={`mt-1.5 w-full px-3 py-2.5 rounded-xl border ${formErrors.phone ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all`}
+                    value={regForm.phone}
+                    onChange={(e) => { setRegForm({ ...regForm, phone: formatPhoneNumber(e.target.value) }); setFormErrors(p => ({ ...p, phone: '' })) }}
+                  />
+                  {formErrors.phone && <p className="mt-1 text-[11px] text-red-500 font-semibold">{formErrors.phone}</p>}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <select value={regForm.dept} onChange={(e) => setRegForm({ ...regForm, dept: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none">
-                  <option value="">Select Department</option>
-                  {departments.map(d => (<option key={d} value={d}>{d}</option>))}
-                </select>
-                <select value={regForm.branch} onChange={(e) => setRegForm({ ...regForm, branch: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none">
-                  <option value="">Select Branch</option>
-                  {branches.map(b => (<option key={b} value={b}>{b}</option>))}
-                </select>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Department *</label>
+                  <select
+                    className={`mt-1.5 w-full px-3 py-2.5 rounded-xl border ${formErrors.dept ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none cursor-pointer transition-all appearance-none`}
+                    value={regForm.dept}
+                    onChange={(e) => { setRegForm({ ...regForm, dept: e.target.value }); setFormErrors(p => ({ ...p, dept: '' })) }}
+                  >
+                    <option value="" disabled>e.g. Human Resources</option>
+                    {departments.map(d => (<option key={d} value={d}>{d}</option>))}
+                  </select>
+                  {formErrors.dept && <p className="mt-1 text-[11px] text-red-500 font-semibold">{formErrors.dept}</p>}
+                </div>
+                <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Branch *</label>
+                  <select
+                    className={`mt-1.5 w-full px-3 py-2.5 rounded-xl border ${formErrors.branch ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none cursor-pointer transition-all appearance-none`}
+                    value={regForm.branch}
+                    onChange={(e) => { setRegForm({ ...regForm, branch: e.target.value }); setFormErrors(p => ({ ...p, branch: '' })) }}
+                  >
+                    <option value="" disabled>e.g. Cebu City</option>
+                    {branches.map(b => (<option key={b} value={b}>{b}</option>))}
+                  </select>
+                  {formErrors.branch && <p className="mt-1 text-[11px] text-red-500 font-semibold">{formErrors.branch}</p>}
+                </div>
               </div>
-              <input type="date" value={regForm.hireDate} onChange={(e) => setRegForm({ ...regForm, hireDate: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Date Hired</label>
+                  <input
+                    type="date"
+                    className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+                    value={regForm.hireDate}
+                    onChange={(e) => setRegForm({ ...regForm, hireDate: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Work Shift</label>
+                  <select
+                    className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none cursor-pointer transition-all appearance-none"
+                    value={regForm.shiftId}
+                    onChange={(e) => setRegForm({ ...regForm, shiftId: e.target.value })}
+                  >
+                    <option value="">No shift assigned</option>
+                    {shifts.map(s => (
+                      <option key={s.id} value={s.id}>[{s.shiftCode}] {s.name} ({formatTime(s.startTime)} – {formatTime(s.endTime)})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
-            <div className="p-5 bg-slate-50 flex gap-3">
-              <button onClick={() => setIsRegistering(false)} className="flex-1 px-4 py-3.5 text-sm font-bold text-slate-500">Discard</button>
-              <button onClick={handleRegister} disabled={actionLoading} className="flex-1 px-4 py-3.5 bg-red-600 text-white rounded-xl text-sm font-black flex justify-center items-center gap-2">
-                {actionLoading && <Loader2 size={16} className="animate-spin" />}
-                Register Employee
+            <div className="flex items-center justify-center gap-6 px-6 py-4 border-t border-slate-100 shrink-0">
+              <button
+                className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                onClick={() => { setIsRegistering(false); setRegForm({ firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "" }); setFormErrors({}) }}
+              >
+                Discard
+              </button>
+              <button
+                onClick={handleRegister}
+                disabled={actionLoading}
+                className="px-8 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-bold rounded-xl transition-colors flex items-center gap-2"
+              >
+                {actionLoading ? (<><Loader2 className="w-4 h-4 animate-spin" />Registering...</>) : 'Register Employee'}
               </button>
             </div>
           </div>
@@ -864,6 +1011,27 @@ function EmployeeDirectoryContent() {
           </div>
         </div>
       )}
+
+      {/* ── Enrollment Loading Full-Screen Modal ── */}
+      {(() => {
+        const enrollingIdStr = Object.keys(enrollStatus).find(id => enrollStatus[Number(id)] === 'loading');
+        if (!enrollingIdStr) return null;
+        const msg = enrollMsg[Number(enrollingIdStr)] || 'Connecting to biometric device...';
+        return (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl shadow-2xl p-8 flex flex-col items-center max-w-sm mx-4 text-center">
+              <div className="relative mb-6">
+                <div className="absolute inset-0 bg-blue-100 rounded-full animate-ping opacity-60"></div>
+                <div className="bg-blue-50 text-blue-600 p-5 rounded-full relative shadow-sm">
+                  <Loader2 className="w-10 h-10 animate-spin" />
+                </div>
+              </div>
+              <h3 className="text-lg font-bold text-slate-800 mb-2">Please Wait</h3>
+              <p className="text-sm font-medium text-slate-500">{msg}</p>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Toast Notifications ── */}
       <div className="fixed top-5 right-5 z-[9999] flex flex-col gap-2 w-80 pointer-events-none">

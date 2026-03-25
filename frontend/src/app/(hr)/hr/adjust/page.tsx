@@ -304,10 +304,13 @@ export default function AdjustmentsPage() {
                     groupMap.set(key, arr);
                     groups.push({ key, logs: arr });
                   }
-                  groupMap.get(key)!.push(log);
+                  // Only include entries where the value actually changed
+                  if (log.oldValue !== log.newValue) {
+                    groupMap.get(key)!.push(log);
+                  }
                 });
 
-                return groups.map((group) => {
+                return groups.filter(g => g.logs.length > 0).map((group) => {
                   const first = group.logs[0];
                   const emp = first.attendance?.employee;
                   const adjuster = first.adjustedBy;

@@ -286,7 +286,7 @@ export default function BiometricPage() {
   useEffect(() => { fetchRecords() }, [fetchRecords])
 
   const handleExport = () => {
-    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+    const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
     const date = new Date(selectedDate + 'T00:00:00')
     const formattedDate = `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
     const branchLabel = activeBranchId === 'all' ? 'All Branches' : (branches.find(b => b.id === activeBranchId)?.name || 'Branch')
@@ -309,10 +309,10 @@ export default function BiometricPage() {
     // ── Summary stats ──
     allRows.push(['SUMMARY'])
     allRows.push(['Total Employees', records.length, '', 'Avg Hours', `${stats.avgHours}h`])
-    allRows.push(['Present', presentCount,        '', 'Overtime Total', `${stats.totalOvertime}h`])
-    allRows.push(['Late',    lateCount,           '', 'Undertime Total', `${stats.totalUndertime}h`])
+    allRows.push(['Present', presentCount, '', 'Overtime Total', `${stats.totalOvertime}h`])
+    allRows.push(['Late', lateCount, '', 'Undertime Total', `${stats.totalUndertime}h`])
     allRows.push(['Anomaly', anomalyCount])
-    allRows.push(['Absent',  absentCount])
+    allRows.push(['Absent', absentCount])
     allRows.push([])
 
     // ── Column headers ──
@@ -326,8 +326,8 @@ export default function BiometricPage() {
     records.forEach((r, i) => {
       const statusLabel = r.isAnomaly
         ? 'Anomaly'
-        : r.status === 'IN_PROGRESS' ? 'In Progress' 
-        : r.status.charAt(0).toUpperCase() + r.status.slice(1)
+        : r.status === 'IN_PROGRESS' ? 'In Progress'
+          : r.status.charAt(0).toUpperCase() + r.status.slice(1)
       allRows.push([
         i + 1,
         r.employeeName,
@@ -477,11 +477,10 @@ export default function BiometricPage() {
                         <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">{row.department} • {row.branchName}</p>
                       </div>
                       <div className="shrink-0">
-                        <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${
-                          row.status === 'present' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
-                          : row.status === 'late' ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
-                          : 'text-red-500 bg-red-500/10 border-red-500/20'
-                        }`}>
+                        <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${row.status === 'present' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
+                            : row.status === 'late' ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
+                              : 'text-red-500 bg-red-500/10 border-red-500/20'
+                          }`}>
                           {row.status === 'present' ? 'On Time' : row.status}
                         </span>
                       </div>
@@ -539,11 +538,10 @@ export default function BiometricPage() {
                     </td>
                     <td className="px-4 py-4 text-sm font-mono font-bold">
                       <div className="flex flex-col">
-                        <span className={`${
-                          record.status === 'late' ? 'text-yellow-500' :
-                          record.status === 'present' ? 'text-emerald-500' :
-                          'text-muted-foreground'
-                        }`}>{record.checkIn}</span>
+                        <span className={`${record.status === 'late' ? 'text-yellow-500' :
+                            record.status === 'present' ? 'text-emerald-500' :
+                              'text-muted-foreground'
+                          }`}>{record.checkIn}</span>
                         {record.gracePeriodApplied && (
                           <span className="text-[9px] text-slate-400 mt-0.5" title="Check-in was late but within allowed grace period">
                             Grace Period

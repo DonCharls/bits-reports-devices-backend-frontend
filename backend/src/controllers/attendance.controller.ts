@@ -191,6 +191,7 @@ export const getEmployeeHistory = async (req: Request, res: Response) => {
 /**
  * Manually update an attendance record (HR correction)
  * Body: { checkInTime?, checkOutTime?, status?, reason? }
+ * Creates AuditLog entries for each changed field.
  */
 export const updateAttendance = async (req: Request, res: Response) => {
     try {
@@ -203,43 +204,235 @@ export const updateAttendance = async (req: Request, res: Response) => {
         }
 
         const { checkInTime, checkOutTime, status, reason } = req.body;
+        const adjustedById = req.user?.employeeId;
 
-        const existing = await prisma.attendance.findUnique({ where: { id: recordId } });
+        if (!adjustedById) {
+            res.status(401).json({ success: false, message: 'Not authenticated' });
+            return;
+        }
+
+        const existing = await prisma.attendance.findUnique({
+            where: { id: recordId },
+            include: { employee: { include: { Shift: true } } }
+        });
         if (!existing) {
             res.status(404).json({ success: false, message: 'Attendance record not found' });
             return;
         }
 
         const updateData: any = {};
-        if (checkInTime) updateData.checkInTime = new Date(checkInTime);
-        if (checkOutTime !== undefined) updateData.checkOutTime = checkOutTime ? new Date(checkOutTime) : null;
-        if (status) updateData.status = status.toLowerCase();
+        const auditEntries: { field: string; oldValue: string | null; newValue: string | null }[] = [];
 
+        // Track checkInTime changes
+        if (checkInTime) {
+            const oldVal = existing.checkInTime ? existing.checkInTime.toISOString() : null;
+            const newDate = new Date(checkInTime);
+            updateData.checkInTime = newDate;
+            updateData.checkin_updated = new Date();
+            auditEntries.push({
+                field: 'checkInTime',
+                oldValue: oldVal,
+                newValue: newDate.toISOString(),
+            });
+
+            // Auto-recalculate status based on new checkInTime vs shift
+            const shift = existing.employee?.Shift;
+            if (shift) {
+                const [startH, startM] = shift.startTime.split(':').map(Number);
+                const grace = shift.graceMinutes || 0;
+                // Convert checkIn to PHT for comparison
+                const checkInPHT = new Date(newDate.getTime() + 8 * 60 * 60 * 1000);
+                const checkInMinutes = checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes();
+                const shiftStartMinutes = startH * 60 + startM + grace;
+
+                if (checkInMinutes <= shiftStartMinutes) {
+                    updateData.status = 'present';
+                } else {
+                    updateData.status = 'late';
+                }
+
+                // If status changed, log it
+                if (updateData.status !== existing.status) {
+                    auditEntries.push({
+                        field: 'status',
+                        oldValue: existing.status,
+                        newValue: updateData.status,
+                    });
+                }
+            }
+        }
+
+        // Track checkOutTime changes
+        if (checkOutTime !== undefined) {
+            const oldVal = existing.checkOutTime ? existing.checkOutTime.toISOString() : null;
+            const newVal = checkOutTime ? new Date(checkOutTime) : null;
+            updateData.checkOutTime = newVal;
+            updateData.checkout_updated = new Date();
+            auditEntries.push({
+                field: 'checkOutTime',
+                oldValue: oldVal,
+                newValue: newVal ? newVal.toISOString() : null,
+            });
+        }
+
+        // Track manual status override
+        if (status && !updateData.status) {
+            auditEntries.push({
+                field: 'status',
+                oldValue: existing.status,
+                newValue: status.toLowerCase(),
+            });
+            updateData.status = status.toLowerCase();
+        }
+
+        // Apply the update
         const updated = await prisma.attendance.update({
             where: { id: recordId },
             data: updateData
+        });
+
+        // Create audit log entries
+        if (auditEntries.length > 0) {
+            await prisma.attendanceAuditLog.createMany({
+                data: auditEntries.map(entry => ({
+                    attendanceId: recordId,
+                    adjustedById,
+                    field: entry.field,
+                    oldValue: entry.oldValue,
+                    newValue: entry.newValue,
+                    reason: reason || null,
+                })),
+            });
+        }
+
+        // Emit SSE event so dashboards update in real-time
+        attendanceEmitter.emit('new-record', {
+            type: 'update',
+            record: updated,
         });
 
         res.json({
             success: true,
             message: 'Attendance record updated successfully',
             data: updated,
-            reason: reason || null
+            auditEntries: auditEntries.length,
         });
     } catch (error: any) {
-        if (error?.code === 'P2002') {
-            res.status(409).json({
-                success: false,
-                message: 'Attendance record already exists for this employee today.'
-            });
-            return;
-        }
         console.error('Update Attendance Failed:', error);
         res.status(500).json({
             success: false,
             message: 'An unexpected error occurred. Please try again.'
         });
     }
+};
+
+/**
+ * GET /api/attendance/audit-logs
+ * Returns audit log entries with optional filters: date, search, branch
+ */
+export const getAttendanceAuditLogs = async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 15;
+    const search = (req.query.search as string) || '';
+    const branch = (req.query.branch as string) || '';
+    const date = (req.query.date as string) || '';
+
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+
+    if (branch) {
+      where.attendance = {
+        employee: { branch }
+      };
+    }
+
+    if (date) {
+      const start = new Date(date);
+      start.setUTCHours(0, 0, 0, 0);
+      const end = new Date(date);
+      end.setUTCHours(23, 59, 59, 999);
+      where.createdAt = { gte: start, lte: end };
+    }
+
+    if (search) {
+      where.OR = [
+        {
+          attendance: {
+            employee: {
+              OR: [
+                { firstName: { contains: search, mode: 'insensitive' } },
+                { lastName: { contains: search, mode: 'insensitive' } },
+              ]
+            }
+          }
+        },
+        {
+          adjustedBy: {
+            OR: [
+              { firstName: { contains: search, mode: 'insensitive' } },
+              { lastName: { contains: search, mode: 'insensitive' } },
+            ]
+          }
+        }
+      ];
+    }
+
+    const [total, logs] = await Promise.all([
+      prisma.attendanceAuditLog.count({ where }),
+      prisma.attendanceAuditLog.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          field: true,
+          oldValue: true,
+          newValue: true,
+          reason: true,
+          createdAt: true,
+          attendance: {
+            select: {
+              employee: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                  branch: true,
+                  role: true,
+                }
+              }
+            }
+          },
+          adjustedBy: {
+            select: {
+              firstName: true,
+              lastName: true,
+              role: true,
+            }
+          }
+        }
+      })
+    ]);
+
+    return res.json({
+      success: true,
+      data: logs,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      }
+    });
+  } catch (error: any) {
+    console.error('Error fetching attendance audit logs:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch audit logs',
+    });
+  }
 };
 
 /**

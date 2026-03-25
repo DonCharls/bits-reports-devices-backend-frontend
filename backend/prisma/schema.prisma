@@ -25,6 +25,25 @@ model Attendance {
   @@index([date])
   @@index([employeeId])
   @@index([status])
+  AttendanceAuditLog  AttendanceAuditLog[]
+}
+
+model AttendanceAuditLog {
+  id            Int      @id @default(autoincrement())
+  attendanceId  Int
+  adjustedById  Int
+  field         String
+  oldValue      String?
+  newValue      String?
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  attendance    Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  adjustedBy    Employee   @relation("AdjustedBy", fields: [adjustedById], references: [id])
+
+  @@index([attendanceId])
+  @@index([adjustedById])
+  @@index([createdAt])
 }
 
 model AttendanceLog {
@@ -109,8 +128,9 @@ model Employee {
   Department     Department?     @relation(fields: [departmentId], references: [id])
   Branch         Branch?         @relation(fields: [branchId], references: [id])
   Shift          Shift?          @relation(fields: [shiftId], references: [id])
-  AuditLogs      AuditLog[]
-
+  AttendanceAuditLogAdjusted AttendanceAuditLog[]  @relation("AdjustedBy")
+  AuditLogs                  AuditLog[]
+  
   @@index([departmentId])
   @@index([branchId])
   @@index([shiftId])

@@ -309,42 +309,97 @@ export const autoCloseIncompleteAttendance = async (): Promise<number> => {
 
 /**
  * Auto-checkout employees who haven't manually checked out
- * Runs at 11:59 PM and sets checkout time to 5:00 PM for flexibility
- * This allows employees to work overtime while preventing unrealistic work hours for forgotten checkouts
+ * Runs at 11:59 PM and uses each employee's assigned shift end time.
+ * Falls back to 5:00 PM for employees without an assigned shift.
+ * Night shifts correctly check out on the next calendar day.
  */
 export const autoCheckoutEmployees = async (): Promise<number> => {
     try {
-        // Get today's date in PHT
         const today = getTodayPHT();
 
-        // Create checkout time at 5:00 PM Philippine Time
-        // PHT midnight + 17 hours = 5 PM PHT
-        const autoCheckoutTime = new Date(today.getTime() + 17 * 60 * 60 * 1000);
-
-        // Find all records for TODAY that still don't have a checkout time
-        const result = await prisma.attendance.updateMany({
+        const incompleteRecords = await prisma.attendance.findMany({
             where: {
                 date: today,
-                checkOutTime: null
+                checkOutTime: null,
             },
-            data: {
-                checkOutTime: autoCheckoutTime,
-                notes: 'Auto checkout - No manual checkout detected by 11:59 PM',
-                updatedAt: new Date()
+            include: {
+                employee: {
+                    include: { Shift: true }
+                }
             }
         });
 
-        if (result.count > 0) {
+        if (incompleteRecords.length === 0) return 0;
+
+        let count = 0;
+
+        for (const record of incompleteRecords) {
+            const shift = record.employee?.Shift ?? null;
+
+            let checkoutHour = 17;
+            let checkoutMin = 0;
+            let shiftLabel = 'default (no shift assigned)';
+
+            if (shift) {
+                const [h, m] = shift.endTime.split(':').map(Number);
+                checkoutHour = h;
+                checkoutMin = m;
+                shiftLabel = shift.name;
+            }
+
+            // For night shifts, the end time belongs to the NEXT calendar day.
+            // Push the base forward by 24 hours before adding the end time hours.
+            const checkoutBase = (shift?.isNightShift)
+                ? new Date(record.date.getTime() + 24 * 60 * 60 * 1000)
+                : new Date(record.date.getTime());
+
+            const autoCheckoutTime = new Date(
+                checkoutBase.getTime() +
+                (checkoutHour * 60 + checkoutMin) * 60 * 1000
+            );
+
+            // Safety guard: never write a checkout that is at or before check-in.
+            // This can happen with misconfigured shift data or very late check-ins.
+            if (autoCheckoutTime <= record.checkInTime) {
+                console.warn(
+                    `[Attendance] Auto-checkout skipped for employee ${record.employeeId} ` +
+                    `on ${record.date.toISOString().split('T')[0]} — calculated checkout ` +
+                    `(${autoCheckoutTime.toISOString()}) is before or equal to check-in ` +
+                    `(${record.checkInTime.toISOString()}). Needs manual correction.`
+                );
+                continue;
+            }
+
+            await prisma.attendance.update({
+                where: { id: record.id },
+                data: {
+                    checkOutTime: autoCheckoutTime,
+                    notes: `Auto checkout — estimated shift end (${shiftLabel})`,
+                    updatedAt: new Date()
+                }
+            });
+
+            count++;
+            console.log(
+                `[Attendance] Auto-checkout set for employee ${record.employeeId} ` +
+                `at ${autoCheckoutTime.toISOString()} (${shiftLabel})`
+            );
+        }
+
+        if (count > 0) {
             await audit({
                 action: 'AUTO_CHECKOUT',
                 entityType: 'System',
                 source: 'cron',
-                details: `Auto-checkout applied to ${result.count} records at 5:00 PM`
+                details: `Auto-checkout applied to ${count} records`
             });
         }
 
-        console.log(`[Attendance] Auto-checkout completed: ${result.count} employees checked out at 5:00 PM`);
-        return result.count;
+        console.log(
+            `[Attendance] Auto-checkout completed: ${count} processed, ` +
+            `${incompleteRecords.length - count} skipped.`
+        );
+        return count;
     } catch (error: any) {
         console.error('[Attendance] Error during auto-checkout:', error);
         return 0;
@@ -353,40 +408,80 @@ export const autoCheckoutEmployees = async (): Promise<number> => {
 
 /**
  * Startup Repair: Fix any missing checkouts from previous days
- * This ensures that if the server was off at 11:59 PM, the records are fixed on next startup
+ * This ensures that if the server was off at 11:59 PM, the records are fixed on next startup.
+ * Uses each employee's assigned shift end time; falls back to 5:00 PM.
  */
 export const repairMissingCheckouts = async (): Promise<number> => {
     try {
         const today = getTodayPHT();
 
-        // Find all records from dates BEFORE today that have no checkout time
         const records = await prisma.attendance.findMany({
             where: {
                 date: { lt: today },
                 checkOutTime: null
+            },
+            include: {
+                employee: {
+                    include: { Shift: true }
+                }
             }
         });
 
         if (records.length === 0) return 0;
 
         let repairedCount = 0;
+
         for (const record of records) {
-            // Set checkout time to 5:00 PM PHT for that specific date
-            // record.date is PHT midnight in UTC, so +17 hours = 5 PM PHT
-            const repairTime = new Date(record.date.getTime() + 17 * 60 * 60 * 1000);
+            const shift = record.employee?.Shift ?? null;
+
+            let checkoutHour = 17;
+            let checkoutMin = 0;
+            let shiftLabel = 'default (no shift assigned)';
+
+            if (shift) {
+                const [h, m] = shift.endTime.split(':').map(Number);
+                checkoutHour = h;
+                checkoutMin = m;
+                shiftLabel = shift.name;
+            }
+
+            // For night shifts, the end time belongs to the NEXT calendar day.
+            const checkoutBase = (shift?.isNightShift)
+                ? new Date(record.date.getTime() + 24 * 60 * 60 * 1000)
+                : new Date(record.date.getTime());
+
+            const repairTime = new Date(
+                checkoutBase.getTime() +
+                (checkoutHour * 60 + checkoutMin) * 60 * 1000
+            );
+
+            // Safety guard: skip impossible checkouts
+            if (repairTime <= record.checkInTime) {
+                console.warn(
+                    `[Attendance] Startup repair skipped for employee ${record.employeeId} ` +
+                    `on ${record.date.toISOString().split('T')[0]} — checkout would be ` +
+                    `before or equal to check-in. Needs manual correction.`
+                );
+                continue;
+            }
 
             await prisma.attendance.update({
                 where: { id: record.id },
                 data: {
                     checkOutTime: repairTime,
-                    status: 'present', // Assume present if they checked in but forgot to check out
+                    status: 'present',
                     notes: record.notes
-                        ? `${record.notes} | Auto-checkout set to 5:00 PM (Forgotten checkout)`
-                        : 'Auto-checkout set to 5:00 PM (Forgotten checkout)',
+                        ? `${record.notes} | Auto-repair: estimated shift end (${shiftLabel})`
+                        : `Auto-repair: estimated shift end (${shiftLabel})`,
                     updatedAt: new Date()
                 }
             });
+
             repairedCount++;
+            console.log(
+                `[Attendance] Startup repair: fixed employee ${record.employeeId} ` +
+                `on ${record.date.toISOString().split('T')[0]} (${shiftLabel})`
+            );
         }
 
         if (repairedCount > 0) {
@@ -398,8 +493,12 @@ export const repairMissingCheckouts = async (): Promise<number> => {
             });
         }
 
-        console.log(`[Attendance] Startup Repair: Fixed ${repairedCount} missing checkouts from previous days`);
+        console.log(
+            `[Attendance] Startup repair complete: fixed ${repairedCount} records, ` +
+            `${records.length - repairedCount} skipped.`
+        );
         return repairedCount;
+
     } catch (error: any) {
         console.error('[Attendance] Error during startup repair:', error);
         return 0;

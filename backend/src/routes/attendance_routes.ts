@@ -7,6 +7,7 @@ import {
     getEmployeeHistory,
     updateAttendance,
     streamAttendance,
+    getAttendanceAuditLogs,
 } from '../controllers/attendance.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { adminOrHR } from '../middleware/role.middleware';
@@ -195,6 +196,8 @@ router.get('/employee/:id', getEmployeeHistory);
  *       200:
  *         description: Record updated
  */
+router.get('/audit-logs', getAttendanceAuditLogs);
+
 router.put('/:id', updateAttendance);
 
 export default router;

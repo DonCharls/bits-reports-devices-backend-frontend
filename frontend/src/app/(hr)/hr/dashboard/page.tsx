@@ -128,9 +128,16 @@ export default function HRDashboard() {
       const wd = await wRes.json();
 
       const branchList: any[] = bd.success ? (bd.branches || bd.data || []) : [];
-      const emps: any[] = ed.success ? (ed.employees || ed.data || []) : [];
-      const atts: any[] = ad.success ? (ad.data || []) : [];
-      const weekAtts: any[] = wd.success ? (wd.data || []) : [];
+      const allEmps: any[] = ed.success ? (ed.employees || ed.data || []) : [];
+      const emps = allEmps.filter((e: any) => e.role === 'USER' || !e.role);
+      const atts: any[] = (ad.success ? (ad.data || []) : []).filter((a: any) => {
+        const emp = a.employee || a.Employee || {};
+        return emp.role === 'USER' || !emp.role;
+      });
+      const weekAtts: any[] = (wd.success ? (wd.data || []) : []).filter((a: any) => {
+        const emp = a.employee || a.Employee || {};
+        return emp.role === 'USER' || !emp.role;
+      });
 
       // ── KPI Calculations ──
       const activeCount = emps.filter(e => e.employmentStatus === 'ACTIVE').length;

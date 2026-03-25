@@ -57,7 +57,7 @@ function SidebarInner({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollaps
   ];
 
   const activeIndex = allItems.findIndex(item =>
-    'matchFn' in item ? item.matchFn(pathname) : item.matchPrefix ? pathname.startsWith(item.matchPrefix) : pathname === item.href
+    'matchFn' in item ? item.matchFn?.(pathname) : item.matchPrefix ? pathname.startsWith(item.matchPrefix) : pathname === item.href
   );
 
   const updateIndicator = useCallback(() => {
