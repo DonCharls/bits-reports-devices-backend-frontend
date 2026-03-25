@@ -133,6 +133,7 @@ model Shift {
   description  String?
   workDays     String     @default("[\"Mon\",\"Tue\",\"Wed\",\"Thu\",\"Fri\"]")
   halfDays     String     @default("[]")
+  breaks       String     @default("[]")
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   Employee     Employee[]

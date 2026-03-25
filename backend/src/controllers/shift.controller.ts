@@ -40,7 +40,7 @@ export const getShiftById = async (req: Request, res: Response) => {
 // POST /api/shifts - Create a shift
 export const createShift = async (req: Request, res: Response) => {
     try {
-        const { shiftCode, name, startTime, endTime, graceMinutes, breakMinutes, isNightShift, description, workDays, halfDays } = req.body;
+        const { shiftCode, name, startTime, endTime, graceMinutes, breakMinutes, isNightShift, description, workDays, halfDays, breaks } = req.body;
 
         if (!shiftCode?.trim() || !name?.trim() || !startTime?.trim() || !endTime?.trim()) {
             return res.status(400).json({
@@ -73,6 +73,7 @@ export const createShift = async (req: Request, res: Response) => {
                 description: description?.trim() || null,
                 workDays: Array.isArray(workDays) ? JSON.stringify(workDays) : '["Mon","Tue","Wed","Thu","Fri"]',
                 halfDays: Array.isArray(halfDays) ? JSON.stringify(halfDays) : '[]',
+                breaks: Array.isArray(breaks) ? JSON.stringify(breaks) : '[]',
             }
         });
 
@@ -101,7 +102,7 @@ export const updateShift = async (req: Request, res: Response) => {
         const existing = await prisma.shift.findUnique({ where: { id } });
         if (!existing) return res.status(404).json({ success: false, message: 'Shift not found' });
 
-        const { shiftCode, name, startTime, endTime, graceMinutes, breakMinutes, isNightShift, isActive, description, workDays, halfDays } = req.body;
+        const { shiftCode, name, startTime, endTime, graceMinutes, breakMinutes, isNightShift, isActive, description, workDays, halfDays, breaks } = req.body;
 
         const timeRegex = /^([01]?\d|2[0-3]):([0-5]\d)$/;
         if (startTime && !timeRegex.test(startTime)) return res.status(400).json({ success: false, message: 'startTime must be H:MM or HH:MM (24-hour)' });
@@ -129,6 +130,7 @@ export const updateShift = async (req: Request, res: Response) => {
             ...(description !== undefined && { description: description?.trim() || null }),
             ...(workDays !== undefined && { workDays: Array.isArray(workDays) ? JSON.stringify(workDays) : workDays }),
             ...(halfDays !== undefined && { halfDays: Array.isArray(halfDays) ? JSON.stringify(halfDays) : halfDays }),
+            ...(breaks !== undefined && { breaks: Array.isArray(breaks) ? JSON.stringify(breaks) : breaks }),
         };
 
         const shift = await prisma.shift.update({

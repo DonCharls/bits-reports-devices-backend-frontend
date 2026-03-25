@@ -24,7 +24,7 @@ export const getAllEmployees = async (req: Request, res: Response) => {
                 hireDate: true,
                 employmentStatus: true,
                 shiftId: true,
-                Shift: { select: { id: true, name: true, shiftCode: true, startTime: true, endTime: true } },
+                Shift: { select: { id: true, name: true, shiftCode: true, startTime: true, endTime: true, workDays: true, halfDays: true, graceMinutes: true, breakMinutes: true, breaks: true } },
                 createdAt: true, EmployeeDeviceEnrollment: {
                     select: {
                         enrolledAt: true,
@@ -596,7 +596,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
                 hireDate: true,
                 employmentStatus: true,
                 shiftId: true,
-                Shift: { select: { id: true, name: true, shiftCode: true } },
+                Shift: { select: { id: true, name: true, shiftCode: true, startTime: true, endTime: true, workDays: true, halfDays: true, graceMinutes: true, breakMinutes: true, breaks: true } },
                 createdAt: true,
                 updatedAt: true
             },

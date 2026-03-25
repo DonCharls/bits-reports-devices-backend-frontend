@@ -21,6 +21,7 @@ interface Shift {
     description: string | null
     workDays: string
     halfDays: string
+    breaks: string
     _count: { Employee: number }
 }
 
@@ -31,6 +32,7 @@ const emptyForm = {
     graceMinutes: 0, breakMinutes: 60, isNightShift: false, description: '',
     workDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as string[],
     halfDays: [] as string[],
+    breaks: [] as { start: string, end: string, name: string }[],
 }
 
 function formatTime(t: string) {
@@ -50,6 +52,33 @@ function calcDuration(start: string, end: string, isNight: boolean) {
     if (isNight && mins <= 0) mins += 24 * 60
     const h = Math.floor(mins / 60), m = mins % 60
     return `${h}h${m > 0 ? ` ${m}m` : ''}`
+}
+
+function calcBreaksDuration(breaksJson: string, breakMinutes: number) {
+    try {
+        const arr = JSON.parse(breaksJson || '[]');
+        if (arr.length === 0) return breakMinutes;
+        return arr.reduce((acc: number, b: any) => {
+            if (!b.start || !b.end) return acc;
+            const [sh, sm] = b.start.split(':').map(Number);
+            const [eh, em] = b.end.split(':').map(Number);
+            let diff = (eh * 60 + em) - (sh * 60 + sm);
+            if (diff < 0) diff += 24 * 60;
+            return acc + diff;
+        }, 0);
+    } catch { return breakMinutes; }
+}
+
+function calcFormBreaks(breaksArr: any[], fallback: number) {
+    if (!breaksArr || breaksArr.length === 0) return fallback;
+    return breaksArr.reduce((acc: number, b: any) => {
+        if (!b.start || !b.end) return acc;
+        const [sh, sm] = b.start.split(':').map(Number);
+        const [eh, em] = b.end.split(':').map(Number);
+        let diff = (eh * 60 + em) - (sh * 60 + sm);
+        if (diff < 0) diff += 24 * 60;
+        return acc + diff;
+    }, 0);
 }
 
 export default function HRShiftsPage() {
@@ -95,7 +124,9 @@ export default function HRShiftsPage() {
         try { parsedDays = JSON.parse(s.workDays || '[]') } catch { }
         let parsedHalfDays: string[] = []
         try { parsedHalfDays = JSON.parse(s.halfDays || '[]') } catch { }
-        setForm({ shiftCode: s.shiftCode, name: s.name, startTime: s.startTime, endTime: s.endTime, graceMinutes: s.graceMinutes, breakMinutes: s.breakMinutes, isNightShift: s.isNightShift, description: s.description || '', workDays: parsedDays, halfDays: parsedHalfDays })
+        let parsedBreaks: any[] = []
+        try { parsedBreaks = JSON.parse(s.breaks || '[]') } catch { }
+        setForm({ shiftCode: s.shiftCode, name: s.name, startTime: s.startTime, endTime: s.endTime, graceMinutes: s.graceMinutes, breakMinutes: s.breakMinutes, isNightShift: s.isNightShift, description: s.description || '', workDays: parsedDays, halfDays: parsedHalfDays, breaks: parsedBreaks })
         setFormError(''); setIsFormOpen(true)
     }
 
@@ -205,9 +236,42 @@ export default function HRShiftsPage() {
                                     <input type="number" min={0} max={60} value={form.graceMinutes} onChange={e => setForm(f => ({ ...f, graceMinutes: parseInt(e.target.value) || 0 }))} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none" />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[9px] font-black uppercase text-slate-400">Break Duration (mins)</label>
-                                    <input type="number" min={0} max={180} value={form.breakMinutes} onChange={e => setForm(f => ({ ...f, breakMinutes: parseInt(e.target.value) || 0 }))} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none" />
+                                    <label className="text-[9px] font-black uppercase text-slate-400">Total Breaks (mins)</label>
+                                    <div className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-500 flex items-center justify-between">
+                                        <span>Auto-calculated</span>
+                                        <span className="text-red-600 font-black">
+                                            {form.breaks.reduce((acc, b) => {
+                                                if (!b.start || !b.end) return acc;
+                                                const [startH, startM] = b.start.split(':').map(Number);
+                                                const [endH, endM] = b.end.split(':').map(Number);
+                                                let diff = (endH * 60 + endM) - (startH * 60 + startM);
+                                                if (diff < 0) diff += 24 * 60;
+                                                return acc + diff;
+                                            }, 0)}m
+                                        </span>
+                                    </div>
                                 </div>
+                            </div>
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-[9px] font-black uppercase text-slate-400">Scheduled Breaks</label>
+                                    <button type="button" onClick={() => setForm(f => ({ ...f, breaks: [...f.breaks, { start: '', end: '', name: 'Break' }] }))} className="text-[10px] font-bold text-red-600 flex items-center gap-1 hover:text-red-700 active:scale-95 transition-all"><Plus size={12} /> Add Break</button>
+                                </div>
+                                {form.breaks.length === 0 ? (
+                                    <div className="w-full p-3 bg-amber-50 rounded-xl border border-amber-200 text-center text-xs font-bold text-amber-600 flex items-center justify-center gap-2"><AlertTriangle size={14} /> No breaks defined</div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {form.breaks.map((b, i) => (
+                                            <div key={i} className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-2 rounded-xl">
+                                                <input type="text" placeholder="Name" value={b.name} onChange={e => setForm(f => { const newBreaks = [...f.breaks]; newBreaks[i].name = e.target.value; return { ...f, breaks: newBreaks }; })} className="w-1/3 p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                                                <input type="time" value={b.start} onChange={e => setForm(f => { const newBreaks = [...f.breaks]; newBreaks[i].start = e.target.value; return { ...f, breaks: newBreaks }; })} className="w-1/3 p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                                                <span className="text-slate-400 font-bold">-</span>
+                                                <input type="time" value={b.end} onChange={e => setForm(f => { const newBreaks = [...f.breaks]; newBreaks[i].end = e.target.value; return { ...f, breaks: newBreaks }; })} className="w-1/3 p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                                                <button type="button" onClick={() => setForm(f => ({ ...f, breaks: f.breaks.filter((_, index) => index !== i) }))} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"><Trash2 size={14} /></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                             <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-3">
                                 <div className="flex items-center gap-2">
@@ -261,7 +325,7 @@ export default function HRShiftsPage() {
                                     <Clock size={16} className="text-red-500 shrink-0" />
                                     <div className="text-xs text-red-700 font-bold">
                                         {formatTime(form.startTime)} → {formatTime(form.endTime)}
-                                        <span className="text-red-400 font-medium ml-2">({calcDuration(form.startTime, form.endTime, form.isNightShift)} · {form.breakMinutes}m break)</span>
+                                        <span className="text-red-400 font-medium ml-2">({calcDuration(form.startTime, form.endTime, form.isNightShift)} · {calcFormBreaks(form.breaks, form.breakMinutes)}m break)</span>
                                     </div>
                                 </div>
                             )}
@@ -372,7 +436,7 @@ export default function HRShiftsPage() {
                                 <td className="px-6 py-4">
                                     <div className="flex items-center gap-3">
                                         <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">{s.graceMinutes}m grace</span>
-                                        <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500"><Coffee size={11} className="text-slate-400" />{s.breakMinutes}m break</div>
+                                        <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500"><Coffee size={11} className="text-slate-400" />{calcBreaksDuration(s.breaks, s.breakMinutes)}m break</div>
                                     </div>
                                 </td>
                                 <td className="px-6 py-4"><div className="flex items-center gap-1.5"><Users size={13} className="text-slate-400" /><span className="text-xs font-bold text-slate-600">{s._count.Employee}</span></div></td>

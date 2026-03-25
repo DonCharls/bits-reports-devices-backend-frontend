@@ -3,7 +3,8 @@ import { AttendanceRecord } from '../types';
 /** Derive a display status from backend-enriched record fields */
 export const getRecordStatusFromBackend = (
   r: AttendanceRecord
-): 'early-out' | 'anomaly' | 'late' | 'on-time' => {
+): 'early-out' | 'anomaly' | 'late' | 'on-time' | 'in-progress' => {
+  if (r.isShiftActive) return 'in-progress';
   if (r.isEarlyOut) return 'early-out';
   if (r.isAnomaly) return 'anomaly';
   if ((r.lateMinutes ?? 0) > 0 || r.status === 'late') return 'late';

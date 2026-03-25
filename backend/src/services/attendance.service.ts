@@ -509,7 +509,23 @@ function calculateAttendanceMetrics(record: any, shift: any) {
         const diffMins = Math.abs(checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes() - 8 * 60);
         const isAnomaly = diffMins > ANOMALY_THRESHOLD_MINS;
 
-        return { shiftCode: null, lateMinutes, overtimeMinutes: parseFloat((overtime * 60).toFixed(1)), undertimeMinutes: parseFloat((undertime * 60).toFixed(1)), totalHours, isAnomaly, isEarlyOut: false };
+        const isShiftActive = !!record.checkInTime && !record.checkOutTime;
+        const status = isShiftActive ? "IN_PROGRESS" : record.status;
+
+        return { 
+            shiftCode: null, 
+            lateMinutes, 
+            overtimeMinutes: parseFloat((overtime * 60).toFixed(1)), 
+            undertimeMinutes: parseFloat((undertime * 60).toFixed(1)), 
+            totalHours, 
+            isAnomaly, 
+            isEarlyOut: false,
+            isShiftActive,
+            status,
+            gracePeriodApplied: false,
+            latePenaltyMinutes: lateMinutes,
+            workedHours: totalHours
+        };
     }
 
     // --- Shift-aware calculation ---
@@ -539,6 +555,31 @@ function calculateAttendanceMetrics(record: any, shift: any) {
     const dayName = dayNames[phtDate.getUTCDay()];
     const isHalfDay = halfDays.includes(dayName);
 
+    // Parse explicit breaks
+    let explicitBreaks: { start: Date, end: Date }[] = [];
+    try {
+        const parsedBreaks = JSON.parse(shift.breaks || '[]');
+        explicitBreaks = parsedBreaks.map((b: any) => {
+            const [bhStart, bmStart] = b.start.split(':').map(Number);
+            const [bhEnd, bmEnd] = b.end.split(':').map(Number);
+            
+            let bStart = new Date(dateMs + (bhStart * 60 + bmStart) * 60 * 1000 - 8 * 60 * 60 * 1000);
+            let bEnd = new Date(dateMs + (bhEnd * 60 + bmEnd) * 60 * 1000 - 8 * 60 * 60 * 1000);
+            
+            if (shift.isNightShift && bhStart < startH) bStart = new Date(bStart.getTime() + 24 * 60 * 60 * 1000);
+            if (shift.isNightShift && bhEnd < startH) bEnd = new Date(bEnd.getTime() + 24 * 60 * 60 * 1000);
+
+            return { start: bStart, end: bEnd };
+        });
+    } catch (e) { }
+
+    let calculatedBreakMins = 0;
+    if (explicitBreaks.length > 0) {
+        explicitBreaks.forEach(b => {
+             calculatedBreakMins += (b.end.getTime() - b.start.getTime()) / 60000;
+        });
+    }
+
     if (isHalfDay) {
         // Expected end = midpoint between start and full end
         const halfMs = (expectedEnd.getTime() - expectedStart.getTime()) / 2;
@@ -553,7 +594,7 @@ function calculateAttendanceMetrics(record: any, shift: any) {
 
     // Only deduct break if employee worked at least HALF of the full shift.
     // This prevents a lunch deduction for short / partial-day attendances.
-    const rawBreakMins = isHalfDay ? 0 : (shift.breakMinutes ?? 60);
+    const rawBreakMins = isHalfDay ? 0 : (explicitBreaks.length > 0 ? calculatedBreakMins : (shift.breakMinutes ?? 60));
     const halfShiftMins = fullShiftMins / 2;
 
     // Late: actual check-in minus (expected start + grace)
@@ -582,21 +623,54 @@ function calculateAttendanceMetrics(record: any, shift: any) {
             return {
                 shiftCode, lateMinutes: 0, undertimeMinutes: parseFloat(fullExpectedMins.toFixed(1)),
                 overtimeMinutes: 0, totalHours: 0, isAnomaly, isEarlyOut: true,
+                isShiftActive: false, status: record.status, gracePeriodApplied: false,
+                latePenaltyMinutes: 0, workedHours: 0
             };
         }
 
         // CAP: Working hours only start from shift start, not from an early check-in
         const effectiveCheckIn = new Date(Math.max(checkIn.getTime(), expectedStart.getTime()));
-        const workedMs = checkOut.getTime() - effectiveCheckIn.getTime();
-        const rawWorkedMins = workedMs / (1000 * 60);
-        // Deduct break only if they worked at least half the shift
-        const breakMins = rawWorkedMins >= halfShiftMins ? rawBreakMins : 0;
-        const workedMins = Math.max(0, rawWorkedMins - breakMins);
+        const rawWorkedMins = (checkOut.getTime() - effectiveCheckIn.getTime()) / 60000;
+        
+        // Exactly calculate intersecting break overlap during the attended hours
+        let overlappingBreakMins = 0;
+        if (explicitBreaks.length > 0 && !isHalfDay) {
+            explicitBreaks.forEach(b => {
+                const overlapStart = Math.max(effectiveCheckIn.getTime(), b.start.getTime());
+                const overlapEnd = Math.min(checkOut.getTime(), b.end.getTime());
+                if (overlapEnd > overlapStart) {
+                    overlappingBreakMins += (overlapEnd - overlapStart) / 60000;
+                }
+            });
+        } else if (!isHalfDay && rawWorkedMins >= halfShiftMins) {
+            overlappingBreakMins = rawBreakMins;
+        }
+
+        const workedMins = Math.max(0, rawWorkedMins - overlappingBreakMins);
         totalHours = parseFloat((workedMins / 60).toFixed(2));
 
-        // Undertime: employee left early
-        const undertimeDiff = fullExpectedMins - workedMins;
-        undertimeMinutes = Math.max(0, parseFloat(undertimeDiff.toFixed(1)));
+        // Undertime: missed time strictly after checkout until expectedEnd
+        let missingMins = 0;
+        if (checkOut.getTime() < expectedEnd.getTime()) {
+            const missingBlockStart = Math.max(checkOut.getTime(), expectedStart.getTime());
+            const rawMissingMins = (expectedEnd.getTime() - missingBlockStart) / 60000;
+            
+            let missingBreakMins = 0;
+            if (explicitBreaks.length > 0 && !isHalfDay) {
+                explicitBreaks.forEach(b => {
+                    const overlapStart = Math.max(missingBlockStart, b.start.getTime());
+                    const overlapEnd = Math.min(expectedEnd.getTime(), b.end.getTime());
+                    if (overlapEnd > overlapStart) {
+                        missingBreakMins += (overlapEnd - overlapStart) / 60000;
+                    }
+                });
+            } else if (!isHalfDay && rawWorkedMins < halfShiftMins) {
+                // If they checked out super early under legacy definitions, their missed time conceptually contains the full break they failed to encounter
+                missingBreakMins = rawBreakMins;
+            }
+            missingMins = Math.max(0, rawMissingMins - missingBreakMins);
+        }
+        undertimeMinutes = Math.round(missingMins);
 
         // Overtime: employee stayed beyond expected end
         const actualEndMs = checkOut.getTime();
@@ -605,7 +679,24 @@ function calculateAttendanceMetrics(record: any, shift: any) {
         overtimeMinutes = parseFloat((otMs / (1000 * 60)).toFixed(1));
     }
 
-    return { shiftCode, lateMinutes, undertimeMinutes, overtimeMinutes, totalHours, isAnomaly, isEarlyOut };
+    const isShiftActive = !!checkIn && !checkOut;
+    const status = isShiftActive ? "IN_PROGRESS" : record.status;
+    const gracePeriodApplied = checkIn.getTime() > expectedStart.getTime() && lateMinutes === 0;
+
+    return { 
+        shiftCode, 
+        lateMinutes, 
+        undertimeMinutes, 
+        overtimeMinutes, 
+        totalHours, 
+        isAnomaly, 
+        isEarlyOut,
+        isShiftActive,
+        status,
+        gracePeriodApplied,
+        latePenaltyMinutes: lateMinutes,
+        workedHours: totalHours
+    };
 };
 
 /**

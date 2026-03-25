@@ -27,8 +27,21 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
 }) => {
   const attendanceRate =
     employee.totalDays > 0
-      ? Math.round((employee.present / employee.totalDays) * 100)
+      ? Math.min(Math.round((employee.present / employee.totalDays) * 100), 100)
       : 0;
+
+  const getDatesInRange = (start: string, end: string) => {
+    const dates = [];
+    const currentDate = new Date(start + 'T00:00:00');
+    const endDateObj = new Date(end + 'T00:00:00');
+    while (currentDate <= endDateObj) {
+      dates.push(new Date(currentDate));
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    return dates;
+  };
+
+  const calendarDates = getDatesInRange(startDate, endDate).reverse();
 
   return (
     <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -98,7 +111,8 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
               {
                 label: 'Attendance Rate',
                 value: `${attendanceRate}%`,
-                color: 'text-slate-800',
+                sub: `${employee.present} of ${employee.totalDays} days`,
+                color: attendanceRate >= 90 ? 'text-green-600' : attendanceRate >= 70 ? 'text-yellow-600' : 'text-red-600',
               },
               {
                 label: 'Present',
@@ -140,6 +154,9 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                 >
                   {s.value}
                 </p>
+                {'sub' in s && s.sub && (
+                  <p className="text-[9px] text-slate-400 font-bold mt-0.5">{s.sub}</p>
+                )}
               </div>
             ))}
           </div>
@@ -177,7 +194,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {records.length === 0 ? (
+              {calendarDates.length === 0 ? (
                 <tr>
                   <td
                     colSpan={8}
@@ -187,7 +204,62 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                   </td>
                 </tr>
               ) : (
-                records.map((record) => {
+                calendarDates.map((loopDate) => {
+                  const loopDateStr = loopDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+                  const record = records.find(r => {
+                      const rDateStr = new Date(r.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+                      return rDateStr === loopDateStr;
+                  });
+
+                  // If no record exists for this date in the range
+                  if (!record) {
+                    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+                    const isFuture = loopDateStr > todayStr;
+                    
+                    // Determine if the employee was scheduled to work
+                    const dayName = loopDate.toLocaleDateString('en-US', { weekday: 'short' });
+                    let isWorkingDay = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(dayName);
+                    if (employee.shift?.workDays) {
+                        try {
+                          const wDays = typeof employee.shift.workDays === 'string'
+                            ? JSON.parse(employee.shift.workDays)
+                            : employee.shift.workDays;
+                          
+                          if (Array.isArray(wDays)) {
+                            isWorkingDay = wDays.includes(dayName);
+                          }
+                        } catch (e) {
+                          console.error("Failed to parse workDays", e);
+                        }
+                    }
+                    
+                    const missingStatus = isFuture ? 'Upcoming' : (isWorkingDay ? 'Absent' : 'Rest Day');
+                    const statusColor = missingStatus === 'Upcoming' ? 'bg-blue-50 text-blue-600 border-blue-200' :
+                                        missingStatus === 'Absent' ? 'bg-red-50 text-red-600 border-red-200' :
+                                        'bg-slate-100 text-slate-500 border-slate-200';
+
+                    return (
+                      <tr key={loopDateStr} className="hover:bg-slate-50/50 transition-colors duration-200">
+                        <td className="px-5 py-3.5">
+                           <p className="font-bold text-slate-700 text-xs">
+                              {loopDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                           </p>
+                        </td>
+                        <td colSpan={6} className="px-5 py-3.5 text-center">
+                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                              {isFuture ? 'Scheduled' : 'No Record'}
+                           </span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                           <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border w-fit ${statusColor}`}>
+                              {missingStatus}
+                           </span>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  // Record exists
                   const checkIn = new Date(record.checkInTime);
                   const checkOut = record.checkOutTime
                     ? new Date(record.checkOutTime)
@@ -221,32 +293,61 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                         </p>
                       </td>
                       <td className="px-5 py-3.5">
-                        <span className="text-xs font-bold text-slate-700">
-                          {checkIn.toLocaleTimeString('en-US', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-slate-700">
+                            {checkIn.toLocaleTimeString('en-US', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                          {record.gracePeriodApplied && (
+                            <span className="text-[9px] text-slate-400 mt-0.5" title="Check-in was late but within allowed grace period">
+                              Grace Period
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-5 py-3.5">
-                        <span className="text-xs font-bold text-slate-700">
-                          {checkOut
-                            ? checkOut.toLocaleTimeString('en-US', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })
-                            : '—'}
-                        </span>
+                        {record.isShiftActive ? (
+                          <span className="inline-flex items-center gap-2 text-blue-500 font-bold text-[10px] uppercase tracking-wider">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                            </span>
+                            Active
+                          </span>
+                        ) : (
+                          <span className="text-xs font-bold text-slate-700">
+                            {checkOut
+                              ? checkOut.toLocaleTimeString('en-US', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : '—'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-3.5">
-                        <span className="text-xs font-bold text-slate-600">
-                          {hoursWorked > 0 ? `${hoursWorked.toFixed(2)}` : '—'}
-                        </span>
+                        {record.isShiftActive ? (
+                          <span className="text-muted-foreground text-xs italic">Live</span>
+                        ) : (
+                          <span className="text-xs font-bold text-slate-600">
+                            {hoursWorked > 0 ? `${hoursWorked.toFixed(2)}` : '—'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-3.5">
-                        <span className="text-xs font-bold text-yellow-600">
-                          {lateMins > 0 ? formatLateHrs(lateMins) : '—'}
-                        </span>
+                        {lateMins > 0 ? (
+                          <span className="text-xs font-bold text-yellow-600">
+                            {formatLateHrs(lateMins)}
+                          </span>
+                        ) : record.gracePeriodApplied ? (
+                          <span className="text-[10px] text-slate-400 font-bold whitespace-nowrap">
+                            0m (Grace)
+                          </span>
+                        ) : (
+                          <span className="text-xs font-bold text-slate-300">—</span>
+                        )}
                       </td>
                       <td className="px-5 py-3.5">
                         <span className="text-xs font-bold text-blue-600">
@@ -259,7 +360,11 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                         </span>
                       </td>
                       <td className="px-5 py-3.5">
-                        {statusType === 'early-out' ? (
+                        {statusType === 'in-progress' ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-600 border border-blue-200 w-fit">
+                            In Progress
+                          </span>
+                        ) : statusType === 'early-out' ? (
                           <div className="flex flex-col">
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-700 border border-purple-200">
                               Early Out

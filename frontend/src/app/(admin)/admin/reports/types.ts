@@ -5,6 +5,9 @@ export type EmployeeShift = {
   endTime: string;
   graceMinutes: number;
   breakMinutes: number;
+  workDays: string;
+  halfDays: string;
+  breaks?: string;
 };
 
 export type AttendanceRecord = {
@@ -21,6 +24,8 @@ export type AttendanceRecord = {
   isAnomaly?: boolean;
   isEarlyOut?: boolean;
   shiftCode?: string | null;
+  isShiftActive?: boolean;
+  gracePeriodApplied?: boolean;
   employee: {
     id: number;
     firstName: string;
