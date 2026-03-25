@@ -403,19 +403,19 @@ export default function HRDashboard() {
                       key={branch.name}
                       onClick={() => handleBranchClick(branch.name)}
                       className={`rounded-lg border p-2 flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity ${branch.percentage >= 80
-                          ? 'border-emerald-100 bg-emerald-50/30'
-                          : branch.percentage >= 50
-                            ? 'border-amber-100 bg-amber-50/30'
-                            : 'border-rose-100 bg-rose-50/30'
+                        ? 'border-emerald-100 bg-emerald-50/30'
+                        : branch.percentage >= 50
+                          ? 'border-amber-100 bg-amber-50/30'
+                          : 'border-rose-100 bg-rose-50/30'
                         }`}
                     >
                       <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${branch.percentage >= 80 ? 'bg-emerald-100'
-                          : branch.percentage >= 50 ? 'bg-amber-100'
-                            : 'bg-rose-100'
+                        : branch.percentage >= 50 ? 'bg-amber-100'
+                          : 'bg-rose-100'
                         }`}>
                         <MapPin className={`w-3.5 h-3.5 ${branch.percentage >= 80 ? 'text-emerald-600'
-                            : branch.percentage >= 50 ? 'text-amber-500'
-                              : 'text-rose-500'
+                          : branch.percentage >= 50 ? 'text-amber-500'
+                            : 'text-rose-500'
                           }`} />
                       </div>
                       <div className="min-w-0 flex-1">
@@ -479,8 +479,8 @@ export default function HRDashboard() {
 
                         {/* Avatar */}
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isCheckIn
-                            ? 'bg-gradient-to-br from-emerald-400 to-emerald-600'
-                            : 'bg-gradient-to-br from-slate-300 to-slate-500'
+                          ? 'bg-gradient-to-br from-emerald-400 to-emerald-600'
+                          : 'bg-gradient-to-br from-slate-300 to-slate-500'
                           }`}>
                           <span className="text-white text-[10px] font-black">{initials}</span>
                         </div>
@@ -506,14 +506,14 @@ export default function HRDashboard() {
 
                         {/* Right: event type badge + status badge */}
                         <div className="flex flex-col items-end gap-0.5 shrink-0">
-                          <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${isCheckIn ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-50 text-slate-500'
+                          <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${isCheckIn ? 'bg-blue-50 text-blue-700' : 'bg-slate-50 text-slate-500'
                             }`}>
                             {isCheckIn ? 'Check-in' : 'Check-out'}
                           </span>
                           <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${item.status === 'on-time' ? 'bg-emerald-50 text-emerald-700'
-                              : item.status === 'late' ? 'bg-amber-50 text-amber-700'
-                                : item.status === 'undertime' ? 'bg-orange-50 text-orange-700'
-                                  : 'bg-slate-50 text-slate-500'
+                            : item.status === 'late' ? 'bg-amber-50 text-amber-700'
+                              : item.status === 'undertime' ? 'bg-orange-50 text-orange-700'
+                                : 'bg-slate-50 text-slate-500'
                             }`}>
                             {item.status === 'on-time' ? 'On Time'
                               : item.status === 'late' ? 'Late'

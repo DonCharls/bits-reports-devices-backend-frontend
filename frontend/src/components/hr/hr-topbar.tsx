@@ -64,7 +64,7 @@ export default function TopBar({ setIsMobileOpen }: { setIsMobileOpen: (val: boo
       <div className="flex items-center gap-3 md:gap-6">
         <div className="hidden sm:block text-right border-l pl-6 border-slate-200">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">System Time</p>
-          <p className="text-sm font-black text-slate-700 font-mono tracking-tighter">{mounted ? time.toLocaleTimeString() : ''}</p>
+          <p className="text-sm font-black text-slate-700 font-mono tracking-tighter">{mounted ? time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : ''}</p>
         </div>
 
         <div className="relative z-[110]" ref={dropdownRef}>

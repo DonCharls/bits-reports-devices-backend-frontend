@@ -2,6 +2,7 @@ import React from 'react';
 import { ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { ReportRow } from '../types';
 import { formatHrsMins, formatShiftTime, formatLateHrs } from '../utils/formatters';
+import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 
 interface ReportTableProps {
   paginatedData: ReportRow[];
@@ -41,6 +42,8 @@ export const ReportTable: React.FC<ReportTableProps> = ({
     return pages;
   };
 
+  const dragScrollRef = useHorizontalDragScroll();
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="px-6 py-4 border-b border-slate-100">
@@ -49,8 +52,8 @@ export const ReportTable: React.FC<ReportTableProps> = ({
         </h3>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
+      <div ref={dragScrollRef} className="overflow-x-auto scrollbar-hide">
+        <table className="w-full text-left text-sm min-w-[900px]">
           <thead className="text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
             <tr>
               <th className="px-6 py-4">Employee</th>
@@ -168,7 +171,7 @@ export const ReportTable: React.FC<ReportTableProps> = ({
       </div>
 
       {/* Pagination */}
-      <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+      <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
         <span className="text-xs text-slate-400 font-bold">
           Showing {paginatedData.length} of {filteredDataLength} records · Page{' '}
           {currentPage} of {totalPages}

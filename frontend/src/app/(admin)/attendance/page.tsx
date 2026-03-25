@@ -51,7 +51,7 @@ export default function BiometricPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedStatus, setSelectedStatus] = useState('all')
   const [selectedDeptId, setSelectedDeptId] = useState('all')
-  // Always use PHT (Asia/Manila) date so the filter is correct regardless of the client machine's timezone
+  // Always use PHT (Asia/Manila) date
   const [selectedDate, setSelectedDate] = useState(() =>
     new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
   )
@@ -74,16 +74,6 @@ export default function BiometricPage() {
   })
 
   /* ── Helpers ── */
-  const getPHTTime = (date: Date) => {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Manila', hour: 'numeric', minute: 'numeric', hour12: false
-    }).formatToParts(date)
-    return {
-      hour: parseInt(parts.find(p => p.type === 'hour')?.value || '0'),
-      minute: parseInt(parts.find(p => p.type === 'minute')?.value || '0'),
-    }
-  }
-
   const formatLate = (mins: number | null | undefined): string => {
     if (!mins || mins <= 0) return '—'
     const h = Math.floor(mins / 60)
@@ -91,7 +81,6 @@ export default function BiometricPage() {
     return h > 0 ? `${h}h ${m}m` : `${m}m`
   }
 
-  /** Convert decimal hours (e.g. 1.53) to "1h 32m" */
   const fmtHours = (hours: number): string => {
     if (!hours || hours <= 0) return '—'
     const h = Math.floor(hours)
@@ -101,8 +90,7 @@ export default function BiometricPage() {
     return `${h}h ${m}m`
   }
 
-  /** Convert minutes to "Xh Ym" */
-  const fmtMins = (mins: number): string => {
+  const fmtMins = (mins: number | null | undefined): string => {
     if (!mins || mins <= 0) return '—'
     const h = Math.floor(mins / 60)
     const m = Math.round(mins % 60)
@@ -111,34 +99,29 @@ export default function BiometricPage() {
     return `${h}h ${m}m`
   }
 
-  /* ── Debounce search ── */
+  /* ── Effects ── */
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchTerm), 400)
     return () => clearTimeout(t)
   }, [searchTerm])
 
-  /* ── Reset page on filter change ── */
   useEffect(() => {
     setCurrentPage(1)
   }, [activeBranchId, selectedDate, selectedStatus, selectedDeptId, debouncedSearch])
 
-  /* ── Fetch branches ── */
   useEffect(() => {
     const run = async () => {
       try {
         const res = await fetch('/api/branches', { credentials: 'include' })
         if (res.ok) {
           const data = await res.json()
-          if (data.success && data.branches) {
-            setBranches(data.branches)
-          }
+          if (data.success && data.branches) setBranches(data.branches)
         }
       } catch { /* ignore */ }
     }
     run()
   }, [])
 
-  /* ── Fetch departments ── */
   useEffect(() => {
     const run = async () => {
       try {
@@ -150,7 +133,6 @@ export default function BiometricPage() {
     run()
   }, [])
 
-  /* ── Fetch records ── */
   const fetchRecords = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -160,7 +142,6 @@ export default function BiometricPage() {
         endDate: selectedDate,
         limit: '9999',
       })
-      // Branch tab uses the branch NAME (employee.branch is a plain string, not a relation)
       if (activeBranchId !== 'all') {
         const branchName = branches.find(b => b.id === activeBranchId)?.name
         if (branchName) params.append('branchName', branchName)
@@ -168,13 +149,11 @@ export default function BiometricPage() {
       if (selectedStatus !== 'all') params.append('status', selectedStatus)
       if (selectedDeptId !== 'all') {
         params.append('departmentId', selectedDeptId)
-        // Also send the name so the backend OR filter can match the legacy string field
         const deptName = departments.find(d => String(d.id) === selectedDeptId)?.name
         if (deptName) params.append('departmentName', deptName)
       }
 
       const res = await fetch(`/api/attendance?${params.toString()}`)
-
       if (res.status === 401) {
         window.location.href = '/login'
         return
@@ -192,7 +171,6 @@ export default function BiometricPage() {
           const checkIn = new Date(log.checkInTime)
           const checkOut = log.checkOutTime ? new Date(log.checkOutTime) : null
 
-          // STRICTLY USE BACKEND SHIFT-AWARE VALUES. No frontend fallback math.
           const totalHours: number = log.totalHours ?? 0
           const lateMinutes: number = log.lateMinutes ?? 0
           const overtimeMinutes: number = log.overtimeMinutes ?? 0
@@ -225,7 +203,6 @@ export default function BiometricPage() {
           }
         })
 
-        // Fetch all active employees and inject absent rows
         let allEmployees: any[] = []
         try {
           const empRes = await fetch('/api/employees?limit=9999', { credentials: 'include' })
@@ -233,9 +210,7 @@ export default function BiometricPage() {
           if (empData.success) allEmployees = (empData.employees || empData.data || []).filter((e: any) => (e.role === 'USER' || !e.role) && (e.employmentStatus === 'ACTIVE' || !e.employmentStatus))
         } catch { /* ignore */ }
 
-        // Determine which employees have no record today
         const presentIds = new Set(mapped.map((r: any) => r.employeeId))
-        // Filter allEmployees by the currently active branch tab
         const branchName = activeBranchId !== 'all' ? branches.find(b => b.id === activeBranchId)?.name : null
         const absentRows = allEmployees
           .filter((e: any) => {
@@ -263,7 +238,6 @@ export default function BiometricPage() {
           }))
 
         const full = [...mapped, ...absentRows]
-
         const filtered = debouncedSearch
           ? full.filter((r: any) => r.employeeName.toLowerCase().includes(debouncedSearch.toLowerCase()))
           : full
@@ -290,20 +264,11 @@ export default function BiometricPage() {
     } finally {
       setLoading(false)
     }
-  }, [activeBranchId, selectedDate, selectedStatus, selectedDeptId, currentPage, debouncedSearch, branches])
+  }, [activeBranchId, selectedDate, selectedStatus, selectedDeptId, debouncedSearch, branches, departments])
 
-  // ── SSE: live attendance updates ─────────────────────────────────────
-  // Instead of manually merging SSE records (which would bypass absent-row
-  // generation and stats calculation), we simply re-fetch when a new record
-  // arrives for the currently viewed date. This is still far better than
-  // polling — we only re-fetch when something actually changes.
   const handleStreamRecord = useCallback((payload: AttendanceStreamPayload) => {
-    const recordDateStr = new Date(payload.record.date)
-      .toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
-    // Only re-fetch if the new record is for the date currently on screen
-    if (recordDateStr === selectedDate) {
-      fetchRecords()
-    }
+    const recordDateStr = new Date(payload.record.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+    if (recordDateStr === selectedDate) fetchRecords()
   }, [selectedDate, fetchRecords])
 
   useAttendanceStream({
@@ -313,84 +278,39 @@ export default function BiometricPage() {
 
   useEffect(() => { fetchRecords() }, [fetchRecords])
 
-  /* ── Export ── */
   const handleExport = () => {
     const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
     const date = new Date(selectedDate + 'T00:00:00')
     const formattedDate = `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
     const branchLabel = activeBranchId === 'all' ? 'All Branches' : (branches.find(b => b.id === activeBranchId)?.name || 'Branch')
+    
+    const allRows: (string | number)[][] = [
+      ['BITS Attendance Report'],
+      ['Branch', branchLabel],
+      ['Date', formattedDate],
+      ['Generated', new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })],
+      [],
+      ['SUMMARY'],
+      ['Total Employees', records.length, '', 'Avg Hours', `${stats.avgHours}h`],
+      ['On Time', records.filter(r => r.status === 'present').length, '', 'Overtime Total', `${stats.totalOvertime}h`],
+      ['Late', records.filter(r => r.status === 'late').length, '', 'Undertime Total', `${stats.totalUndertime}h`],
+      ['Absent',  records.filter(r => r.status === 'absent').length],
+      [],
+      ['#', 'Employee', 'Branch', 'Department', 'Shift', 'Check In', 'Check Out', 'Hours', 'Late', 'OT', 'UT', 'Status']
+    ]
 
-    const presentCount = records.filter(r => r.status === 'present').length
-    const lateCount = records.filter(r => r.status === 'late').length
-    const anomalyCount = records.filter((r: any) => r.isAnomaly).length
-    const absentCount = records.filter(r => r.status === 'absent').length
-    const avgHoursNum = parseFloat(stats.avgHours)
-
-    const allRows: (string | number)[][] = []
-
-    // ── Header block ──
-    allRows.push(['BITS Attendance Report'])
-    allRows.push(['Branch', branchLabel])
-    allRows.push(['Date', formattedDate])
-    allRows.push(['Generated', new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })])
-    allRows.push([])
-
-    // ── Summary stats ──
-    allRows.push(['SUMMARY'])
-    allRows.push(['Total Employees', records.length, '', 'Avg Hours', `${stats.avgHours}h`])
-    allRows.push(['On Time', presentCount,        '', 'Overtime Total', `${stats.totalOvertime}h`])
-    allRows.push(['Late',    lateCount,           '', 'Undertime Total', `${stats.totalUndertime}h`])
-    allRows.push(['Anomaly', anomalyCount])
-    allRows.push(['Absent',  absentCount])
-    allRows.push([])
-
-    // ── Column headers ──
-    allRows.push([
-      '#', 'Employee', 'Branch', 'Department', 'Shift',
-      'Check In', 'Check Out', 'Hours Worked',
-      'Late By', 'Overtime', 'Undertime', 'Status'
-    ])
-
-    // ── Data rows ──
     records.forEach((r, i) => {
-      const statusLabel = (r as any).isAnomaly
-        ? 'Anomaly'
-        : r.status.charAt(0).toUpperCase() + r.status.slice(1)
       allRows.push([
-        i + 1,
-        r.employeeName,
-        r.branchName,
-        r.department,
-        r.shiftCode || 'No Shift',
-        r.checkIn,
-        r.checkOut,
-        r.totalHours > 0 ? fmtHours(r.totalHours) : '—',
+        i + 1, r.employeeName, r.branchName, r.department, r.shiftCode || '—',
+        r.checkIn, r.checkOut, r.totalHours > 0 ? fmtHours(r.totalHours) : '—',
         formatLate(r.lateMinutes),
-        r.overtimeMinutes  > 0 ? `+${fmtMins(r.overtimeMinutes)}`  : '—',
+        r.overtimeMinutes > 0 ? `+${fmtMins(r.overtimeMinutes)}` : '—',
         r.undertimeMinutes > 0 ? `-${fmtMins(r.undertimeMinutes)}` : '—',
-        statusLabel,
+        r.status
       ])
     })
 
-    allRows.push([])
-    allRows.push([`${records.length} employee record${records.length !== 1 ? 's' : ''} · ${selectedDate}`])
-
-    // ── Build workbook ──
     const worksheet = XLSX.utils.aoa_to_sheet(allRows)
-    worksheet['!cols'] = [
-      { wch: 4  },  // #
-      { wch: 25 },  // Employee
-      { wch: 18 },  // Branch
-      { wch: 18 },  // Department
-      { wch: 15 },  // Shift
-      { wch: 12 },  // Check In
-      { wch: 12 },  // Check Out
-      { wch: 14 },  // Hours Worked
-      { wch: 12 },  // Late By
-      { wch: 10 },  // Overtime
-      { wch: 10 },  // Undertime
-      { wch: 12 },  // Status
-    ]
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance')
     XLSX.writeFile(workbook, `Attendance_${branchLabel.replace(/\s+/g, '_')}_${selectedDate}.xlsx`)
@@ -400,16 +320,14 @@ export default function BiometricPage() {
 
   return (
     <div className="space-y-5">
-
-      {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
             <Fingerprint className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-foreground">Biometric Attendance</h2>
-            <p className="text-muted-foreground text-sm mt-0.5">
+            <h2 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">Biometric Attendance</h2>
+            <p className="text-muted-foreground text-sm font-medium">
               {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
                 weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
               })}
@@ -417,15 +335,9 @@ export default function BiometricPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Input
-            type="date"
-            value={selectedDate}
-            onChange={e => setSelectedDate(e.target.value)}
-            className="bg-secondary border-border text-foreground w-40"
-          />
-          <Button onClick={handleExport} className="bg-primary hover:bg-primary/90 gap-2 shrink-0">
-            <Download className="w-4 h-4" />
-            Export
+          <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="bg-secondary border-border text-foreground w-44 font-bold" />
+          <Button onClick={handleExport} className="bg-primary hover:bg-primary/90 gap-2 shrink-0 font-bold">
+            <Download className="w-4 h-4" /> Export
           </Button>
         </div>
       </div>
@@ -438,318 +350,198 @@ export default function BiometricPage() {
         </Alert>
       )}
 
-      {/* ── Stats Cards ── */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: 'Avg Hours', value: `${stats.avgHours}h`, icon: Timer, color: 'text-primary', bg: 'bg-primary/20' },
-          { label: 'Overtime', value: `${stats.totalOvertime}h`, icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/20' },
-          { label: 'Undertime', value: `${stats.totalUndertime}h`, icon: TrendingDown, color: 'text-red-400', bg: 'bg-red-500/20' },
+          { label: 'Avg Hours', value: `${stats.avgHours}h`, icon: Timer, color: 'text-primary', bg: 'bg-primary/10' },
+          { label: 'Overtime', value: `${stats.totalOvertime}h`, icon: TrendingUp, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+          { label: 'Undertime', value: `${stats.totalUndertime}h`, icon: TrendingDown, color: 'text-red-500', bg: 'bg-red-500/10' },
         ].map(s => {
           const Icon = s.icon
           return (
-            <Card key={s.label} className="bg-card border-border p-3 sm:p-4">
+            <Card key={s.label} className="bg-card border-border p-3 sm:p-4 shadow-sm">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-muted-foreground text-[10px] font-bold uppercase tracking-widest">{s.label}</p>
+                  <p className="text-muted-foreground text-[10px] font-black uppercase tracking-widest">{s.label}</p>
                   <p className={`text-xl sm:text-2xl font-black mt-1 ${s.color}`}>{s.value}</p>
                 </div>
-                <div className={`${s.bg} p-2 rounded-lg shrink-0`}>
-                  <Icon className={`w-4 h-4 ${s.color}`} />
-                </div>
+                <div className={`${s.bg} p-2 rounded-lg shrink-0`}><Icon className={`w-4 h-4 ${s.color}`} /></div>
               </div>
             </Card>
           )
         })}
       </div>
 
-      {/* ── Branch Tab Bar ── */}
       <div className="flex items-end gap-1 overflow-x-auto scrollbar-none">
-        {/* All Branches tab */}
-        <button
-          onClick={() => setActiveBranchId('all')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-t-xl text-sm font-bold transition-all duration-200 border-b-2 whitespace-nowrap ${activeBranchId === 'all'
-            ? 'bg-card border-b-transparent text-primary shadow-sm border border-border border-b-card'
-            : 'bg-secondary/40 border-b-transparent text-muted-foreground hover:text-foreground hover:bg-secondary'
-            }`}
-        >
-          <GitBranch className={`w-3.5 h-3.5 ${activeBranchId === 'all' ? 'text-primary' : 'text-muted-foreground'}`} />
-          All Branches
+        <button onClick={() => setActiveBranchId('all')} className={`flex items-center gap-2 px-6 py-3 rounded-t-xl text-xs font-black uppercase tracking-widest transition-all duration-200 border-b-2 whitespace-nowrap ${activeBranchId === 'all' ? 'bg-card border-b-transparent text-primary shadow-sm border border-border border-b-card' : 'bg-secondary/40 border-b-transparent text-muted-foreground hover:bg-secondary'}`}>
+          <GitBranch className="w-3.5 h-3.5" /> All Branches
         </button>
-
-        {branches.length === 0 ? (
-          <span className="px-4 py-2.5 text-xs text-muted-foreground italic">Loading branches...</span>
-        ) : (
-          branches.map(branch => {
-            const isActive = activeBranchId === branch.id
-            return (
-              <button
-                key={branch.id}
-                onClick={() => setActiveBranchId(branch.id)}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-t-xl text-sm font-bold transition-all duration-200 border-b-2 whitespace-nowrap ${isActive
-                  ? 'bg-card border-b-transparent text-primary shadow-sm border border-border border-b-card'
-                  : 'bg-secondary/40 border-b-transparent text-muted-foreground hover:text-foreground hover:bg-secondary'
-                  }`}
-              >
-                <MapPin className={`w-3.5 h-3.5 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
-                {branch.name}
-              </button>
-            )
-          })
-        )}
+        {branches.map(branch => (
+          <button key={branch.id} onClick={() => setActiveBranchId(branch.id)} className={`flex items-center gap-2 px-6 py-3 rounded-t-xl text-xs font-black uppercase tracking-widest transition-all duration-200 border-b-2 whitespace-nowrap ${activeBranchId === branch.id ? 'bg-card border-b-transparent text-primary shadow-sm border border-border border-b-card' : 'bg-secondary/40 border-b-transparent text-muted-foreground hover:bg-secondary'}`}>
+            <MapPin className="w-3.5 h-3.5" /> {branch.name}
+          </button>
+        ))}
       </div>
 
-      {/* ── Main Card ── */}
       <Card className="bg-card border-border rounded-2xl shadow-md overflow-hidden rounded-tl-none">
-
-        {/* Card header with inline mini-stats */}
-        <div className="px-6 py-4 border-b border-border bg-secondary/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="px-6 py-4 border-b border-border bg-secondary/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-              {activeBranchId === 'all'
-                ? <GitBranch className="w-4 h-4 text-primary" />
-                : <Building2 className="w-4 h-4 text-primary" />}
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-foreground leading-tight">
-                {activeBranchId === 'all' ? 'All Branches' : activeBranch?.name}
-              </h3>
-              {activeBranch?.address && (
-                <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                  <MapPin className="w-3 h-3" />{activeBranch.address}
-                </p>
-              )}
-            </div>
+            <h3 className="text-sm font-black text-foreground uppercase tracking-widest">Attendance Logs</h3>
           </div>
           <div className="flex items-center gap-4">
-            <div className="text-center">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">On Time</p>
-              <p className="text-xl font-black text-foreground">{stats.onTime}</p>
-            </div>
+            <div className="text-center"><p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">On Time</p><p className="text-xl font-black text-foreground">{stats.onTime}</p></div>
             <div className="w-px h-8 bg-border" />
-            <div className="text-center">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Late</p>
-              <p className="text-xl font-black text-yellow-400">{stats.totalLate}</p>
-            </div>
+            <div className="text-center"><p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Late</p><p className="text-xl font-black text-yellow-500">{stats.totalLate}</p></div>
             <div className="w-px h-8 bg-border" />
-            <div className="text-center">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Absent</p>
-              <p className="text-xl font-black text-red-400">{stats.totalAbsent}</p>
-            </div>
+            <div className="text-center"><p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Absent</p><p className="text-xl font-black text-red-500">{stats.totalAbsent}</p></div>
             <div className="w-px h-8 bg-border" />
-            <div className="text-center">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Total</p>
-              <p className="text-xl font-black text-foreground">{stats.total}</p>
-            </div>
+            <div className="text-center"><p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Total</p><p className="text-xl font-black text-foreground">{stats.total}</p></div>
           </div>
         </div>
 
-        {/* Filters row */}
-        <div className="px-4 py-3 border-b border-border bg-secondary/10 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-          <div className="relative flex-1 max-w-xs w-full">
+        <div className="px-4 py-3 border-b border-border bg-secondary/10 flex flex-col sm:flex-row items-center gap-3">
+          <div className="relative flex-1 max-w-sm w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search employee..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="pl-10 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
-            />
+            <Input placeholder="Search employee..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10 bg-card border-border text-foreground font-medium" />
           </div>
-          <div className="flex gap-2 w-full sm:w-auto">
+          <div className="flex gap-2">
             <Select value={selectedDeptId} onValueChange={setSelectedDeptId}>
-              <SelectTrigger className="w-40 bg-secondary border-border text-foreground text-sm">
-                <SelectValue placeholder="Department" />
-              </SelectTrigger>
-              <SelectContent className="bg-secondary border-border">
-                <SelectItem value="all">All Departments</SelectItem>
-                {departments.map(d => (
-                  <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
-                ))}
+              <SelectTrigger className="w-44 bg-card border-border font-bold text-xs uppercase tracking-widest"><SelectValue placeholder="Department" /></SelectTrigger>
+              <SelectContent className="bg-card border-border">
+                <SelectItem value="all">ALL DEPARTMENTS</SelectItem>
+                {departments.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name.toUpperCase()}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-              <SelectTrigger className="w-36 bg-secondary border-border text-foreground text-sm">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent className="bg-secondary border-border">
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="present">Present</SelectItem>
-                <SelectItem value="late">Late</SelectItem>
-                <SelectItem value="absent">Absent</SelectItem>
+              <SelectTrigger className="w-36 bg-card border-border font-bold text-xs uppercase tracking-widest"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent className="bg-card border-border">
+                <SelectItem value="all">ALL STATUS</SelectItem>
+                <SelectItem value="present">ON TIME</SelectItem>
+                <SelectItem value="late">LATE</SelectItem>
+                <SelectItem value="absent">ABSENT</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
 
-        {/* Table */}
-        <div ref={dragScrollRef} className="overflow-x-auto scrollbar-hide">
-          <table className="w-full text-left">
-            <thead className="sticky top-0 z-10">
-              <tr className="border-b border-border bg-secondary/50 backdrop-blur-sm">
-                <th className="px-4 sm:px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Employee</th>
-                <th className="px-4 sm:px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Branch</th>
-                <th className="px-4 sm:px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Department</th>
-                <th className="px-4 sm:px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Check In</th>
-                <th className="px-4 sm:px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Check Out</th>
-                <th className="px-4 sm:px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider hidden md:table-cell">Shift</th>
-                <th className="px-4 sm:px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider hidden md:table-cell">Late</th>
-                <th className="px-4 sm:px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Hours</th>
-                <th className="px-4 sm:px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider hidden md:table-cell">OT</th>
-                <th className="px-4 sm:px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider hidden md:table-cell">UT</th>
-                <th className="px-4 sm:px-6 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {loading ? (
-                <tr>
-                  <td colSpan={11} className="px-6 py-12 text-center">
-                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                      <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                      <span className="text-sm">Loading attendance data...</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : records.length === 0 ? (
-                <tr>
-                  <td colSpan={11} className="px-6 py-14 text-center">
-                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                      <Fingerprint className="w-10 h-10 text-muted-foreground/30" />
-                      <div>
-                        <p className="text-sm font-medium">No biometric records found</p>
-                        <p className="text-xs mt-0.5">
-                          No attendance for <strong>{activeBranchId === 'all' ? 'any branch' : activeBranch?.name}</strong> on this date.
-                        </p>
+        <div className="bg-card">
+          {/* ── Mobile Card View ── */}
+          <div className="lg:hidden">
+            {loading ? (
+              <div className="px-6 py-12 text-center text-muted-foreground font-bold">Loading...</div>
+            ) : records.length === 0 ? (
+              <div className="px-6 py-12 text-center text-muted-foreground font-black uppercase text-[10px] tracking-widest">No biometric records found</div>
+            ) : (
+              <div className="divide-y divide-border/40">
+                {records.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage).map(row => (
+                  <div key={row.id} className="p-4 hover:bg-primary/5 transition-colors">
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-black text-foreground text-sm truncate uppercase tracking-tight">{row.employeeName}</p>
+                        <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">{row.department} • {row.branchName}</p>
+                      </div>
+                      <div className="shrink-0">
+                        <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${
+                          row.status === 'present' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
+                          : row.status === 'late' ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
+                          : 'text-red-500 bg-red-500/10 border-red-500/20'
+                        }`}>
+                          {row.status === 'present' ? 'On Time' : row.status}
+                        </span>
                       </div>
                     </div>
-                  </td>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div><p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Clock In</p><p className="font-mono text-emerald-500 font-black text-sm">{row.checkIn}</p></div>
+                      <div><p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Clock Out</p><p className="font-mono text-muted-foreground font-black text-sm">{row.checkOut}</p></div>
+                      <div><p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Shift</p>
+                        {row.shiftCode ? <span className={`text-[9px] font-black px-2 py-0.5 rounded-md border ${row.isNightShift ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>{row.shiftCode}</span> : <span className="text-[10px] text-muted-foreground italic font-medium">No shift</span>}
+                      </div>
+                      <div><p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Hours</p><p className="font-mono text-foreground font-black text-sm">{fmtHours(row.totalHours)}</p></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── Desktop Table View ── */}
+          <div ref={dragScrollRef} className="overflow-x-auto scrollbar-hide hidden lg:block">
+            <table className="w-full text-left">
+              <thead className="bg-secondary/50 backdrop-blur-sm">
+                <tr className="border-b border-border bg-secondary/50 backdrop-blur-sm">
+                  <th className="px-6 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Employee</th>
+                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Department</th>
+                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Branch</th>
+                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center">Shift</th>
+                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Clock In</th>
+                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Clock Out</th>
+                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-yellow-500">Late</th>
+                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center">Hours</th>
+                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-emerald-500">OT</th>
+                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-red-500">UT</th>
+                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center">Status</th>
                 </tr>
-              ) : (
-                records
-                  .slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
-                  .map((record, index) => (<tr
-                    key={record.id}
-                    className={`hover:bg-primary/5 transition-colors ${index % 2 === 0 ? 'bg-transparent' : 'bg-secondary/10'}`}
-                  >
-                    <td className="px-4 sm:px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm shrink-0">
-                          {record.employeeName.charAt(0)}
-                        </div>
-                        <div className="min-w-0">
-                          <span className="text-sm font-medium text-foreground block truncate">{record.employeeName}</span>
-                          <span className="text-xs text-muted-foreground sm:hidden">{record.department}</span>
-                        </div>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {records.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage).map(record => (
+                  <tr key={record.id} className="hover:bg-primary/5 transition-colors">
+                    <td className="px-6 py-4 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-[10px] shrink-0 uppercase tracking-tight">{record.employeeName.charAt(0)}</div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-foreground leading-tight uppercase tracking-tight">{record.employeeName}</p>
+                        <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest mt-0.5">{record.branchName}</p>
                       </div>
                     </td>
-                    <td className="px-4 sm:px-6 py-4 text-xs text-muted-foreground hidden sm:table-cell">{record.branchName}</td>
-                    <td className="px-4 sm:px-6 py-4 hidden sm:table-cell">
-                      <Badge variant="outline" className="bg-secondary/50 text-foreground border-border text-xs">
-                        {record.department}
-                      </Badge>
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 text-sm font-mono text-emerald-400 hidden sm:table-cell">{record.checkIn}</td>
-                    <td className="px-4 sm:px-6 py-4 text-sm font-mono text-foreground hidden sm:table-cell">{record.checkOut}</td>
-                    <td className="px-4 sm:px-6 py-4 hidden md:table-cell">
+                    <td className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none outline-none">{record.department}</td>
+                    <td className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none outline-none">{record.branchName}</td>
+                    <td className="px-4 py-4 text-center">
                       {record.shiftCode ? (
-                        <Badge
-                          variant="outline"
-                          className={record.isNightShift
-                            ? 'bg-purple-500/20 text-purple-400 border-purple-500/30 text-xs font-bold'
-                            : 'bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs font-bold'}
-                        >
-                          {record.shiftCode}
-                        </Badge>
+                        <span className={`text-[9px] font-black px-2.5 py-1 rounded-lg border uppercase tracking-widest whitespace-nowrap ${record.isNightShift ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>{record.shiftCode}</span>
                       ) : (
-                        <span className="text-xs text-muted-foreground italic">No shift</span>
+                        <span className="text-[10px] text-muted-foreground italic font-medium">No Shift</span>
                       )}
                     </td>
-                    <td className="px-4 sm:px-6 py-4 hidden md:table-cell">
-                      {record.lateMinutes && record.lateMinutes > 0 ? (
-                        <span className="text-xs font-bold text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full whitespace-nowrap">
+                    <td className={`px-4 py-4 text-sm font-mono font-bold ${
+                      record.status === 'late' ? 'text-yellow-500' :
+                      record.status === 'present' ? 'text-emerald-500' :
+                      'text-muted-foreground'
+                    }`}>{record.checkIn}</td>
+                    <td className="px-4 py-4 text-sm font-mono text-muted-foreground font-bold">{record.checkOut}</td>
+                    <td className="px-4 py-4 text-center">
+                      {record.lateMinutes > 0 ? (
+                        <span className="text-[10px] font-black text-yellow-600 bg-yellow-500/10 border border-yellow-500/20 px-2.5 py-1 rounded-full whitespace-nowrap">
                           {formatLate(record.lateMinutes)}
                         </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
+                      ) : <span className="text-[10px] text-muted-foreground/30 font-black">—</span>}
                     </td>
-                    <td className="px-4 sm:px-6 py-4 text-sm font-mono text-foreground">
-                      {fmtHours(record.totalHours)}
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 hidden md:table-cell">
-                      <span className={`text-sm font-medium ${record.overtimeMinutes > 0 ? 'text-green-400' : 'text-muted-foreground'}`}>
+                    <td className="px-4 py-4 text-sm font-mono text-foreground font-bold text-center">{fmtHours(record.totalHours)}</td>
+                    <td className="px-4 py-4 text-center">
+                      <span className={`text-sm font-bold ${record.overtimeMinutes > 0 ? 'text-emerald-500' : 'text-muted-foreground/30'}`}>
                         {record.overtimeMinutes > 0 ? `+${fmtMins(record.overtimeMinutes)}` : '—'}
                       </span>
                     </td>
-                    <td className="px-4 sm:px-6 py-4 hidden md:table-cell">
-                      <span className={`text-sm font-medium ${record.undertimeMinutes > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                    <td className="px-4 py-4 text-center">
+                      <span className={`text-sm font-bold ${record.undertimeMinutes > 0 ? 'text-red-500' : 'text-muted-foreground/30'}`}>
                         {record.undertimeMinutes > 0 ? `-${fmtMins(record.undertimeMinutes)}` : '—'}
                       </span>
                     </td>
-                    <td className="px-4 sm:px-6 py-4">
-                      {record.isAnomaly ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200 whitespace-nowrap">
-                          <AlertCircle className="w-3 h-3" />
-                          Anomaly
-                        </span>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className={
-                            record.status === 'present'
-                              ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                              : record.status === 'late'
-                                ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-                                : record.status === 'undertime'
-                                  ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
-                                  : record.status === 'absent'
-                                    ? 'bg-red-500/20 text-red-400 border-red-500/30'
-                                    : 'bg-secondary/50 text-muted-foreground border-border'
-                          }
-                        >
-                          {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
-                        </Badge>
-                      )}
+                    <td className="px-4 py-4 text-center">
+                      <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${record.status === 'present' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' : record.status === 'late' ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20' : 'text-red-500 bg-red-500/10 border-red-500/20'}`}>
+                        {record.status === 'present' ? 'On Time' : record.status}
+                      </span>
                     </td>
                   </tr>
-                  ))
-              )}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        {/* Pagination */}
         {totalPages > 1 && (
-          <div className="px-4 sm:px-6 py-4 bg-secondary/20 border-t border-border flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">
-              Page {currentPage} of {totalPages}
-            </span>
+          <div className="px-6 py-4 bg-secondary/20 border-t border-border flex items-center justify-between">
+            <span className="text-xs font-black text-muted-foreground uppercase tracking-widest">Page {currentPage} of {totalPages}</span>
             <div className="flex items-center gap-1">
-              <Button
-                variant="outline" size="sm"
-                onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-                disabled={currentPage === 1}
-                className="h-8 px-2 border-border text-foreground hover:bg-secondary disabled:opacity-50"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(page => (
-                <Button
-                  key={page}
-                  variant={currentPage === page ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setCurrentPage(page)}
-                  className={`h-8 w-8 p-0 hidden sm:flex ${currentPage === page ? 'bg-primary text-white' : 'border-border text-foreground hover:bg-secondary'}`}
-                >
-                  {page}
-                </Button>
-              ))}
-              <Button
-                variant="outline" size="sm"
-                onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-                disabled={currentPage >= totalPages}
-                className="h-8 px-2 border-border text-foreground hover:bg-secondary disabled:opacity-50"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </Button>
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1} className="h-8 border-border text-foreground hover:bg-secondary"><ChevronLeft className="w-4 h-4" /></Button>
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage >= totalPages} className="h-8 border-border text-foreground hover:bg-secondary"><ChevronRight className="w-4 h-4" /></Button>
             </div>
           </div>
         )}

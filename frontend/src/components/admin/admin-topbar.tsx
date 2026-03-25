@@ -121,7 +121,7 @@ export function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
         {/* System Time */}
         <div className="hidden sm:block text-right border-l pl-6 border-gray-200">
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">System Time</p>
-          <p className="text-sm font-black text-gray-700 font-mono tracking-tighter">{time ? time.toLocaleTimeString() : '\u00A0'}</p>
+          <p className="text-sm font-black text-gray-700 font-mono tracking-tighter">{time ? time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '\u00A0'}</p>
         </div>
 
         {/* Profile Dropdown */}

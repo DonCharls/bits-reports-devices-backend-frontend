@@ -76,7 +76,7 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-6">
       {/* Individual Employee Report Modal */}
       {selectedEmployee && (
         <EmployeeModal

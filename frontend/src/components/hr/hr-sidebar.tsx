@@ -12,6 +12,8 @@ import {
   ChevronDown,
   UserX,
   History,
+  Building2,
+  Fingerprint,
 } from 'lucide-react';
 
 function SidebarInner({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollapsed }: any) {
@@ -38,6 +40,8 @@ function SidebarInner({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollaps
   const isAuditPage = pathname === '/hr/adjust';
   const isOnEmployees = pathname === '/hr/employees';
   const isOnReports = pathname === '/hr/reports' || isAuditPage;
+  const isOnOrganization = pathname.startsWith('/hr/departments') || pathname.startsWith('/hr/branches');
+  const isOnShifts = pathname.startsWith('/hr/shifts');
 
   const [employeesOpen, setEmployeesOpen] = useState(isOnEmployees || isInactivePage);
   const [reportsOpen, setReportsOpen] = useState(isOnReports);
@@ -47,11 +51,13 @@ function SidebarInner({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollaps
     { href: '/hr/dashboard' },
     { href: '/hr/attendance' },
     { href: '/hr/employees', matchPrefix: '/hr/employees' },
-    { href: '/hr/reports', matchPrefix: '/hr/reports' },
+    { href: '/hr/shifts', matchPrefix: '/hr/shifts' },
+    { href: '/hr/departments', matchFn: (p: string) => p.startsWith('/hr/departments') || p.startsWith('/hr/branches') },
+    { href: '/hr/reports', matchFn: (p: string) => p.startsWith('/hr/reports') || p === '/hr/adjust' },
   ];
 
   const activeIndex = allItems.findIndex(item =>
-    item.matchPrefix ? pathname.startsWith(item.matchPrefix) : pathname === item.href
+    'matchFn' in item ? item.matchFn(pathname) : item.matchPrefix ? pathname.startsWith(item.matchPrefix) : pathname === item.href
   );
 
   const updateIndicator = useCallback(() => {
@@ -159,7 +165,7 @@ function SidebarInner({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollaps
               style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
               title={collapsed ? 'Attendance' : undefined}
             >
-              <Clock size={22} className={`shrink-0 ${pathname === '/hr/attendance' ? 'text-[#E60000]' : 'text-white'}`} />
+              <Fingerprint size={22} className={`shrink-0 ${pathname === '/hr/attendance' ? 'text-[#E60000]' : 'text-white'}`} />
               <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Attendance</span>
             </Link>
           </li>
@@ -217,6 +223,34 @@ function SidebarInner({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollaps
                 </div>
               </div>
             )}
+          </li>
+
+          {/* Shifts */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <Link
+              href="/hr/shifts"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-4 py-3 relative z-10 ${isOnShifts ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
+              title={collapsed ? 'Shifts' : undefined}
+            >
+              <Clock size={22} className={`shrink-0 ${isOnShifts ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Shifts</span>
+            </Link>
+          </li>
+
+          {/* Organization */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <Link
+              href="/hr/departments"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-4 py-3 relative z-10 ${isOnOrganization ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
+              title={collapsed ? 'Organization' : undefined}
+            >
+              <Building2 size={22} className={`shrink-0 ${isOnOrganization ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Organization</span>
+            </Link>
           </li>
 
           {/* Reports (with submenu) */}

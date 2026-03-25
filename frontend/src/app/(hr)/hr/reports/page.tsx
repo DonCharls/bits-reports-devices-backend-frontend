@@ -1,68 +1,202 @@
 "use client"
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Download, Search, X, AlertTriangle, CalendarSearch, ChevronUp, ChevronDown, Edit2 } from 'lucide-react';
+import { Download, Search, X, AlertTriangle, CalendarSearch, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Edit2 } from 'lucide-react';
+import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import * as XLSX from 'xlsx';
 
+/* ── Formatters (matching Admin) ────────────────────────────── */
+const formatHrsMins = (hrs: number) => {
+  if (hrs === 0) return '—';
+  const totalMins = Math.round(hrs * 60);
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  return h > 0 && m > 0 ? `${h}h ${m}m` : h > 0 ? `${h}h` : `${m}m`;
+};
+
+const formatLateHrs = (mins: number) => {
+  if (mins === 0) return '0m';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
+const formatShiftTime = (t: string) => {
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+};
+
+const formatDateShort = (d: string) => {
+  const date = new Date(d + 'T00:00:00');
+  return `${String(date.getDate()).padStart(2, '0')}/${String(
+    date.getMonth() + 1
+  ).padStart(2, '0')}/${date.getFullYear()}`;
+};
+
+/* ── Page Component ─────────────────────────────────────────── */
 export default function ReportsPage() {
-  const [fromDate, setFromDate] = useState("2026-01-01");
-  const [toDate, setToDate] = useState("2026-01-30");
+  const [fromDate, setFromDate] = useState(() => {
+    const d = new Date(); d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [viewingDetails, setViewingDetails] = useState<any>(null);
   const [logSearchDate, setLogSearchDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [deptFilter, setDeptFilter] = useState("All Departments");
-  const [branchFilter, setBranchFilter] = useState("All Branches");
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
-  const fromDateRef = useRef<HTMLInputElement>(null);
-  const toDateRef = useRef<HTMLInputElement>(null);
+  const [deptFilter, setDeptFilter] = useState("all");
+  const [branchFilter, setBranchFilter] = useState("all");
   const logDateRef = useRef<HTMLInputElement>(null);
+  const dragScrollRef = useHorizontalDragScroll();
 
-  const departments = ["All Departments", "Purchasing", "Human Resources", "Engineering"];
-  const branches = ["All Branches", "Main Office", "Makati Branch", "Tayud Branch"];
+  const [currentPage, setCurrentPage] = useState(1);
+  const rowsPerPage = 10;
 
-  const reportData = [
-    {
-      name: "Mark Anthony", branch: "Main Office", dept: "Purchasing", totalAbsents: 0, totalHours: 176.00, totalOvertime: 5.5, totalUndertime: 0, totalLates: 0, lateDuration: "0m",
-      details: [
-        { date: "2026-02-05", type: "Overtime", duration: "2h", shift: "" },
-        { date: "2026-01-12", type: "Overtime", duration: "3.5h", shift: "" }
-      ]
-    },
-    {
-      name: "Sarah Jenkins", branch: "Makati Branch", dept: "Human Resources", totalAbsents: 1, totalHours: 152.50, totalOvertime: 0, totalUndertime: 2.5, totalLates: 3, lateDuration: "45m",
-      details: [
-        { date: "2026-02-08", type: "Late", duration: "15m", shift: "" },
-        { date: "2026-02-10", type: "Absent", duration: "8hr", shift: "" },
-        { date: "2026-01-20", type: "Late", duration: "20m", shift: "" },
-        { date: "2026-01-21", type: "Late", duration: "10m", shift: "" }
-      ]
-    },
-    {
-      name: "Ariadne Arsolon", branch: "Tayud Branch", dept: "Engineering", totalAbsents: 0, totalHours: 168.00, totalOvertime: 2.0, totalUndertime: 0.5, totalLates: 1, lateDuration: "10m",
-      details: [
-        { date: "2026-01-03", type: "Late", duration: "10m", shift: "" }
-      ]
-    },
-  ];
+  const [reportData, setReportData] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<string[]>([]);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch real data from API
+  useEffect(() => {
+    const fetchReportData = async () => {
+      setLoading(true);
+      try {
+        const [empRes, attRes] = await Promise.all([
+          fetch('/api/employees', { credentials: 'include' }),
+          fetch(`/api/attendance?startDate=${fromDate}&endDate=${toDate}&limit=10000`, { credentials: 'include' }),
+        ]);
+        if (empRes.status === 401 || attRes.status === 401) { window.location.href = '/login'; return; }
+
+        const empData = await empRes.json();
+        const attData = attRes.ok ? await attRes.json() : { success: false };
+        if (!empData.success || !attData.success) { setLoading(false); return; }
+
+        const emps: any[] = empData.employees || empData.data || [];
+        const records: any[] = attData.data || [];
+
+        // Filter: only ACTIVE USERs (excludes ADMIN, HR roles)
+        const activeEmps = emps.filter((e: any) => e.employmentStatus === 'ACTIVE' && e.role === 'USER');
+
+        // Build department + branch lists from real data
+        const deptSet = new Set<string>();
+        const branchSet = new Set<string>();
+        activeEmps.forEach((e: any) => {
+          const dept = e.Department?.name || e.department;
+          if (dept) deptSet.add(dept);
+          if (e.branch) branchSet.add(e.branch);
+        });
+        setDepartments(Array.from(deptSet).sort());
+        setBranches(Array.from(branchSet).sort());
+
+        // Build per-employee report rows
+        const rowMap = new Map<number, any>();
+        activeEmps.forEach((e: any) => {
+          rowMap.set(e.id, {
+            id: e.id,
+            zkId: e.zkId ?? 999999,
+            name: `${e.firstName} ${e.lastName}`.trim(),
+            dept: e.Department?.name || e.department || '—',
+            branch: e.branch || '—',
+            present: 0,
+            late: 0,
+            totalHours: 0,
+            totalOvertime: 0,
+            totalUndertime: 0,
+            lateMinutes: 0,
+            hasAnomaly: false,
+            shift: e.Shift ? {
+              name: e.Shift.name,
+              startTime: e.Shift.startTime,
+              endTime: e.Shift.endTime,
+              graceMinutes: e.Shift.graceMinutes ?? 0,
+              breakMinutes: e.Shift.breakMinutes ?? 60,
+            } : null,
+            details: [] as any[],
+          });
+        });
+
+        // Aggregate attendance records using API-provided metrics directly
+        records.forEach((r: any) => {
+          const row = rowMap.get(r.employeeId);
+          if (!row) return;
+
+          const lateMins = r.lateMinutes ?? 0;
+          const otMins = r.overtimeMinutes ?? 0;
+          const utMins = r.undertimeMinutes ?? 0;
+          const hrs = r.totalHours ?? 0;
+
+          if (lateMins > 0) {
+            row.late++;
+            row.lateMinutes += lateMins;
+          } else {
+            row.present++;
+          }
+          row.totalHours += hrs;
+          row.totalOvertime += otMins / 60;
+          row.totalUndertime += utMins / 60;
+          if (r.isAnomaly) row.hasAnomaly = true;
+
+          // Build detail log entries for View History modal
+          const dateStr = r.date ? new Date(r.date).toISOString().slice(0, 10) : '—';
+          const shiftCode = r.shiftCode || r.employee?.Shift?.name || '';
+          if (lateMins > 0) {
+            row.details.push({ date: dateStr, shift: shiftCode, type: 'Late', duration: `${lateMins}m` });
+          }
+          if (otMins > 0) {
+            row.details.push({ date: dateStr, shift: shiftCode, type: 'Overtime', duration: `${(otMins / 60).toFixed(1)}h` });
+          }
+          if (utMins > 0) {
+            row.details.push({ date: dateStr, shift: shiftCode, type: 'Undertime', duration: `${(utMins / 60).toFixed(1)}h` });
+          }
+        });
+
+        // Finalize rows
+        const rows = Array.from(rowMap.values());
+        rows.forEach((r: any) => {
+          r.totalOvertime = parseFloat(r.totalOvertime.toFixed(2));
+          r.totalUndertime = parseFloat(r.totalUndertime.toFixed(2));
+        });
+
+        setReportData(rows);
+      } catch (err) {
+        console.error('Error fetching report data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchReportData();
+  }, [fromDate, toDate]);
 
   const filteredData = useMemo(() => {
     return reportData
       .filter(emp => {
         const matchesSearch = emp.name.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesDept = deptFilter === "All Departments" || emp.dept === deptFilter;
-        const matchesBranch = branchFilter === "All Branches" || emp.branch === branchFilter;
+        const matchesDept = deptFilter === "all" || emp.dept === deptFilter;
+        const matchesBranch = branchFilter === "all" || emp.branch === branchFilter;
         return matchesSearch && matchesDept && matchesBranch;
       })
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [searchQuery, deptFilter, branchFilter]);
+      .sort((a, b) => (a.zkId ?? 999999) - (b.zkId ?? 999999));
+  }, [reportData, searchQuery, deptFilter, branchFilter]);
 
-  const summary = useMemo(() => {
-    return {
-      totalEmployees: filteredData.length,
-      totalPresent: filteredData.length - filteredData.reduce((acc, curr) => acc + (curr.totalAbsents > 0 ? 1 : 0), 0),
-      totalLate: filteredData.reduce((acc, curr) => acc + curr.totalLates, 0),
-      totalAbsences: filteredData.reduce((acc, curr) => acc + curr.totalAbsents, 0)
-    };
-  }, [filteredData]);
+  const totalPages = Math.ceil(filteredData.length / rowsPerPage) || 1;
+  const paginatedData = filteredData.slice(
+    (currentPage - 1) * rowsPerPage,
+    currentPage * rowsPerPage
+  );
+
+  // Reset page on filter change
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, deptFilter, branchFilter]);
+
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxVisible = 5;
+    let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+    let end = start + maxVisible - 1;
+    if (end > totalPages) { end = totalPages; start = Math.max(1, end - maxVisible + 1); }
+    for (let i = start; i <= end; i++) pages.push(i);
+    return pages;
+  };
 
   const sortedDetails = useMemo(() => {
     if (!viewingDetails) return [];
@@ -70,12 +204,6 @@ export default function ReportsPage() {
       .filter((log: any) => logSearchDate ? log.date === logSearchDate : true)
       .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [viewingDetails, logSearchDate]);
-
-  const formatDateLabel = (dateStr: string) => {
-    if (!dateStr) return "";
-    const [year, month, day] = dateStr.split("-");
-    return `${day}/${month}/${year}`;
-  };
 
   const handleExportIndividual = (emp: any) => {
     const reportInfo = [
@@ -85,16 +213,15 @@ export default function ReportsPage() {
       ["Employee Name:", emp.name],
       ["Department:", emp.dept],
       ["Branch:", emp.branch],
-      ["Report Range:", `${formatDateLabel(fromDate)} - ${formatDateLabel(toDate)}`],
+      ["Report Range:", `${formatDateShort(fromDate)} - ${formatDateShort(toDate)}`],
       ["Generated At:", new Date().toLocaleString()],
       [],
       ["METRICS OVERVIEW"],
       ["Total Rendered Hours:", emp.totalHours.toFixed(2)],
       ["Overtime Hours:", emp.totalOvertime],
       ["Undertime Hours:", emp.totalUndertime],
-      ["Days of Absents:", emp.totalAbsents],
-      ["Total Late Count:", emp.totalLates],
-      ["Total Late Duration:", emp.lateDuration],
+      ["Late Count:", emp.late],
+      ["Late Duration:", formatLateHrs(emp.lateMinutes)],
       [],
       ["DETAILED LOGS"],
       ["Date", "Shift", "Type", "Duration/Remark"]
@@ -113,172 +240,251 @@ export default function ReportsPage() {
       ["HR ATTENDANCE REPORT"],
       ["BITS"],
       [],
-      ["Report Date Range:", `${formatDateLabel(fromDate)} - ${formatDateLabel(toDate)}`],
+      ["Report Date Range:", `${formatDateShort(fromDate)} - ${formatDateShort(toDate)}`],
       ["Generated By:", "HR Admin"],
       [],
-      ["Summary Section:"],
-      ["Total Employees:", summary.totalEmployees],
-      ["Total Present:", summary.totalPresent],
-      ["Total Late:", summary.totalLate],
-      ["Total Absences:", summary.totalAbsences],
-      [],
       ["Employee Records:"],
-      ['Employee Name', 'Branch', 'Department', 'Overtime (Hrs)', 'Undertime (Hrs)', 'Lates (Count)', 'Late Duration', 'Absents', 'Total Rendered Hours']
+      ['Employee Name', 'Branch', 'Department', 'Present', 'Late', 'Late Duration', 'Overtime', 'Undertime', 'Hours Worked']
     ];
 
     const tableData = filteredData.map(row => [
       row.name,
       row.branch,
       row.dept,
-      row.totalOvertime,
-      row.totalUndertime,
-      row.totalLates,
-      row.lateDuration,
-      row.totalAbsents,
-      row.totalHours
+      row.present,
+      row.late,
+      formatLateHrs(row.lateMinutes),
+      formatHrsMins(row.totalOvertime),
+      formatHrsMins(row.totalUndertime),
+      row.totalHours.toFixed(2),
     ]);
 
     const worksheet = XLSX.utils.aoa_to_sheet([...reportInfo, ...tableData]);
-    const wscols = [
-      { wch: 25 }, { wch: 20 }, { wch: 20 }, { wch: 15 },
-      { wch: 15 }, { wch: 12 }, { wch: 15 }, { wch: 10 }, { wch: 22 }
+    worksheet['!cols'] = [
+      { wch: 25 }, { wch: 20 }, { wch: 20 }, { wch: 10 },
+      { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
     ];
-    worksheet['!cols'] = wscols;
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
     XLSX.writeFile(workbook, `Attendance Report.xlsx`);
   };
 
-  const CustomSelect = ({ value, options, onChange, id, variant = "primary" }: any) => {
-    const isOpen = openDropdown === id;
-    const isModalVariant = variant === "modal";
-
-    return (
-      <div className="relative flex-1">
-        <button
-          onClick={(e) => { e.stopPropagation(); setOpenDropdown(isOpen ? null : id); }}
-          className={`w-full flex items-center justify-between px-4 py-2 rounded-lg text-xs font-bold transition-all outline-none ${isModalVariant
-            ? `bg-slate-50 border border-slate-200 text-slate-700 ${isOpen ? 'ring-2 ring-red-500/20 border-red-300' : ''}`
-            : `bg-[#df0808] text-white ${isOpen ? 'rounded-b-none' : 'shadow-sm'}`
-            }`}
-        >
-          <span>{value}</span>
-          {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
-        {isOpen && (
-          <div className="absolute top-full left-0 right-0 z-50 flex flex-col pt-1 animate-in fade-in slide-in-from-top-1 duration-200">
-            {options.map((opt: string) => (
-              <button
-                key={opt}
-                className={`w-full text-left px-4 py-2 transition-colors text-xs font-bold mt-[1px] rounded-sm last:rounded-b-lg shadow-sm flex items-center gap-2 ${isModalVariant
-                  ? 'bg-[#800000] text-white hover:bg-[#990000]'
-                  : 'bg-[#c21414] text-white hover:bg-red-500'
-                  }`}
-                onClick={() => {
-                  onChange(opt);
-                  setOpenDropdown(null);
-                }}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
-    <div className="space-y-4 pb-4 relative" onClick={() => setOpenDropdown(null)}>
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
+    <div className="space-y-6 pb-6">
+
+      {/* ── Page Header ──────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight leading-none uppercase">Attendance Reports</h1>
-          <p className="text-slate-500 text-sm font-medium tracking-tight">Export overall attendance records</p>
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-800">
+            Attendance Reports
+          </h2>
+          <p className="text-slate-400 text-sm mt-0.5">
+            Export overall attendance records
+          </p>
         </div>
-        <button onClick={handleExport} className="flex items-center justify-center gap-2 bg-[#E60000] text-white px-5 py-2.5 rounded-lg font-bold text-sm shadow-md hover:bg-red-700 active:scale-95 transition-all tracking-tight uppercase">
-          <Download size={16} /> Export Report
+        <button
+          onClick={handleExport}
+          className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl transition-colors shadow-lg shadow-red-600/20"
+        >
+          <Download className="w-4 h-4" />
+          Attendance Report: {formatDateShort(fromDate)} – {formatDateShort(toDate)}
         </button>
       </div>
 
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm shrink-0" onClick={(e) => e.stopPropagation()}>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Search</label>
+      {/* ── Filter Bar (matching Admin) ──────────────────────── */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5">
+        <div className="flex flex-col lg:flex-row gap-4">
+          <div className="flex-1 min-w-0">
+            <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold block mb-1.5">From</label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold block mb-1.5">To</label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold block mb-1.5">Branch</label>
+            <select
+              value={branchFilter}
+              onChange={(e) => setBranchFilter(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none transition-all appearance-none cursor-pointer"
+            >
+              <option value="all">All Branches</option>
+              {branches.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 min-w-0">
+            <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold block mb-1.5">Department</label>
+            <select
+              value={deptFilter}
+              onChange={(e) => setDeptFilter(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none transition-all appearance-none cursor-pointer"
+            >
+              <option value="all">All Departments</option>
+              {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 min-w-0">
+            <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold block mb-1.5">Search</label>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-red-500/10 transition-all font-bold text-slate-700" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+              <input
+                placeholder="Search employees..."
+                className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">From Date</label>
-            <div className="relative">
-              <input type="date" ref={fromDateRef} value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="absolute opacity-0 pointer-events-none" />
-              <button onClick={() => fromDateRef.current?.showPicker()} className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none hover:border-red-400 transition-all shadow-sm">
-                <span>{formatDateLabel(fromDate)}</span>
-                <CalendarSearch size={14} className="text-slate-400" />
-              </button>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">To Date</label>
-            <div className="relative">
-              <input type="date" ref={toDateRef} value={toDate} onChange={(e) => setToDate(e.target.value)} className="absolute opacity-0 pointer-events-none" />
-              <button onClick={() => toDateRef.current?.showPicker()} className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none hover:border-red-400 transition-all shadow-sm">
-                <span>{formatDateLabel(toDate)}</span>
-                <CalendarSearch size={14} className="text-slate-400" />
-              </button>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Branch</label>
-            <CustomSelect id="branch" value={branchFilter} options={branches} onChange={setBranchFilter} />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Department</label>
-            <CustomSelect id="dept" value={deptFilter} options={departments} onChange={setDeptFilter} />
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Attendance Summary Preview</span>
+      {/* ── Preview Records Table (matching Admin) ───────────── */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100">
+          <h3 className="text-sm font-bold text-slate-700 uppercase tracking-widest">
+            Preview Records
+          </h3>
         </div>
-        <div className="overflow-auto max-h-[360px]">
-          <table className="w-full text-left text-sm border-collapse min-w-[1000px]">
-            <thead className="bg-white text-slate-400 text-[10px] uppercase font-black tracking-widest border-b border-slate-100 sticky top-0 z-10">
+
+        <div ref={dragScrollRef} className="overflow-x-auto scrollbar-hide">
+          <table className="w-full text-left text-sm min-w-[900px]">
+            <thead className="text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
               <tr>
-                <th className="px-4 py-4 bg-white">Employee</th>
-                <th className="px-4 py-4 text-center bg-white">Absents</th>
-                <th className="px-4 py-4 text-center bg-white">Late Count</th>
-                <th className="px-4 py-4 text-center bg-white">Late Minutes</th>
-                <th className="px-4 py-4 text-center bg-white">Overtime</th>
-                <th className="px-4 py-4 text-center bg-white">Undertime</th>
-                <th className="px-4 py-4 text-center bg-white">Total (Hrs)</th>
-                <th className="px-4 py-4 text-right bg-white pr-10">Action</th>
+                <th className="px-6 py-4">Employee</th>
+                <th className="px-6 py-4">Shift</th>
+                <th className="px-6 py-4 text-center">Present</th>
+                <th className="px-6 py-4 text-center">Late</th>
+                <th className="px-6 py-4 text-center">Overtime</th>
+                <th className="px-6 py-4 text-center">Undertime</th>
+                <th className="px-6 py-4 text-center">Hours Worked</th>
+                <th className="px-6 py-4 text-center"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
-              {filteredData.map((emp, index) => (
-                <tr key={index} className="hover:bg-red-50/50 transition-colors group h-[58px]">
-                  <td className="px-6 py-3 font-bold text-slate-700 underline decoration-red-100 underline-offset-4 decoration-2">{emp.name}</td>
-                  <td className="px-4 py-3 text-center font-medium text-red-500">{emp.totalAbsents}</td>
-                  <td className="px-4 py-3 text-center font-medium text-orange-500">{emp.totalLates}</td>
-                  <td className="px-4 py-3 text-center font-medium text-orange-600 font-bold">{emp.lateDuration}</td><td className="px-4 py-3 text-center font-bold text-blue-600">+{emp.totalOvertime}h</td>
-                  <td className="px-4 py-3 text-center font-bold text-amber-600">-{emp.totalUndertime}h</td>
-                  <td className="px-4 py-3 text-center font-mono text-slate-600 font-bold">{emp.totalHours.toFixed(2)}</td>
-                  <td className="px-4 py-3 text-right pr-6">
-                    <button onClick={() => setViewingDetails(emp)} className="px-4 py-2 bg-[#E60000] text-white rounded-lg text-[10px] font-black tracking-wider hover:bg-red-700 transition-all shadow-sm active:scale-95 uppercase">
-                      VIEW HISTORY
-                    </button>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-400 font-bold text-xs">
+                    Loading report data...
                   </td>
                 </tr>
-              ))}
+              ) : paginatedData.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-20 text-center text-slate-400 font-bold uppercase text-xs tracking-widest">
+                    No records found
+                  </td>
+                </tr>
+              ) : (
+                paginatedData.map((emp) => (
+                  <tr key={emp.id} className="hover:bg-red-50/30 transition-colors duration-200">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-800">{emp.name}</span>
+                        {emp.hasAnomaly && (
+                          <span title="This employee has anomalous check-in records">
+                            <AlertTriangle className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      {emp.shift ? (
+                        <div>
+                          <p className="text-xs font-bold text-slate-700">{emp.shift.name}</p>
+                          <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                            {formatShiftTime(emp.shift.startTime)} – {formatShiftTime(emp.shift.endTime)}
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-300 font-bold italic">No shift</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-5 text-center">
+                      <span className="text-sm font-bold text-slate-700">{emp.present}</span>
+                    </td>
+                    <td className="px-6 py-5 text-center">
+                      {emp.lateMinutes > 0 ? (
+                        <span className="text-sm font-bold text-yellow-600">{formatLateHrs(emp.lateMinutes)}</span>
+                      ) : (
+                        <span className="text-sm font-bold text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-5 text-center">
+                      <span className={`text-sm font-bold ${emp.totalOvertime > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
+                        {emp.totalOvertime > 0 ? formatHrsMins(emp.totalOvertime) : '—'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5 text-center">
+                      <span className={`text-sm font-bold ${emp.totalUndertime > 0 ? 'text-red-500' : 'text-slate-300'}`}>
+                        {emp.totalUndertime > 0 ? formatHrsMins(emp.totalUndertime) : '—'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5 text-center">
+                      <span className="text-sm font-bold font-mono text-slate-800">{emp.totalHours.toFixed(2)}</span>
+                    </td>
+                    <td className="px-6 py-5">
+                      <button
+                        onClick={() => setViewingDetails(emp)}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-full transition-colors shadow-sm"
+                      >
+                        View History
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
+
+        {/* ── Pagination ──────────────────────────────────────── */}
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs text-slate-400 font-bold">
+            Showing {paginatedData.length} of {filteredData.length} records · Page {currentPage} of {totalPages}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            {getPageNumbers().map((page) => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${
+                  currentPage === page
+                    ? 'bg-red-600 text-white'
+                    : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       </div>
 
+      {/* ── Employee Detail Modal ─────────────────────────────── */}
       {viewingDetails && (
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col h-[600px] animate-in slide-in-from-bottom-8 ease-out duration-500">
@@ -296,13 +502,12 @@ export default function ReportsPage() {
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1.5">{viewingDetails.dept} • {viewingDetails.branch}</p>
               </div>
 
-              <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+              <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
                 {[
-                  { label: 'Absents', val: viewingDetails.totalAbsents, color: 'text-red-600', bg: 'bg-red-50' },
-                  { label: 'Lates', val: viewingDetails.totalLates, color: 'text-orange-500', bg: 'bg-orange-50' },
-                  { label: 'Late Time', val: viewingDetails.lateDuration, color: 'text-orange-600', bg: 'bg-orange-600/10' },
-                  { label: 'Overtime', val: `+${viewingDetails.totalOvertime}h`, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-                  { label: 'Undertime', val: `-${viewingDetails.totalUndertime}h`, color: 'text-amber-600', bg: 'bg-amber-50' },
+                  { label: 'Present', val: viewingDetails.present, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                  { label: 'Lates', val: viewingDetails.late, color: 'text-orange-500', bg: 'bg-orange-50' },
+                  { label: 'Late Time', val: formatLateHrs(viewingDetails.lateMinutes), color: 'text-orange-600', bg: 'bg-orange-600/10' },
+                  { label: 'Overtime', val: viewingDetails.totalOvertime > 0 ? formatHrsMins(viewingDetails.totalOvertime) : '—', color: 'text-blue-600', bg: 'bg-blue-50' },
                   { label: 'Total Hrs', val: viewingDetails.totalHours.toFixed(1), color: 'text-slate-700', bg: 'bg-slate-100' },
                 ].map((stat, i) => (
                   <div key={i} className={`${stat.bg} p-2.5 rounded-lg border border-black/5`}>
@@ -317,7 +522,7 @@ export default function ReportsPage() {
                 <div className="relative">
                   <input type="date" ref={logDateRef} value={logSearchDate} onChange={(e) => setLogSearchDate(e.target.value)} className="absolute opacity-0 pointer-events-none" />
                   <button onClick={() => logDateRef.current?.showPicker()} className="w-full flex items-center justify-between px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none shadow-sm hover:border-red-200 transition-all">
-                    <span>{logSearchDate ? formatDateLabel(logSearchDate) : "Select Date"}</span>
+                    <span>{logSearchDate ? formatDateShort(logSearchDate) : "Select Date"}</span>
                     <CalendarSearch size={14} className="text-slate-400" />
                   </button>
                   {logSearchDate && (<button onClick={() => setLogSearchDate("")} className="absolute -right-8 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"><X size={12} /></button>)}

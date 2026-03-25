@@ -1,6 +1,94 @@
 "use client"
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { History, FileEdit, Search, CalendarSearch, X, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { History, Search, CalendarSearch, X, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
+
+interface AuditLog {
+  id: number;
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+  reason: string | null;
+  createdAt: string;
+  attendance: {
+    employee: {
+      firstName: string;
+      lastName: string;
+      branch: string | null;
+      role: string;
+    };
+  };
+  adjustedBy: {
+    firstName: string;
+    lastName: string;
+    role: string;
+  };
+}
+
+const fieldLabels: Record<string, string> = {
+  checkInTime: 'Time-In',
+  checkOutTime: 'Time-Out',
+  status: 'Status',
+};
+
+function formatValue(field: string, value: string | null): string {
+  if (!value) return 'None';
+  if (field === 'status') {
+    const lower = value.toLowerCase();
+    if (lower === 'present') return 'On Time';
+    return value.charAt(0).toUpperCase() + value.slice(1);
+  }
+  // ISO date string → formatted 12-hour time
+  try {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+    return d.toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Manila',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return value;
+  }
+}
+
+function formatTimestamp(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString('en-US', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function getChangeColor(field: string, newValue: string | null): string {
+  if (!newValue) return 'text-emerald-600';
+  if (field === 'status') {
+    const lower = newValue.toLowerCase();
+    return lower === 'late' ? 'text-yellow-500' : 'text-emerald-600';
+  }
+  if (field === 'checkInTime') {
+    try {
+      const d = new Date(newValue);
+      if (!isNaN(d.getTime())) {
+        // Convert to PHT and check if after 8:30 AM
+        const pht = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+        const mins = pht.getUTCHours() * 60 + pht.getUTCMinutes();
+        return mins > 8 * 60 + 30 ? 'text-yellow-500' : 'text-emerald-600';
+      }
+    } catch { }
+  }
+  return 'text-emerald-600';
+}
 
 export default function AdjustmentsPage() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -10,132 +98,73 @@ export default function AdjustmentsPage() {
   const logDateRef = useRef<HTMLInputElement>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5;
+  const itemsPerPage = 15;
 
-  const branches = ["Main Office", "Makati Branch", "Tayud Branch"];
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [branches, setBranches] = useState<string[]>(["All Branches"]);
+  const dragScrollRef = useHorizontalDragScroll();
+  const [loading, setLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
-  const auditLogs = [
-    {
-      id: 1,
-      user: "HR",
-      role: "HR",
-      branch: "Main Office",
-      employee: "Mark Anthony",
-      field: "Time-Out (PM)",
-      oldVal: "05:00 PM",
-      newVal: "07:00 PM",
-      date: "2026-02-23",
-      timestamp: "2026-02-23 08:56 PM",
-      remarks: "Biometric machine lag."
-    },
-    {
-      id: 2,
-      user: "Admin 01",
-      role: "Admin 1",
-      branch: "Makati Branch",
-      employee: "Sarah Jenkins",
-      field: "Attendance Status",
-      oldVal: "No Logs",
-      newVal: "Present",
-      date: "2026-02-23",
-      timestamp: "2026-02-23 09:12 PM",
-      remarks: "Forgot to scan."
-    },
-    {
-      id: 3,
-      user: "Admin 02",
-      role: "Admin 2",
-      branch: "Tayud Branch",
-      employee: "Ariadne Arsolon",
-      field: "Time-In (AM)",
-      oldVal: "09:45 AM",
-      newVal: "08:30 AM",
-      date: "2026-02-24",
-      timestamp: "2026-02-24 10:05 AM",
-      remarks: "Scanner error."
-    },
-    {
-      id: 4,
-      user: "HR",
-      role: "HR",
-      branch: "Main Office",
-      employee: "Mark Anthony",
-      field: "Overtime (Hrs)",
-      oldVal: "0",
-      newVal: "3",
-      date: "2026-02-24",
-      timestamp: "2026-02-24 11:20 AM",
-      remarks: "Forgot to scan."
-    },
-    {
-      id: 5,
-      user: "Admin 01",
-      role: "Admin 1",
-      branch: "Main Office",
-      employee: "John Doe",
-      field: "Time-In (AM)",
-      oldVal: "10:00 AM",
-      newVal: "08:00 AM",
-      date: "2026-02-25",
-      timestamp: "2026-02-25 09:00 AM",
-      remarks: "Forgot to scan."
-    },
-    {
-      id: 6,
-      user: "HR",
-      role: "HR",
-      branch: "Makati Branch",
-      employee: "James Wilson",
-      field: "Time-Out (PM)",
-      oldVal: "06:00 PM",
-      newVal: "05:00 PM",
-      date: "2026-02-25",
-      timestamp: "2026-02-25 10:30 AM",
-      remarks: "Incorrect checkout entry."
-    },
-    {
-      id: 7,
-      user: "Admin 02",
-      role: "Admin 2",
-      branch: "Tayud Branch",
-      employee: "Elena Cruz",
-      field: "Attendance Status",
-      oldVal: "Absent",
-      newVal: "Excused",
-      date: "2026-02-26",
-      timestamp: "2026-02-26 08:15 AM",
-      remarks: "Medical certificate submitted."
-    },
-    {
-      id: 8,
-      user: "Admin 01",
-      role: "Admin 1",
-      branch: "Main Office",
-      employee: "Robert Chen",
-      field: "Time-In (AM)",
-      oldVal: "09:15 AM",
-      newVal: "08:45 AM",
-      date: "2026-02-26",
-      timestamp: "2026-02-26 09:45 AM",
-      remarks: "System sync error."
+  const fetchLogs = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      params.set('page', String(currentPage));
+      params.set('limit', String(itemsPerPage));
+      if (searchQuery) params.set('search', searchQuery);
+      if (branchFilter && branchFilter !== 'All Branches') params.set('branch', branchFilter);
+      if (logDate) params.set('date', logDate);
+
+      const res = await fetch(`/api/attendance/audit-logs?${params.toString()}`, { credentials: 'include' });
+      if (res.status === 401) { window.location.href = '/login'; return; }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.message || `Server error ${res.status}`);
+      }
+      const data = await res.json();
+
+      if (data.success) {
+        setAuditLogs(data.data);
+        setTotalCount(data.meta.total);
+        setTotalPages(data.meta.totalPages);
+
+        // Extract unique branches for the filter
+        const branchSet = new Set<string>();
+        data.data.forEach((log: AuditLog) => {
+          if (log.attendance?.employee?.branch) {
+            branchSet.add(log.attendance.employee.branch);
+          }
+        });
+        setBranches(prev => {
+          const merged = new Set([...prev, ...branchSet]);
+          return Array.from(merged).sort();
+        });
+      }
+    } catch (err) {
+      console.error('Failed to fetch audit logs:', err);
+    } finally {
+      setLoading(false);
     }
-  ];
+  }, [currentPage, searchQuery, branchFilter, logDate]);
 
-  const filteredLogs = useMemo(() => {
-    return auditLogs
-      .filter(log => {
-        const matchesSearch = log.employee.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          log.user.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesBranch = branchFilter === "All Branches" || log.branch === branchFilter;
-        const matchesDate = logDate === "" || log.date === logDate;
-
-        return matchesSearch && matchesBranch && matchesDate;
+  // Also fetch all branches on mount
+  useEffect(() => {
+    fetch('/api/branches', { credentials: 'include' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          const names = (d.branches || d.data || []).map((b: any) => b.name);
+          setBranches(names);
+        }
       })
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [searchQuery, branchFilter, logDate]);
+      .catch(() => { });
+  }, []);
 
-  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
-  const paginatedLogs = filteredLogs.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -161,7 +190,7 @@ export default function AdjustmentsPage() {
         {isOpen && (
           <div className="absolute top-full left-0 right-0 z-50 flex flex-col pt-1">
             <button
-              className="w-full text-left px-5 py-3 bg-[#c21414] text-white hover:bg-red-500 transition-colors text-xs font-bold first:mt-0 mt-[1px] rounded-sm shadow-sm"
+              className="w-full text-left px-5 py-3 bg-[#c21414] text-white hover:bg-red-500 transition-colors text-xs font-bold first:mt-0 mt-px rounded-sm shadow-sm"
               onClick={() => {
                 onChange("All Branches");
                 setOpenDropdown(null);
@@ -172,7 +201,7 @@ export default function AdjustmentsPage() {
             {options.map((opt: string) => (
               <button
                 key={opt}
-                className="w-full text-left px-5 py-3 bg-[#c21414] text-white hover:bg-red-500 transition-colors text-xs font-bold first:mt-0 mt-[1px] rounded-sm last:rounded-b-lg shadow-sm"
+                className="w-full text-left px-5 py-3 bg-[#c21414] text-white hover:bg-red-500 transition-colors text-xs font-bold first:mt-0 mt-px rounded-sm last:rounded-b-lg shadow-sm"
                 onClick={() => {
                   onChange(opt);
                   setOpenDropdown(null);
@@ -239,8 +268,8 @@ export default function AdjustmentsPage() {
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm border-collapse table-auto">
+        <div ref={dragScrollRef} className="overflow-x-auto scrollbar-hide">
+          <table className="w-full text-left text-sm border-collapse table-auto min-w-[900px]">
             <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
               <tr>
                 <th className="px-4 py-3.5">Timestamp</th>
@@ -253,31 +282,82 @@ export default function AdjustmentsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {paginatedLogs.length > 0 ? paginatedLogs.map((log) => (
-                <tr key={log.id} className="hover:bg-red-50 transition-colors duration-200 group cursor-default">
-                  <td className="px-4 py-2.5 font-mono text-[10px] text-slate-500 whitespace-nowrap">{log.timestamp}</td>
-                  <td className="px-4 py-2.5 font-bold text-slate-700 underline decoration-red-100 underline-offset-4 decoration-2">{log.user}</td>
-                  <td className="px-4 py-2.5 font-medium text-slate-500 text-xs">{log.branch}</td>
-                  <td className="px-4 py-2.5 font-bold text-slate-700">{log.employee}</td>
-                  <td className="px-4 py-2.5">
-                    <span className="text-[10px] font-black uppercase tracking-tight text-slate-600">{log.field}</span>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex items-center gap-2 whitespace-nowrap">
-                      <span className="text-[10px] text-slate-400 line-through decoration-slate-300">{log.oldVal}</span>
-                      <span className="text-xs font-black text-emerald-600">→ {log.newVal}</span>
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-24 text-center">
+                    <div className="flex items-center justify-center gap-2 text-slate-400">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span className="font-bold uppercase text-[10px] tracking-widest">Loading audit logs...</span>
                     </div>
                   </td>
-                  <td className="px-4 py-2.5 text-right pr-10">
-                    <p className="text-[11px] font-medium text-slate-500 leading-relaxed max-w-[200px] ml-auto">
-                      {log.remarks}
-                    </p>
-                  </td>
                 </tr>
-              )) : (
+              ) : auditLogs.length > 0 ? (() => {
+                // Group logs by adjuster + target employee + minute-truncated timestamp
+                const groups: { key: string; logs: AuditLog[] }[] = [];
+                const groupMap = new Map<string, AuditLog[]>();
+                auditLogs.forEach((log) => {
+                  const emp = log.attendance?.employee;
+                  const adj = log.adjustedBy;
+                  const key = `${adj?.firstName}_${adj?.lastName}_${emp?.firstName}_${emp?.lastName}_${log.createdAt.slice(0, 16)}`;
+                  if (!groupMap.has(key)) {
+                    const arr: AuditLog[] = [];
+                    groupMap.set(key, arr);
+                    groups.push({ key, logs: arr });
+                  }
+                  groupMap.get(key)!.push(log);
+                });
+
+                return groups.map((group) => {
+                  const first = group.logs[0];
+                  const emp = first.attendance?.employee;
+                  const adjuster = first.adjustedBy;
+                  const employeeName = emp ? `${emp.firstName} ${emp.lastName}` : 'Unknown';
+                  const adjusterName = adjuster ? `${adjuster.firstName} ${adjuster.lastName}` : 'System';
+                  const branch = emp?.branch || '—';
+                  // Merge reasons: pick the first non-empty one
+                  const reason = group.logs.find(l => l.reason)?.reason || '—';
+
+                  return (
+                    <tr key={group.key} className="hover:bg-red-50 transition-colors duration-200 group cursor-default">
+                      <td className="px-4 py-2.5 font-mono text-[10px] text-slate-500 whitespace-nowrap align-top">{formatTimestamp(first.createdAt)}</td>
+                      <td className="px-4 py-2.5 font-bold text-slate-700 underline decoration-red-100 underline-offset-4 decoration-2 align-top">{adjusterName}</td>
+                      <td className="px-4 py-2.5 font-medium text-slate-500 text-xs align-top">{branch}</td>
+                      <td className="px-4 py-2.5 font-bold text-slate-700 align-top">{employeeName}</td>
+                      <td className="px-4 py-2.5 align-top">
+                        <div className="flex flex-col gap-1.5">
+                          {group.logs.map((log) => (
+                            <span key={log.id} className="text-[10px] font-black uppercase tracking-tight text-slate-600">
+                              {fieldLabels[log.field] || log.field}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 align-top">
+                        <div className="flex flex-col gap-1.5">
+                          {group.logs.map((log) => (
+                            <div key={log.id} className="flex items-center gap-2 whitespace-nowrap">
+                              <span className="text-[10px] text-slate-400 line-through decoration-slate-300">
+                                {formatValue(log.field, log.oldValue)}
+                              </span>
+                              <span className={`text-xs font-black ${getChangeColor(log.field, log.newValue)}`}>
+                                → {formatValue(log.field, log.newValue)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-right pr-10 align-top">
+                        <p className="text-[11px] font-medium text-slate-500 leading-relaxed max-w-[200px] ml-auto">
+                          {reason}
+                        </p>
+                      </td>
+                    </tr>
+                  );
+                });
+              })() : (
                 <tr>
                   <td colSpan={7} className="px-6 py-24 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">
-                    No biometric logs found
+                    No adjustment logs found
                   </td>
                 </tr>
               )}
@@ -288,7 +368,7 @@ export default function AdjustmentsPage() {
         {totalPages > 1 && (
           <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              Showing <span className="text-slate-700">{((currentPage - 1) * itemsPerPage) + 1}</span> to <span className="text-slate-700">{Math.min(currentPage * itemsPerPage, filteredLogs.length)}</span> of <span className="text-slate-700">{filteredLogs.length}</span> records
+              Showing <span className="text-slate-700">{((currentPage - 1) * itemsPerPage) + 1}</span> to <span className="text-slate-700">{Math.min(currentPage * itemsPerPage, totalCount)}</span> of <span className="text-slate-700">{totalCount}</span> records
             </p>
             <div className="flex items-center gap-2">
               <button
@@ -299,15 +379,18 @@ export default function AdjustmentsPage() {
                 <ChevronLeft size={16} />
               </button>
               <div className="flex items-center gap-1">
-                {[...Array(totalPages)].map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setCurrentPage(i + 1)}
-                    className={`w-8 h-8 rounded-lg text-xs font-black transition-all ${currentPage === i + 1 ? 'bg-red-600 text-white shadow-md shadow-red-200' : 'bg-white border border-slate-200 text-slate-400 hover:bg-slate-50'}`}
-                  >
-                    {i + 1}
-                  </button>
-                ))}
+                {[...Array(Math.min(totalPages, 5))].map((_, i) => {
+                  const pageNum = totalPages <= 5 ? i + 1 : Math.max(1, Math.min(currentPage - 2, totalPages - 4)) + i;
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`w-8 h-8 rounded-lg text-xs font-black transition-all ${currentPage === pageNum ? 'bg-red-600 text-white shadow-md shadow-red-200' : 'bg-white border border-slate-200 text-slate-400 hover:bg-slate-50'}`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
               </div>
               <button
                 onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}

@@ -110,7 +110,7 @@ export default function Dashboard() {
 
   const load = useCallback(async () => {
     try {
-const todayStr = phtStr(new Date())
+      const todayStr = phtStr(new Date())
       setUpdatedAt(new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }))
 
       const weekDates = getWeekDates()
@@ -584,7 +584,7 @@ const todayStr = phtStr(new Date())
                       {/* Right: Type badge + Status badge */}
                       <div className="flex flex-col items-end gap-0.5 shrink-0">
                         <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${a.eventType === 'check-in'
-                          ? 'bg-emerald-50 text-emerald-700'
+                          ? 'bg-blue-50 text-blue-700'
                           : 'bg-slate-50 text-slate-500'
                           }`}>
                           {a.eventType === 'check-in' ? 'Check-in' : 'Check-out'}

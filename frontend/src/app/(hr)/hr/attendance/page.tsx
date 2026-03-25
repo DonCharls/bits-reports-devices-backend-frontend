@@ -155,7 +155,10 @@ function AttendanceContent() {
           const overtimeMinutes: number = log.overtimeMinutes ?? 0;
           const undertimeMinutes: number = log.undertimeMinutes ?? 0;
           const shiftCode: string | null = log.shiftCode ?? emp.Shift?.shiftCode ?? null;
-          const status = lateMinutes > 0 ? 'late' : (log.status || 'present');
+          // For present/late: use computed lateMinutes (always accurate based on actual checkIn vs shift)
+          // For absent or other: use stored DB status
+          const dbStatus = (log.status || '').toLowerCase();
+          const status = dbStatus === 'absent' ? 'absent' : (lateMinutes > 0 ? 'late' : 'present');
           return {
             id: log.id,
             employeeId: log.employeeId,
@@ -254,9 +257,11 @@ function AttendanceContent() {
     }
     setActionLoading(true);
     try {
-      const body: any = { status: editStatus, reason: editReason };
+      const body: any = { reason: editReason };
+      // Only send manual status if no time changes (let backend auto-recalculate when times change)
       if (editCheckIn) body.checkInTime = `${editingLog.date}T${editCheckIn}:00+08:00`;
       if (editCheckOut) body.checkOutTime = `${editingLog.date}T${editCheckOut}:00+08:00`;
+      if (!editCheckIn && !editCheckOut) body.status = editStatus;
 
       const res = await fetch(`/api/attendance/${editingLog.id}`, {
         method: 'PUT',
@@ -301,7 +306,7 @@ function AttendanceContent() {
   const departments = ['All Departments', 'Purchasing', 'Human Resources', 'I.T.', 'Engineering'];
   const statuses = [
     { value: 'all', label: 'All Status' },
-    { value: 'present', label: 'Present' },
+    { value: 'present', label: 'On Time' },
     { value: 'late', label: 'Late' },
     { value: 'absent', label: 'Absent' },
   ];
@@ -398,95 +403,188 @@ function AttendanceContent() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table (desktop) + Cards (mobile) */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div ref={dragScrollRef} className="overflow-x-auto scrollbar-hide">
-        <table className="w-full text-left text-sm border-collapse min-w-[1100px]">
-          <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
-            <tr>
-              <th className="px-6 py-4">Employee</th>
-              <th className="px-6 py-4">Department</th>
-              <th className="px-6 py-4">Branch</th>
-              <th className="px-6 py-4">Shift</th>
-              <th className="px-6 py-4">Clock In</th>
-              <th className="px-6 py-4">Clock Out</th>
-              <th className="px-6 py-4">Late</th>
-              <th className="px-6 py-4">Hours</th>
-              <th className="px-6 py-4">OT</th>
-              <th className="px-6 py-4">UT</th>
-              <th className="px-6 py-4 text-center">Status</th>
-              <th className="px-6 py-4 text-center">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {loading ? (
-              <tr><td colSpan={12} className="px-6 py-16 text-center">
-                <div className="flex flex-col items-center gap-2 text-slate-400">
-                  <div className="w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-                  <span className="text-sm font-medium">Loading attendance...</span>
-                </div>
-              </td></tr>
-            ) : records.length === 0 ? (
-              <tr><td colSpan={12} className="px-6 py-16 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">No attendance records found</td></tr>
-            ) : (
-              records
+
+        {/* ── Mobile Card View ── */}
+        <div className="lg:hidden">
+          {loading ? (
+            <div className="px-6 py-16 text-center">
+              <div className="flex flex-col items-center gap-2 text-slate-400">
+                <div className="w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-sm font-medium">Loading attendance...</span>
+              </div>
+            </div>
+          ) : records.length === 0 ? (
+            <div className="px-6 py-16 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">No attendance records found</div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {records
                 .slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
                 .map(row => (
-                  <tr key={row.id} className="hover:bg-red-50/40 transition-colors duration-200 group cursor-default">
-                    <td className="px-6 py-4">
-                      <p className="font-bold text-slate-700">{row.employeeName}</p>
-                      <p className="text-[10px] text-slate-400 font-medium">{row.branchName}</p>
-                    </td>
-                    <td className="px-6 py-4 text-xs font-medium text-slate-500">{row.department}</td>
-                    <td className="px-6 py-4 text-xs font-medium text-slate-500">{row.branchName}</td>
-                    <td className="px-6 py-4">
-                      {row.shiftCode ? (
-                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border ${row.isNightShift ? 'bg-purple-100 text-purple-600 border-purple-200' : 'bg-blue-100 text-blue-600 border-blue-200'}`}>
-                          {row.shiftCode}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-400 font-medium italic">No shift</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 font-mono text-emerald-600 font-bold text-sm">{row.checkIn}</td>
-                    <td className="px-6 py-4 font-mono text-slate-600 font-bold text-sm">{row.checkOut}</td>
-                    <td className="px-6 py-4">
-                      {row.lateMinutes > 0 ? (
-                        <span className="text-xs font-bold text-yellow-600 bg-yellow-50 border border-yellow-100 px-2 py-0.5 rounded-full whitespace-nowrap">
-                          {formatLate(row.lateMinutes)}
-                        </span>
-                      ) : <span className="text-xs text-slate-300">—</span>}
-                    </td>
-                    <td className="px-6 py-4 font-mono text-slate-700 font-bold text-sm">{fmtHours(row.totalHours)}</td>
-                    <td className="px-6 py-4">
-                      <span className={`text-sm font-bold ${row.overtimeMinutes > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
-                        {row.overtimeMinutes > 0 ? `+${fmtMins(row.overtimeMinutes)}` : '—'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`text-sm font-bold ${row.undertimeMinutes > 0 ? 'text-red-500' : 'text-slate-300'}`}>
-                        {row.undertimeMinutes > 0 ? `-${fmtMins(row.undertimeMinutes)}` : '—'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border ${
-                        row.status === 'present' ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
+                  <div key={row.id} className="p-4 hover:bg-red-50/30 transition-colors">
+                    {/* Header: Name + Status + Edit */}
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-slate-700 text-sm truncate">{row.employeeName}</p>
+                        <p className="text-[10px] text-slate-400 font-medium">{row.department} • {row.branchName}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`font-black text-[10px] uppercase px-2.5 py-1 rounded-full border whitespace-nowrap ${row.status === 'present' ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
                           : row.status === 'late' ? 'text-yellow-600 bg-yellow-50 border-yellow-100'
-                          : 'text-red-600 bg-red-50 border-red-100'
-                      }`}>
-                        {row.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <button onClick={() => handleEditClick(row)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
-                        <Edit2 size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-            )}
-          </tbody>
-        </table>
+                            : 'text-red-600 bg-red-50 border-red-100'
+                        }`}>
+                          {row.status === 'present' ? 'On Time' : row.status}
+                        </span>
+                        <button onClick={() => handleEditClick(row)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
+                          <Edit2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Grid: Clock In/Out + Details */}
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                      <div>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Clock In</p>
+                        <p className="font-mono text-green-600 font-bold text-sm">{row.checkIn}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Clock Out</p>
+                        <p className="font-mono text-slate-600 font-bold text-sm">{row.checkOut}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Shift</p>
+                        {row.shiftCode ? (
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${row.isNightShift ? 'bg-purple-100 text-purple-600 border-purple-200' : 'bg-blue-100 text-blue-600 border-blue-200'}`}>
+                            {row.shiftCode}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic">No shift</span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Hours</p>
+                        <p className="font-mono text-slate-700 font-bold text-sm">{fmtHours(row.totalHours)}</p>
+                      </div>
+                    </div>
+
+                    {/* Bottom row: Late / OT / UT */}
+                    {(row.lateMinutes > 0 || row.overtimeMinutes > 0 || row.undertimeMinutes > 0) && (
+                      <div className="flex items-center gap-3 mt-2 pt-2 border-t border-slate-50">
+                        {row.lateMinutes > 0 && (
+                          <span className="text-[10px] font-bold text-yellow-600 bg-yellow-50 border border-yellow-100 px-2 py-0.5 rounded-full">
+                            Late {formatLate(row.lateMinutes)}
+                          </span>
+                        )}
+                        {row.overtimeMinutes > 0 && (
+                          <span className="text-[10px] font-bold text-emerald-600">
+                            OT +{fmtMins(row.overtimeMinutes)}
+                          </span>
+                        )}
+                        {row.undertimeMinutes > 0 && (
+                          <span className="text-[10px] font-bold text-red-500">
+                            UT -{fmtMins(row.undertimeMinutes)}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Desktop Table View ── */}
+        <div ref={dragScrollRef} className="overflow-x-auto scrollbar-hide hidden lg:block">
+          <table className="w-full text-left text-sm border-collapse min-w-[1100px]">
+            <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
+              <tr>
+                <th className="px-6 py-4">Employee</th>
+                <th className="px-6 py-4">Department</th>
+                <th className="px-6 py-4">Branch</th>
+                <th className="px-6 py-4">Shift</th>
+                <th className="px-6 py-4">Clock In</th>
+                <th className="px-6 py-4">Clock Out</th>
+                <th className="px-6 py-4">Late</th>
+                <th className="px-6 py-4">Hours</th>
+                <th className="px-6 py-4">OT</th>
+                <th className="px-6 py-4">UT</th>
+                <th className="px-6 py-4 text-center">Status</th>
+                <th className="px-6 py-4 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                <tr><td colSpan={12} className="px-6 py-16 text-center">
+                  <div className="flex flex-col items-center gap-2 text-slate-400">
+                    <div className="w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-sm font-medium">Loading attendance...</span>
+                  </div>
+                </td></tr>
+              ) : records.length === 0 ? (
+                <tr><td colSpan={12} className="px-6 py-16 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">No attendance records found</td></tr>
+              ) : (
+                records
+                  .slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
+                  .map(row => (
+                    <tr key={row.id} className="hover:bg-red-50/40 transition-colors duration-200 group cursor-default">
+                      <td className="px-6 py-4">
+                        <p className="font-bold text-slate-700">{row.employeeName}</p>
+                        <p className="text-[10px] text-slate-400 font-medium">{row.branchName}</p>
+                      </td>
+                      <td className="px-6 py-4 text-xs font-medium text-slate-500">{row.department}</td>
+                      <td className="px-6 py-4 text-xs font-medium text-slate-500">{row.branchName}</td>
+                      <td className="px-6 py-4">
+                        {row.shiftCode ? (
+                          <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border whitespace-nowrap ${row.isNightShift ? 'bg-purple-100 text-purple-600 border-purple-200' : 'bg-blue-100 text-blue-600 border-blue-200'}`}>
+                            {row.shiftCode}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-medium italic">No shift</span>
+                        )}
+                      </td>
+                      <td className={`px-6 py-4 font-mono font-bold text-sm ${
+                        row.status === 'late' ? 'text-yellow-600' :
+                        row.status === 'present' ? 'text-green-600' :
+                        'text-slate-400'
+                      }`}>{row.checkIn}</td>
+                      <td className="px-6 py-4 font-mono text-slate-600 font-bold text-sm">{row.checkOut}</td>
+                      <td className="px-6 py-4 text-center">
+                        {row.lateMinutes > 0 ? (
+                          <span className="text-[10px] font-black text-yellow-600 bg-yellow-50 border border-yellow-100 px-2.5 py-1 rounded-full whitespace-nowrap">
+                            {formatLate(row.lateMinutes)}
+                          </span>
+                        ) : <span className="text-[10px] text-slate-300 font-black">—</span>}
+                      </td>
+                      <td className="px-6 py-4 font-mono text-slate-700 font-bold text-sm">{fmtHours(row.totalHours)}</td>
+                      <td className="px-6 py-4">
+                        <span className={`text-sm font-bold ${row.overtimeMinutes > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
+                          {row.overtimeMinutes > 0 ? `+${fmtMins(row.overtimeMinutes)}` : '—'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`text-sm font-bold ${row.undertimeMinutes > 0 ? 'text-red-500' : 'text-slate-300'}`}>
+                          {row.undertimeMinutes > 0 ? `-${fmtMins(row.undertimeMinutes)}` : '—'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${row.status === 'present' ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
+                            : row.status === 'late' ? 'text-yellow-600 bg-yellow-50 border-yellow-100'
+                              : 'text-red-600 bg-red-50 border-red-100'
+                          }`}>
+                          {row.status === 'present' ? 'On Time' : row.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <button onClick={() => handleEditClick(row)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
+                          <Edit2 size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+              )}
+            </tbody>
+          </table>
         </div>
 
         {/* Pagination */}
