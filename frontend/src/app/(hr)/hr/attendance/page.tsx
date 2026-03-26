@@ -8,13 +8,12 @@ import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import * as XLSX from 'xlsx';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/ui/SortableHeader';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Search,
   Calendar as CalendarIcon,
   Clock,
   Edit2,
-  ChevronDown,
-  ChevronUp,
   Loader2,
   AlertCircle,
   Download,
@@ -58,6 +57,10 @@ function AttendanceContent() {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Dynamic branch/department lists from API
+  const [branchesList, setBranchesList] = useState<{ id: number; name: string }[]>([]);
+  const [departmentsList, setDepartmentsList] = useState<{ id: number; name: string }[]>([]);
   const [editingLog, setEditingLog] = useState<AttendanceRecord | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
@@ -67,7 +70,7 @@ function AttendanceContent() {
   const [editStatus, setEditStatus] = useState('present');
   const [editReason, setEditReason] = useState('');
   const [stats, setStats] = useState({ onTime: 0, late: 0, absent: 0, total: 0, avgHours: '0', totalOT: '0', totalUT: '0' });
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+
   const dateInputRef = useRef<HTMLInputElement>(null);
   const dragScrollRef = useHorizontalDragScroll();
 
@@ -94,6 +97,32 @@ function AttendanceContent() {
 
   // Reset page on filter change
   useEffect(() => { setCurrentPage(1); }, [selectedDate, statusFilter, debouncedSearch, branchFilter, deptFilter]);
+
+  // Fetch branches from API
+  useEffect(() => {
+    const run = async () => {
+      try {
+        const res = await fetch('/api/branches', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.branches) setBranchesList(data.branches);
+        }
+      } catch { /* ignore */ }
+    };
+    run();
+  }, []);
+
+  // Fetch departments from API
+  useEffect(() => {
+    const run = async () => {
+      try {
+        const res = await fetch('/api/departments', { credentials: 'include' });
+        const data = await res.json();
+        if (data.success && data.departments) setDepartmentsList(data.departments);
+      } catch { /* ignore */ }
+    };
+    run();
+  }, []);
 
   const { sortedData: sortedRecords, sortKey, sortOrder, handleSort } = useTableSort<AttendanceRecord>({
     initialData: records
@@ -292,25 +321,66 @@ function AttendanceContent() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Employee', 'Department', 'Branch', 'Date', 'Check In', 'Check Out', 'Shift', 'Late', 'Hours', 'OT', 'UT', 'Status'];
-    const rows = sortedRecords.map(r => [
-      r.employeeName, r.department, r.branchName, r.date, r.checkIn, r.checkOut,
-      r.shiftCode || 'No Shift', formatLate(r.lateMinutes),
-      r.totalHours > 0 ? r.totalHours.toFixed(2) : '—',
-      r.overtimeMinutes > 0 ? (r.overtimeMinutes / 60).toFixed(2) : '—',
-      r.undertimeMinutes > 0 ? (r.undertimeMinutes / 60).toFixed(2) : '—',
-      r.status.charAt(0).toUpperCase() + r.status.slice(1),
+    const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const date = new Date(selectedDate + 'T00:00:00');
+    const formattedDate = `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+    const branchLabel = branchFilter === 'All Branches' ? 'All Branches' : branchFilter;
+
+    const presentCount = records.filter(r => r.status === 'present').length;
+    const lateCount = records.filter(r => r.status === 'late').length;
+    const absentCount = records.filter(r => r.status === 'absent').length;
+
+    const allRows: (string | number)[][] = [];
+
+    // ── Header block ──
+    allRows.push(['BITS Attendance Report']);
+    allRows.push(['Branch', branchLabel]);
+    allRows.push(['Date', formattedDate]);
+    allRows.push(['Generated', new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })]);
+    allRows.push([]);
+
+    // ── Summary stats ──
+    allRows.push(['SUMMARY']);
+    allRows.push(['Total Employees', records.length, '', 'Avg Hours', `${stats.avgHours}h`]);
+    allRows.push(['Present', presentCount, '', 'Overtime Total', `${stats.totalOT}h`]);
+    allRows.push(['Late', lateCount, '', 'Undertime Total', `${stats.totalUT}h`]);
+    allRows.push(['Absent', absentCount]);
+    allRows.push([]);
+
+    // ── Column headers ──
+    allRows.push([
+      '#', 'Employee', 'Branch', 'Department', 'Shift',
+      'Check In', 'Check Out', 'Hours Worked',
+      'Late By', 'Overtime', 'Undertime', 'Status'
     ]);
-    const csv = [headers, ...rows].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url; link.download = `Attendance_HR_${selectedDate}.csv`; link.click();
-    URL.revokeObjectURL(url);
+
+    // ── Data rows ──
+    sortedRecords.forEach((r, i) => {
+      const statusLabel = r.status.charAt(0).toUpperCase() + r.status.slice(1);
+      allRows.push([
+        i + 1,
+        r.employeeName,
+        r.branchName,
+        r.department,
+        r.shiftCode || 'No Shift',
+        r.checkIn,
+        r.checkOut,
+        r.totalHours > 0 ? fmtHours(r.totalHours) : '—',
+        formatLate(r.lateMinutes),
+        r.overtimeMinutes > 0 ? `+${fmtMins(r.overtimeMinutes)}` : '—',
+        r.undertimeMinutes > 0 ? `-${fmtMins(r.undertimeMinutes)}` : '—',
+        statusLabel
+      ]);
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet(allRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance');
+    XLSX.writeFile(workbook, `Attendance_${branchLabel.replace(/\s+/g, '_')}_${selectedDate}.xlsx`);
   };
 
-  const branches = ['All Branches', 'Main Office', 'Tayud Branch', 'Makati Branch'];
-  const departments = ['All Departments', 'Purchasing', 'Human Resources', 'I.T.', 'Engineering'];
+  const branches = ['All Branches', ...branchesList.map(b => b.name)];
+  const departments = ['All Departments', ...departmentsList.map(d => d.name)];
   const statuses = [
     { value: 'all', label: 'All Status' },
     { value: 'present', label: 'On Time' },
@@ -318,33 +388,10 @@ function AttendanceContent() {
     { value: 'absent', label: 'Absent' },
   ];
 
-  const CustomSelect = ({ value, options, onChange, id }: { value: string; options: { value: string; label: string }[]; onChange: (v: string) => void; id: string }) => {
-    const isOpen = openDropdown === id;
-    const label = options.find(o => o.value === value)?.label ?? value;
-    return (
-      <div className="relative min-w-[160px]">
-        <button onClick={(e) => { e.stopPropagation(); setOpenDropdown(isOpen ? null : id); }}
-          className={`w-full flex items-center justify-between px-4 py-2.5 bg-[#df0808] text-white rounded-lg text-xs font-bold transition-all ${isOpen ? 'rounded-b-none' : 'shadow-md'}`}>
-          <span>{label}</span>
-          {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
-        {isOpen && (
-          <div className="absolute top-full left-0 right-0 z-50 flex flex-col">
-            {options.map((opt) => (
-              <button key={opt.value}
-                className="w-full text-left px-4 py-2.5 bg-[#c21414] text-white hover:bg-red-500 transition-colors text-xs font-bold mt-[1px] rounded-sm last:rounded-b-lg shadow-sm"
-                onClick={() => { onChange(opt.value); setOpenDropdown(null); }}>
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
+
 
   return (
-    <div className="space-y-6 relative" onClick={() => setOpenDropdown(null)}>
+    <div className="space-y-6 relative">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -398,15 +445,30 @@ function AttendanceContent() {
 
       {/* Filters */}
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-medium px-4 py-3 rounded-xl flex items-center gap-2"><AlertCircle size={16} />{error}</div>}
-      <div className="flex flex-col md:flex-row gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm" onClick={e => e.stopPropagation()}>
+      <div className="flex flex-col md:flex-row gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input type="text" placeholder="Search employees..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500/20 outline-none" />
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          <CustomSelect id="branch" value={branchFilter} options={branches.map(b => ({ value: b, label: b }))} onChange={setBranchFilter} />
-          <CustomSelect id="dept" value={deptFilter} options={departments.map(d => ({ value: d, label: d }))} onChange={setDeptFilter} />
-          <CustomSelect id="status" value={statusFilter} options={statuses} onChange={setStatusFilter} />
+          <Select value={branchFilter} onValueChange={setBranchFilter}>
+            <SelectTrigger className="w-44 bg-white border-slate-200 font-bold text-xs uppercase tracking-widest"><SelectValue placeholder="Branch" /></SelectTrigger>
+            <SelectContent className="bg-white border-slate-200">
+              {branches.map(b => <SelectItem key={b} value={b}>{b.toUpperCase()}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={deptFilter} onValueChange={setDeptFilter}>
+            <SelectTrigger className="w-52 bg-white border-slate-200 font-bold text-xs uppercase tracking-widest"><SelectValue placeholder="Department" /></SelectTrigger>
+            <SelectContent className="bg-white border-slate-200">
+              {departments.map(d => <SelectItem key={d} value={d}>{d.toUpperCase()}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-36 bg-white border-slate-200 font-bold text-xs uppercase tracking-widest"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent className="bg-white border-slate-200">
+              {statuses.map(s => <SelectItem key={s.value} value={s.value}>{s.label.toUpperCase()}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

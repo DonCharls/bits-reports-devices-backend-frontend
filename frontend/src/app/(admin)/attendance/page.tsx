@@ -449,7 +449,7 @@ export default function BiometricPage() {
           </div>
           <div className="flex gap-2">
             <Select value={selectedDeptId} onValueChange={setSelectedDeptId}>
-              <SelectTrigger className="w-44 bg-card border-border font-bold text-xs uppercase tracking-widest"><SelectValue placeholder="Department" /></SelectTrigger>
+              <SelectTrigger className="w-52 bg-card border-border font-bold text-xs uppercase tracking-widest"><SelectValue placeholder="Department" /></SelectTrigger>
               <SelectContent className="bg-card border-border">
                 <SelectItem value="all">ALL DEPARTMENTS</SelectItem>
                 {departments.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name.toUpperCase()}</SelectItem>)}
