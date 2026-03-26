@@ -74,10 +74,14 @@ export default function LoginPage() {
 
       // Determine redirect path
       let path = '/login'
-      if (data.employee.role === 'HR') {
+      if (data.employee.needsPasswordChange) {
+        path = '/employee/profile'
+      } else if (data.employee.role === 'HR') {
         path = '/hr'
       } else if (data.employee.role === 'ADMIN') {
         path = '/dashboard'
+      } else if (data.employee.role === 'USER') {
+        path = '/employee'
       }
 
       setRedirectPath(path)
@@ -260,7 +264,7 @@ export default function LoginPage() {
 
                 {/* Footer */}
                 <p className="mt-8 text-center text-xs text-gray-600">
-                  Only ADMIN and HR personnel can access this system
+                  Biometric Integrated Timekeeping System Web Portal
                 </p>
               </div>
             </div>

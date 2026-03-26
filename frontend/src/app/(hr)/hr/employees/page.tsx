@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Edit2, UserPlus, Search, Download, ChevronLeft, ChevronRight, Loader2, X, Fingerprint, CheckCircle2, WifiOff, Timer } from 'lucide-react';
+import { Edit2, UserPlus, Search, Download, ChevronLeft, ChevronRight, Loader2, X, Fingerprint, CheckCircle2, WifiOff, Timer, Key } from 'lucide-react';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
@@ -84,6 +84,10 @@ function EmployeeDirectoryContent() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [showInactiveConfirm, setShowInactiveConfirm] = useState(false);
+
+  // Confirm reset-password dialog
+  const [confirmResetPassword, setConfirmResetPassword] = useState<Employee | null>(null);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // Toast system
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -291,6 +295,28 @@ function EmployeeDirectoryContent() {
         fetchData();
       }
     } catch (e) { console.error(e); } finally { setActionLoading(false); }
+  };
+
+  const handleResetPassword = async () => {
+    if (!confirmResetPassword) return;
+    setIsResettingPassword(true);
+    try {
+      const res = await fetch(`/api/employees/${confirmResetPassword.id}/reset-password`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast('success', 'Password Reset', data.message || 'Password has been reset successfully.');
+        setConfirmResetPassword(null);
+      } else {
+        showToast('error', 'Reset Failed', data.message || 'Failed to reset password.');
+      }
+    } catch (error) {
+      console.error('Error resetting password:', error);
+      showToast('error', 'Reset Failed', 'Network error. Please try again.');
+    } finally {
+      setIsResettingPassword(false);
+    }
   };
 
   const handleRegister = async () => {
@@ -586,6 +612,15 @@ function EmployeeDirectoryContent() {
                             </button>
                           );
                         })()}
+
+                        {/* Reset Password */}
+                        <button
+                          onClick={() => setConfirmResetPassword(emp)}
+                          className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90"
+                          title="Reset Password"
+                        >
+                          <Key className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -835,6 +870,40 @@ function EmployeeDirectoryContent() {
             <div className="flex gap-3">
               <button onClick={() => setShowInactiveConfirm(false)} className="flex-1 px-4 py-2.5 border-2 rounded-xl font-bold text-sm">No</button>
               <button onClick={() => { setEditingEmployee({ ...editingEmployee, status: "Inactive" }); setShowInactiveConfirm(false); }} className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl font-black text-sm">Yes, Move</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Reset Password Dialog */}
+      {confirmResetPassword && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
+          <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full mx-4 text-center space-y-5">
+            <div className="mx-auto w-12 h-12 rounded-full bg-red-50 flex items-center justify-center">
+              <Key className="w-6 h-6 text-red-500" />
+            </div>
+            <div>
+              <h3 className="text-xl font-black text-slate-800">Reset Password?</h3>
+              <p className="text-sm text-slate-500 mt-2">
+                Are you sure you want to reset the password for <span className="font-bold text-slate-800">{confirmResetPassword.firstName} {confirmResetPassword.lastName}</span>? 
+                A new temporary password will be sent to their email.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                className="flex-1 px-4 py-2.5 border-2 rounded-xl font-bold text-sm hover:bg-slate-50 transition-colors"
+                onClick={() => setConfirmResetPassword(null)}
+                disabled={isResettingPassword}
+              >
+                Cancel
+              </button>
+              <button
+                className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl font-black text-sm hover:bg-red-700 transition-colors"
+                onClick={handleResetPassword}
+                disabled={isResettingPassword}
+              >
+                {isResettingPassword ? 'Resetting...' : 'Reset Password'}
+              </button>
             </div>
           </div>
         </div>

@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import { Search, Plus, Edit2, ChevronLeft, ChevronRight, Upload, AlertTriangle, AlertCircle, X as XIcon, Fingerprint, CheckCircle2, WifiOff, Timer, Loader2 } from 'lucide-react'
+import { Search, Plus, Edit2, ChevronLeft, ChevronRight, Upload, AlertTriangle, AlertCircle, X as XIcon, Fingerprint, CheckCircle2, WifiOff, Timer, Loader2, Key } from 'lucide-react'
 import { departmentsApi, branchesApi } from '@/lib/api'
 import type { Department, Branch } from '@/lib/api'
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll'
@@ -105,6 +105,10 @@ export default function EmployeesPage() {
   // Confirm move-to-inactive dialog
   const [confirmDeactivate, setConfirmDeactivate] = useState<Employee | null>(null)
   const [isDeactivating, setIsDeactivating] = useState(false)
+
+  // Confirm reset-password dialog
+  const [confirmResetPassword, setConfirmResetPassword] = useState<Employee | null>(null)
+  const [isResettingPassword, setIsResettingPassword] = useState(false)
 
   // Fingerprint enrollment state: { [employeeId]: 'idle' | 'loading' | 'success' | 'error' }
   const [enrollStatus, setEnrollStatus] = useState<Record<number, 'idle' | 'loading' | 'success' | 'error'>>({})
@@ -304,7 +308,7 @@ export default function EmployeesPage() {
     if (!newEmployee.lastName.trim()) errors.lastName = 'Last name is required'
     if (!newEmployee.contactNumber.trim()) errors.contactNumber = 'Contact number is required'
     else if (newEmployee.contactNumber.replace(/\D/g, '').length !== 11) errors.contactNumber = 'Must be exactly 11 digits'
-    if (newEmployee.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmployee.email.trim())) errors.email = 'Enter a valid email address'
+    if (!newEmployee.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmployee.email.trim())) errors.email = 'A valid email is required'
     if (!newEmployee.department) errors.department = 'Department is required'
     if (!newEmployee.branch) errors.branch = 'Branch is required'
     if (Object.keys(errors).length > 0) { setFormErrors(errors); return }
@@ -343,7 +347,7 @@ export default function EmployeesPage() {
         } else {
           // success === true (synced immediately) OR success === null (background sync running)
           showToast('success', 'Employee Registered',
-            `${name} has been saved. Device sync is running in the background — click the 🔵 fingerprint button on their row when ready to scan.`)
+            `${name} has been saved and login credentials were sent to their email. Device sync running in background.`)
         }
       } else {
         showToast('error', 'Registration Failed', data.message || 'Unknown error')
@@ -375,6 +379,28 @@ export default function EmployeesPage() {
       alert('Failed to deactivate employee')
     } finally {
       setIsDeactivating(false)
+    }
+  }
+
+  const handleResetPassword = async () => {
+    if (!confirmResetPassword) return
+    setIsResettingPassword(true)
+    try {
+      const res = await fetch(`/api/employees/${confirmResetPassword.id}/reset-password`, {
+        method: 'POST',
+      })
+      const data = await res.json()
+      if (data.success) {
+        showToast('success', 'Password Reset', data.message || 'Password has been reset successfully.')
+        setConfirmResetPassword(null)
+      } else {
+        showToast('error', 'Reset Failed', data.message || 'Failed to reset password.')
+      }
+    } catch (error) {
+      console.error('Error resetting password:', error)
+      showToast('error', 'Reset Failed', 'Network error. Please try again.')
+    } finally {
+      setIsResettingPassword(false)
     }
   }
 
@@ -571,6 +597,44 @@ export default function EmployeesPage() {
         </div>
       )}
 
+      {/* Confirm Reset Password Dialog */}
+      {confirmResetPassword && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center shrink-0">
+                <Key className="w-5 h-5 text-red-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">Reset Password?</h3>
+                <p className="text-sm text-muted-foreground">This will generate a new password.</p>
+              </div>
+            </div>
+            <p className="text-sm text-foreground mb-6">
+              Are you sure you want to reset the password for <span className="font-medium">{confirmResetPassword.firstName} {confirmResetPassword.lastName}</span>? 
+              A new temporary password will be sent to their email.
+            </p>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1 border-border text-foreground hover:bg-secondary"
+                onClick={() => setConfirmResetPassword(null)}
+                disabled={isResettingPassword}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                onClick={handleResetPassword}
+                disabled={isResettingPassword}
+              >
+                {isResettingPassword ? 'Resetting...' : 'Reset Password'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast Notifications */}
       <div className="fixed top-5 right-5 z-9999 flex flex-col gap-2 w-80 pointer-events-none">
         {toasts.map(t => (
@@ -730,7 +794,7 @@ export default function EmployeesPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Email Address</label>
+                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Email Address *</label>
                     <input
                       type="email"
                       placeholder="example@email.com"
@@ -1022,6 +1086,15 @@ export default function EmployeesPage() {
                             </button>
                           )
                         })()}
+
+                        {/* Reset Password */}
+                        <button
+                          onClick={() => setConfirmResetPassword(employee)}
+                          className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90"
+                          title="Reset Password"
+                        >
+                          <Key className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>

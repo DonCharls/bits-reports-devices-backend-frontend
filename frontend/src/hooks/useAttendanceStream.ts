@@ -46,6 +46,11 @@ interface UseAttendanceStreamOptions {
      * Defaults to true.
      */
     enabled?: boolean
+    /**
+     * Custom endpoint URL for the SSE stream.
+     * Defaults to '/api/attendance/stream'
+     */
+    endpoint?: string
 }
 
 /**
@@ -62,6 +67,7 @@ export function useAttendanceStream({
     onRecord,
     onConnected,
     enabled = true,
+    endpoint = '/api/attendance/stream'
 }: UseAttendanceStreamOptions): void {
     const esRef = useRef<EventSource | null>(null)
 
@@ -71,11 +77,11 @@ export function useAttendanceStream({
             esRef.current = null
         }
 
-        const es = new EventSource('/api/attendance/stream')
+        const es = new EventSource(endpoint)
         esRef.current = es
 
         es.addEventListener('connected', () => {
-            console.log('[SSE] Attendance stream connected')
+            console.log(`[SSE] Attendance stream connected to ${endpoint}`)
             onConnected?.()
         })
 

@@ -105,6 +105,7 @@ model Employee {
   role             Role             @default(USER)
   email            String?          @unique
   password         String?
+  needsPasswordChange Boolean @default(false)
   employmentStatus EmploymentStatus @default(ACTIVE)
 
   // Secondary Info

@@ -18,6 +18,7 @@ import logsRoutes from './routes/logs_routes';
 import shiftRoutes from './routes/shift_routes';
 import reportRoutes from './routes/report_routes';
 import timeRoutes from './routes/time_routes';
+import meRoutes from './routes/me_routes';
 import { startCronJobs } from './lib/cronJobs';
 import { repairMissingCheckouts } from './services/attendance.service';
 
@@ -61,6 +62,7 @@ app.use('/api/logs', logsRoutes);
 app.use('/api/shifts', shiftRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/time', timeRoutes);
+app.use('/api/me', meRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });

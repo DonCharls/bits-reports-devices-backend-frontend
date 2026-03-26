@@ -75,7 +75,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
                 role: newUser.role,
                 department: newUser.department,
                 position: newUser.position,
-                branch: newUser.branch
+                branch: newUser.branch,
+                needsPasswordChange: newUser.needsPasswordChange
             }
         });
 
@@ -107,14 +108,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        // Role-based access control: Only ADMIN and HR can access the web app
-        if (employee.role !== 'ADMIN' && employee.role !== 'HR') {
-            res.status(403).json({
-                success: false,
-                message: 'Access denied. Only administrators and HR personnel can access this system.'
-            });
-            return;
-        }
+        // Role-based access control: All roles (ADMIN, HR, USER) are allowed to login.
+        // Specific route authorization is handled by role middleware on the endpoints.
 
         const tokenPayload = {
             employeeId: employee.id,
@@ -174,7 +169,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
                 firstName: employee.firstName,
                 lastName: employee.lastName,
                 email: employee.email,
-                role: employee.role
+                role: employee.role,
+                needsPasswordChange: employee.needsPasswordChange
             }
         });
 
@@ -340,6 +336,7 @@ export const me = async (req: Request, res: Response): Promise<void> => {
                 branch: true,
                 position: true,
                 employmentStatus: true,
+                needsPasswordChange: true,
             }
         });
 

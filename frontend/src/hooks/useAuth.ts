@@ -9,6 +9,7 @@ interface Employee {
   lastName: string
   email: string
   role: 'USER' | 'ADMIN' | 'HR'
+  needsPasswordChange: boolean
 }
 
 interface AuthState {
@@ -24,7 +25,7 @@ interface AuthState {
  *
  * @param requiredRole - If provided, only allows users with this role
  */
-export function useAuth(requiredRole?: 'ADMIN' | 'HR'): AuthState {
+export function useAuth(requiredRole?: 'ADMIN' | 'HR' | 'USER'): AuthState {
   const router = useRouter()
   const [state, setState] = useState<AuthState>({
     isLoading: true,
