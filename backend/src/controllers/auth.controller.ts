@@ -75,7 +75,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
                 role: newUser.role,
                 department: newUser.department,
                 position: newUser.position,
-                branch: newUser.branch
+                branch: newUser.branch,
+                needsPasswordChange: newUser.needsPasswordChange
             }
         });
 
@@ -183,7 +184,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
                 firstName: employee.firstName,
                 lastName: employee.lastName,
                 email: employee.email,
-                role: employee.role
+                role: employee.role,
+                needsPasswordChange: employee.needsPasswordChange
             }
         });
 
@@ -358,6 +360,7 @@ export const me = async (req: Request, res: Response): Promise<void> => {
                 branch: true,
                 position: true,
                 employmentStatus: true,
+                needsPasswordChange: true,
             }
         });
 

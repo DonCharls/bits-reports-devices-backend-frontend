@@ -7,7 +7,8 @@ import {
     createEmployee,
     enrollEmployeeFingerprintController,
     updateEmployee,
-    permanentDeleteEmployee
+    permanentDeleteEmployee,
+    resetEmployeePassword
 } from '../controllers/employee.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { adminOrHR } from '../middleware/role.middleware';
@@ -160,5 +161,8 @@ router.patch('/:id/reactivate', reactivateEmployee);
 
 // PUT /api/employees/:id - Update an employee's details
 router.put('/:id', updateEmployee);
+
+// POST /api/employees/:id/reset-password - Reset password
+router.post('/:id/reset-password', resetEmployeePassword);
 
 export default router;

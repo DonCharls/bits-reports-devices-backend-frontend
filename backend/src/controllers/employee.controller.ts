@@ -2,6 +2,9 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { syncEmployeesToDevice, enrollEmployeeFingerprint, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex } from '../services/zkServices';
 import { audit } from '../lib/auditLogger';
+import bcrypt from 'bcryptjs';
+import { generateRandomPassword } from '../utils/password.utils';
+import { sendWelcomeEmail, sendPasswordResetEmail } from '../services/email.service';
 import { validateEmployeeId } from '../utils/employeeValidation';
 
 // GET /api/employees - Get all employees
@@ -25,7 +28,7 @@ export const getAllEmployees = async (req: Request, res: Response) => {
                 hireDate: true,
                 employmentStatus: true,
                 shiftId: true,
-                Shift: { select: { id: true, name: true, shiftCode: true, startTime: true, endTime: true, workDays: true, halfDays: true, graceMinutes: true, breakMinutes: true, breaks: true } },
+                Shift: { select: { id: true, name: true, shiftCode: true, startTime: true, endTime: true, workDays: true, halfDays: true, graceMinutes: true, breakMinutes: true } },
                 createdAt: true, EmployeeDeviceEnrollment: {
                     select: {
                         enrolledAt: true,
@@ -268,11 +271,11 @@ export const createEmployee = async (req: Request, res: Response) => {
             });
         }
 
-        // Validate email format if provided
-        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        // Validate email format and require it
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
             return res.status(400).json({
                 success: false,
-                message: 'Invalid email format'
+                message: 'A valid email is required to receive login credentials'
             });
         }
 
@@ -311,7 +314,7 @@ export const createEmployee = async (req: Request, res: Response) => {
                 details: `Failed to create employee: employee already exist or device cannot be reached`,
                 metadata: { email, employeeNumber }
             });
-            
+
             return res.status(400).json({
                 success: false,
                 message: 'Employee with this email or employee number already exists'
@@ -326,6 +329,9 @@ export const createEmployee = async (req: Request, res: Response) => {
         // P2002 unique constraint violation on Employee.zkId.
         const release = await acquireRegistrationMutex();
         let newEmployee;
+        const generatedPassword = generateRandomPassword(10);
+        const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+
         try {
             const nextZkId = await findNextSafeZkId();
 
@@ -335,6 +341,7 @@ export const createEmployee = async (req: Request, res: Response) => {
                     firstName,
                     lastName,
                     email,
+                    password: hashedPassword,
                     role: role || 'USER',
                     department,
                     position,
@@ -344,6 +351,7 @@ export const createEmployee = async (req: Request, res: Response) => {
                     employmentStatus: employmentStatus || 'ACTIVE',
                     zkId: nextZkId,
                     shiftId: shiftId ? parseInt(shiftId, 10) : null,
+                    needsPasswordChange: true,
                     updatedAt: new Date()
                 },
                 select: {
@@ -395,14 +403,24 @@ export const createEmployee = async (req: Request, res: Response) => {
         // background. If it fails, the admin can use the Fingerprint button later.
         res.status(201).json({
             success: true,
-            message: 'Employee created successfully.',
+            message: 'Employee created and credentials sent via email.',
             employee: newEmployee,
             deviceSync: { success: null, message: 'Device sync running in background' },
         });
 
-        // Fire-and-forget: sync to biometric device after response is sent
-        if (newEmployee.zkId) {
-            setImmediate(async () => {
+        // Fire-and-forget: sync to biometric device and send email
+        setImmediate(async () => {
+            // Send welcome email
+            if (email) {
+                try {
+                    await sendWelcomeEmail(email, `${firstName} ${lastName}`, generatedPassword);
+                } catch (emailErr) {
+                    console.error(`[API] (background) Failed to send welcome email to ${email}:`, emailErr);
+                }
+            }
+
+            // Sync device
+            if (newEmployee.zkId) {
                 try {
                     console.log(`[API] (background) Syncing ${newEmployee.firstName} ${newEmployee.lastName} to device...`);
                     const displayName = `${newEmployee.firstName} ${newEmployee.lastName}`;
@@ -411,12 +429,12 @@ export const createEmployee = async (req: Request, res: Response) => {
                 } catch (syncErr: any) {
                     console.error(`[API] (background) Device sync failed for zkId ${newEmployee.zkId}:`, syncErr?.message || syncErr);
                 }
-            });
-        }
+            }
+        });
 
     } catch (error: any) {
         console.error('Error creating employee:', error);
-        
+
         await audit({
             action: 'CREATE',
             level: 'ERROR',
@@ -466,11 +484,11 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
         const result = await enrollEmployeeFingerprint(employeeId, finger, device);
 
         if (result.success) {
-            const emp = await prisma.employee.findUnique({ 
-                where: { id: employeeId }, 
+            const emp = await prisma.employee.findUnique({
+                where: { id: employeeId },
                 select: { firstName: true, lastName: true, zkId: true }
             });
-            
+
             await audit({
                 action: 'UPDATE',
                 entityType: 'Employee',
@@ -486,7 +504,7 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
             });
         } else {
             const emp = await prisma.employee.findUnique({ where: { id: employeeId }, select: { firstName: true, lastName: true } });
-            
+
             await audit({
                 action: 'UPDATE',
                 level: 'ERROR',
@@ -506,7 +524,7 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
 
     } catch (error: any) {
         console.error('[API] Enrollment error:', error);
-        
+
         const empId = req.params.id ? parseInt(req.params.id as string) : undefined;
         await audit({
             action: 'UPDATE',
@@ -628,7 +646,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
                 hireDate: true,
                 employmentStatus: true,
                 shiftId: true,
-                Shift: { select: { id: true, name: true, shiftCode: true, startTime: true, endTime: true, workDays: true, halfDays: true, graceMinutes: true, breakMinutes: true, breaks: true } },
+                Shift: { select: { id: true, name: true, shiftCode: true, startTime: true, endTime: true, workDays: true, halfDays: true, graceMinutes: true, breakMinutes: true } },
                 createdAt: true,
                 updatedAt: true
             },
@@ -755,6 +773,81 @@ export const permanentDeleteEmployee = async (req: Request, res: Response) => {
         res.status(500).json({
             success: false,
             message: 'Failed to permanently delete employee',
+        });
+    }
+};
+
+// POST /api/employees/:id/reset-password - HR/Admin initiated password reset
+export const resetEmployeePassword = async (req: Request, res: Response) => {
+    try {
+        const id = req.params.id as string;
+        const employeeId = parseInt(id);
+
+        if (isNaN(employeeId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid employee ID',
+            });
+        }
+
+        // Check if employee exists and has an email
+        const employee = await prisma.employee.findUnique({
+            where: { id: employeeId },
+            select: { id: true, firstName: true, lastName: true, email: true },
+        });
+
+        if (!employee) {
+            return res.status(404).json({
+                success: false,
+                message: 'Employee not found',
+            });
+        }
+
+        if (!employee.email) {
+            return res.status(400).json({
+                success: false,
+                message: 'Employee does not have an email address configured',
+            });
+        }
+
+        const generatedPassword = generateRandomPassword(10);
+        const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+
+        // Update DB
+        await prisma.employee.update({
+            where: { id: employeeId },
+            data: {
+                password: hashedPassword,
+                needsPasswordChange: true,
+                updatedAt: new Date()
+            }
+        });
+
+        // Send email
+        const emailSent = await sendPasswordResetEmail(
+            employee.email,
+            `${employee.firstName} ${employee.lastName}`,
+            generatedPassword
+        );
+
+        if (!emailSent) {
+            return res.status(200).json({
+                success: true,
+                message: "Password reset in database, but failed to send email. The temporary password is: " + generatedPassword,
+            });
+        }
+
+        res.json({
+            success: true,
+            message: `Password reset successfully. Email sent to ${employee.email}.`,
+        });
+
+    } catch (error: any) {
+        console.error('Error resetting password:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to reset password',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
         });
     }
 };

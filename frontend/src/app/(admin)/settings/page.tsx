@@ -22,6 +22,7 @@ export default function SettingsPage() {
   const [userName, setUserName] = useState('Admin')
   const [userEmail, setUserEmail] = useState('admin@avega.com')
   const [userRole, setUserRole] = useState('ADMIN')
+  const [needsPasswordChange, setNeedsPasswordChange] = useState(false)
 
   // Profile form
   const [firstName, setFirstName] = useState('')
@@ -52,6 +53,7 @@ export default function SettingsPage() {
           setUserName(`${emp.firstName || ''} ${emp.lastName || ''}`.trim() || 'Admin')
           setUserEmail(emp.email || 'admin@avega.com')
           setUserRole(emp.role || 'ADMIN')
+          setNeedsPasswordChange(!!emp.needsPasswordChange)
           setPhone(emp.contactNumber || emp.phone || '')
         }
       } catch {
@@ -163,6 +165,20 @@ export default function SettingsPage() {
           <p className="text-muted-foreground text-sm mt-0.5">Manage your profile and security preferences</p>
         </div>
       </div>
+
+      {needsPasswordChange && (
+        <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-2 rounded-r-lg shadow-sm">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+            <div>
+              <h3 className="text-sm font-bold text-amber-800">Action Required: Change Your Password</h3>
+              <p className="text-sm text-amber-700 mt-1">
+                You are currently using a system-generated password. For your security, please update your password below and save it somewhere safe.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ─── Profile Card ──────────────────────────────────── */}
       <Card className="bg-white border-slate-200 p-4 sm:p-6">

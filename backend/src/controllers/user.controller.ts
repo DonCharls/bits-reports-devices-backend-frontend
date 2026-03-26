@@ -161,6 +161,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
         // If password is provided, hash it
         if (password && password.length >= 8) {
             updateData.password = await bcrypt.hash(password, 10);
+            updateData.needsPasswordChange = false;
         }
 
         const updated = await prisma.employee.update({
@@ -395,7 +396,7 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
         const hashedPassword = await bcrypt.hash(newPassword, 10);
         await prisma.employee.update({
             where: { id: employeeId },
-            data: { password: hashedPassword },
+            data: { password: hashedPassword, needsPasswordChange: false },
         });
 
         await audit({
