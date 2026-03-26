@@ -24,6 +24,8 @@ import {
   Ban,
   UserCheck
 } from 'lucide-react'
+import { useTableSort } from '@/hooks/useTableSort'
+import { SortableHeader } from '@/components/ui/SortableHeader'
 
 interface UserAccount {
   id: number
@@ -110,8 +112,12 @@ export default function UserAccountsPage() {
     return matchesSearch && matchesRole && matchesStatus
   })
 
-  const totalPages = Math.ceil(filteredUsers.length / rowsPerPage) || 1
-  const paginatedUsers = filteredUsers.slice(
+  const { sortedData: sortedUsers, sortKey, sortOrder, handleSort } = useTableSort<UserAccount>({
+    initialData: filteredUsers
+  })
+
+  const totalPages = Math.ceil(sortedUsers.length / rowsPerPage) || 1
+  const paginatedUsers = sortedUsers.slice(
     (currentPage - 1) * rowsPerPage,
     currentPage * rowsPerPage
   )
@@ -440,11 +446,11 @@ export default function UserAccountsPage() {
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
               <tr>
-                <th className="px-6 py-4">User</th>
-                <th className="px-6 py-4 hidden md:table-cell">Email</th>
-                <th className="px-6 py-4">Role</th>
-                <th className="px-6 py-4 hidden sm:table-cell">Status</th>
-                <th className="px-6 py-4 hidden lg:table-cell">Created</th>
+                <SortableHeader label="User" sortKey="firstName" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Email" sortKey="email" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 hidden md:table-cell" />
+                <SortableHeader label="Role" sortKey="role" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Status" sortKey="status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 hidden sm:table-cell" />
+                <SortableHeader label="Created" sortKey="createdAt" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 hidden lg:table-cell" />
                 <th className="px-6 py-4">Actions</th>
               </tr>
             </thead>

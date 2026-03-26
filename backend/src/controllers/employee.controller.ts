@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { syncEmployeesToDevice, enrollEmployeeFingerprint, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex } from '../services/zkServices';
 import { audit } from '../lib/auditLogger';
+import { validateEmployeeId } from '../utils/employeeValidation';
 
 // GET /api/employees - Get all employees
 export const getAllEmployees = async (req: Request, res: Response) => {
@@ -250,6 +251,15 @@ export const createEmployee = async (req: Request, res: Response) => {
             shiftId
         } = req.body;
 
+        // Validate Employee ID
+        const empIdValidation = validateEmployeeId(employeeNumber);
+        if (!empIdValidation.isValid) {
+            return res.status(400).json({
+                success: false,
+                message: empIdValidation.error
+            });
+        }
+
         // Validate required fields
         if (!firstName || !lastName) {
             return res.status(400).json({
@@ -321,7 +331,7 @@ export const createEmployee = async (req: Request, res: Response) => {
 
             newEmployee = await prisma.employee.create({
                 data: {
-                    employeeNumber,
+                    employeeNumber: employeeNumber.trim(),
                     firstName,
                     lastName,
                     email,
@@ -530,6 +540,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
         }
 
         const {
+            employeeNumber,
             firstName,
             lastName,
             email,
@@ -555,8 +566,29 @@ export const updateEmployee = async (req: Request, res: Response) => {
             });
         }
 
+        if (employeeNumber !== undefined) {
+            const empIdValidation = validateEmployeeId(employeeNumber);
+            if (!empIdValidation.isValid) {
+                return res.status(400).json({
+                    success: false,
+                    message: empIdValidation.error
+                });
+            }
+
+            if (employeeNumber && employeeNumber !== existingEmployee.employeeNumber) {
+                const dup = await prisma.employee.findUnique({ where: { employeeNumber: employeeNumber.trim() } });
+                if (dup) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Employee ID is already in use by another employee'
+                    });
+                }
+            }
+        }
+
         // Prepare data for update
         const updateData: any = {};
+        if (employeeNumber !== undefined) updateData.employeeNumber = employeeNumber.trim();
         if (firstName !== undefined) updateData.firstName = firstName;
         if (lastName !== undefined) updateData.lastName = lastName;
         if (email !== undefined) updateData.email = email === '' ? null : email;

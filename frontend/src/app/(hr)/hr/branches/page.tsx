@@ -10,6 +10,8 @@ import {
   Plus, Building2, Trash2, AlertTriangle, Search, X as XIcon,
   Users, TrendingUp, LayoutGrid, List, Edit2, MapPin, CheckCircle2, Loader2
 } from 'lucide-react'
+import { useTableSort } from '@/hooks/useTableSort'
+import { SortableHeader } from '@/components/ui/SortableHeader'
 
 // ── Types ──────────────────────────────────────────────────────────
 interface Department { id: number; name: string }
@@ -121,6 +123,11 @@ export default function HRBranchesPage() {
     }
     return true
   })
+
+  const { sortedData: sortedDepts, sortKey, sortOrder, handleSort } = useTableSort<Department>({
+    initialData: filteredDepts
+  })
+  const sortKeyStr = sortKey as string | null
 
   // ── Add ──
   const handleAdd = async () => {
@@ -556,13 +563,13 @@ export default function HRBranchesPage() {
             <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
               <tr>
                 <th className="px-6 py-4 w-16">#</th>
-                <th className="px-6 py-4">Department</th>
+                <SortableHeader label="Department" sortKey="name" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
                 <th className="px-6 py-4 w-36">Branch Employees</th>
                 <th className="px-6 py-4 w-32">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredDepts.map((dept, index) => {
+              {sortedDepts.map((dept, index) => {
                 const color = getColor(index)
                 const count = deptCounts[dept.name] || 0
                 const initials = getInitials(dept.name)
@@ -608,7 +615,7 @@ export default function HRBranchesPage() {
                   </tr>
                 )
               })}
-              {filteredDepts.length === 0 && (
+              {sortedDepts.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-6 py-20 text-center text-slate-400 font-bold uppercase text-xs tracking-widest">
                     No departments found for this location

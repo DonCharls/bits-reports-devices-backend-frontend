@@ -10,6 +10,8 @@ import {
   Plus, Building2, Trash2, AlertTriangle, Search, X as XIcon,
   Users, TrendingUp, LayoutGrid, List, Edit2, MapPin, CheckCircle2, Loader2
 } from 'lucide-react'
+import { useTableSort } from '@/hooks/useTableSort'
+import { SortableHeader } from '@/components/ui/SortableHeader'
 
 // ── Types ──────────────────────────────────────────────────────────
 interface Department { id: number; name: string }
@@ -120,6 +122,11 @@ export default function HRDepartmentsPage() {
     }
     return true
   })
+
+  const { sortedData: sortedDepts, sortKey, sortOrder, handleSort } = useTableSort<Department>({
+    initialData: filteredDepts
+  })
+  const sortKeyStr = sortKey as string | null
 
   // ── Add ──
   const handleAdd = async () => {
@@ -574,7 +581,7 @@ export default function HRDepartmentsPage() {
       ) : viewMode === 'grid' ? (
         /* ── Grid View ── */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredDepts.map((dept, index) => {
+          {sortedDepts.map((dept, index) => {
             const color = getColor(index)
             const count = deptCounts[dept.name] || 0
             const initials = getInitials(dept.name)
@@ -627,7 +634,7 @@ export default function HRDepartmentsPage() {
               </div>
             )
           })}
-          {filteredDepts.length === 0 && (
+          {sortedDepts.length === 0 && (
             <div className="col-span-full py-20 text-center">
               <Building2 className="w-10 h-10 text-slate-200 mx-auto mb-3" />
               <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">No departments found</p>
@@ -642,13 +649,13 @@ export default function HRDepartmentsPage() {
               <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
                 <tr>
                   <th className="px-6 py-4 w-16">#</th>
-                  <th className="px-6 py-4">Department</th>
+                  <SortableHeader label="Department" sortKey="name" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
                   <th className="px-6 py-4 w-36">Employees</th>
                   <th className="px-6 py-4 w-32">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredDepts.map((dept, index) => {
+                {sortedDepts.map((dept, index) => {
                   const color = getColor(index)
                   const count = deptCounts[dept.name] || 0
                   const initials = getInitials(dept.name)
@@ -694,7 +701,7 @@ export default function HRDepartmentsPage() {
                     </tr>
                   )
                 })}
-                {filteredDepts.length === 0 && (
+                {sortedDepts.length === 0 && (
                   <tr>
                     <td colSpan={4} className="px-6 py-20 text-center text-slate-400 font-bold uppercase text-xs tracking-widest">
                       No departments found
@@ -706,7 +713,7 @@ export default function HRDepartmentsPage() {
           </div>
           <div className="px-6 py-4 bg-slate-50 border-t border-slate-100">
             <span className="text-xs text-slate-400 font-bold">
-              Showing {filteredDepts.length} of {departments.length} department{departments.length !== 1 ? 's' : ''}
+              Showing {sortedDepts.length} of {departments.length} department{departments.length !== 1 ? 's' : ''}
             </span>
           </div>
         </div>

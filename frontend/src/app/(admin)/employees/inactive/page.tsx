@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Search, Trash2, RotateCcw, ChevronLeft, ChevronRight, AlertTriangle, UserX } from 'lucide-react'
+import { useTableSort } from '@/hooks/useTableSort'
+import { SortableHeader } from '@/components/ui/SortableHeader'
 
 type Employee = {
   id: number
@@ -65,8 +67,12 @@ export default function InactiveEmployeesPage() {
       (emp.contactNumber || '').toLowerCase().includes(searchTerm.toLowerCase())
   })
 
-  const totalPages = Math.ceil(filteredEmployees.length / rowsPerPage)
-  const paginatedEmployees = filteredEmployees.slice(
+  const { sortedData: paginatedSource, sortKey, sortOrder, handleSort } = useTableSort<Employee>({
+    initialData: filteredEmployees
+  })
+
+  const totalPages = Math.ceil(paginatedSource.length / rowsPerPage)
+  const paginatedEmployees = paginatedSource.slice(
     (currentPage - 1) * rowsPerPage,
     currentPage * rowsPerPage
   )
@@ -213,10 +219,10 @@ export default function InactiveEmployeesPage() {
             <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100 sticky top-0 z-10">
               <tr>
                 <th className="px-6 py-4 w-16">#</th>
-                <th className="px-6 py-4">Name</th>
-                <th className="px-6 py-4">Contact</th>
-                <th className="px-6 py-4">Department</th>
-                <th className="px-6 py-4">Branch</th>
+                <SortableHeader label="Name" sortKey="firstName" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Contact" sortKey="contactNumber" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Department" sortKey="department" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Branch" sortKey="branch" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
                 <th className="px-6 py-4">Actions</th>
               </tr>
             </thead>

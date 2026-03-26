@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Edit2, UserPlus, Search, Download, Trash2, AlertTriangle, RefreshCcw, Calendar as CalendarIcon, ChevronDown, ChevronUp } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useTableSort } from '@/hooks/useTableSort';
+import { SortableHeader } from '@/components/ui/SortableHeader';
 
 function InactiveRecordsContent() {
     const searchParams = useSearchParams();
@@ -48,8 +50,13 @@ function InactiveRecordsContent() {
             const matchesDate = emp.date === selectedDate;
 
             return matchesSearch && matchesDept && matchesBranch && matchesDate;
-        })
-        .sort((a, b) => a.firstName.localeCompare(b.firstName));
+        });
+
+    const { sortedData: sortedEmployees, sortKey, sortOrder, handleSort } = useTableSort<any>({
+        initialData: filteredEmployees
+    });
+
+    const sortKeyStr = sortKey as string | null;
 
     const handlePermanentDelete = () => {
         setEmployees(employees.filter(emp => emp.email !== deletingEmployee.email));
@@ -66,7 +73,7 @@ function InactiveRecordsContent() {
     };
 
     const exportEmployees = () => {
-        const exportData = filteredEmployees.map(emp => ({
+        const exportData = sortedEmployees.map(emp => ({
             'Full Name': `${emp.firstName} ${emp.lastName}`,
             'Department': emp.dept,
             'Branch': emp.branch,
@@ -151,17 +158,17 @@ function InactiveRecordsContent() {
                 <table className="w-full text-left text-sm border-collapse">
                     <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
                         <tr>
-                            <th className="px-8 py-5">Employee</th>
-                            <th className="px-8 py-5">Department</th>
-                            <th className="px-8 py-5">Branch</th>
-                            <th className="px-8 py-5">Email Address</th>
-                            <th className="px-8 py-5">Contact Number</th>
+                            <SortableHeader label="Employee" sortKey="firstName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-8 py-5" />
+                            <SortableHeader label="Department" sortKey="dept" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-8 py-5" />
+                            <SortableHeader label="Branch" sortKey="branch" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-8 py-5" />
+                            <SortableHeader label="Email Address" sortKey="email" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-8 py-5" />
+                            <SortableHeader label="Contact Number" sortKey="phone" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-8 py-5" />
                             <th className="px-8 py-5 text-right pr-12">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {filteredEmployees.length > 0 ? (
-                            filteredEmployees.map((emp, idx) => (
+                        {sortedEmployees.length > 0 ? (
+                            sortedEmployees.map((emp, idx) => (
                                 <tr key={idx} className="hover:bg-red-50 transition-colors duration-200 group cursor-default">
                                     <td className="px-8 py-5 font-bold text-slate-700">
                                         <span className="underline decoration-red-100 underline-offset-4 decoration-2">{emp.firstName} {emp.lastName}</span>

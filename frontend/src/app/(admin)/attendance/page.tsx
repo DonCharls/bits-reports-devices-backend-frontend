@@ -26,6 +26,8 @@ import {
   GitBranch,
 } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { useTableSort } from '@/hooks/useTableSort'
+import { SortableHeader } from '@/components/ui/SortableHeader'
 
 interface Branch {
   id: number
@@ -72,6 +74,11 @@ export default function BiometricPage() {
     totalOvertime: '0',
     totalUndertime: '0',
   })
+
+  const { sortedData: sortedRecords, sortKey, sortOrder, handleSort } = useTableSort<any>({
+    initialData: records
+  })
+  const sortKeyStr = sortKey as string | null
 
   /* ── Helpers ── */
   const formatLate = (mins: number | null | undefined): string => {
@@ -469,7 +476,7 @@ export default function BiometricPage() {
               <div className="px-6 py-12 text-center text-muted-foreground font-black uppercase text-[10px] tracking-widest">No biometric records found</div>
             ) : (
               <div className="divide-y divide-border/40">
-                {records.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage).map(row => (
+                {sortedRecords.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage).map(row => (
                   <div key={row.id} className="p-4 hover:bg-primary/5 transition-colors">
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div className="min-w-0 flex-1">
@@ -504,21 +511,21 @@ export default function BiometricPage() {
             <table className="w-full text-left">
               <thead className="bg-secondary/50 backdrop-blur-sm">
                 <tr className="border-b border-border bg-secondary/50 backdrop-blur-sm">
-                  <th className="px-6 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Employee</th>
-                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Department</th>
-                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Branch</th>
-                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center">Shift</th>
-                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Clock In</th>
-                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Clock Out</th>
-                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-yellow-500">Late</th>
-                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center">Hours</th>
-                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-emerald-500">OT</th>
-                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-red-500">UT</th>
-                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center">Status</th>
+                  <SortableHeader label="Employee" sortKey="employeeName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight" />
+                  <SortableHeader label="Department" sortKey="department" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight" />
+                  <SortableHeader label="Branch" sortKey="branchName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight" />
+                  <SortableHeader label="Shift" sortKey="shiftCode" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center" />
+                  <SortableHeader label="Clock In" sortKey="checkIn" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight" />
+                  <SortableHeader label="Clock Out" sortKey="checkOut" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight" />
+                  <SortableHeader label="Late" sortKey="lateMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-yellow-500" />
+                  <SortableHeader label="Hours" sortKey="totalHours" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center" />
+                  <SortableHeader label="OT" sortKey="overtimeMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-emerald-500" />
+                  <SortableHeader label="UT" sortKey="undertimeMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-red-500" />
+                  <SortableHeader label="Status" sortKey="status" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {records.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage).map(record => (
+                {sortedRecords.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage).map(record => (
                   <tr key={record.id} className="hover:bg-primary/5 transition-colors">
                     <td className="px-6 py-4 flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-[10px] shrink-0 uppercase tracking-tight">{record.employeeName.charAt(0)}</div>

@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Download } from 'lucide-react';
 import { useReportData } from './hooks/useReportData';
+import { useTableSort } from '@/hooks/useTableSort';
 import { ReportFilters } from './components/ReportFilters';
 import { ReportTable } from './components/ReportTable';
 import { EmployeeModal } from './components/EmployeeModal';
@@ -58,8 +59,12 @@ export default function ReportsPage() {
     return matchesSearch && matchesDept && matchesBranch;
   });
 
-  const totalPages = Math.ceil(filteredData.length / rowsPerPage) || 1;
-  const paginatedData = filteredData.slice(
+  const { sortedData, sortKey, sortOrder, handleSort } = useTableSort<ReportRow>({
+    initialData: filteredData
+  });
+
+  const totalPages = Math.ceil(sortedData.length / rowsPerPage) || 1;
+  const paginatedData = sortedData.slice(
     (currentPage - 1) * rowsPerPage,
     currentPage * rowsPerPage
   );
@@ -142,6 +147,9 @@ export default function ReportsPage() {
         totalPages={totalPages}
         setCurrentPage={setCurrentPage}
         setSelectedEmployee={setSelectedEmployee}
+        sortKey={sortKey as string | null}
+        sortOrder={sortOrder as 'asc' | 'desc'}
+        handleSort={handleSort as any}
       />
     </div>
   );

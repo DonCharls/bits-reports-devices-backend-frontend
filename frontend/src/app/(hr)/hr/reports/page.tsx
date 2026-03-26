@@ -3,6 +3,8 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Download, Search, X, AlertTriangle, CalendarSearch, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Edit2 } from 'lucide-react';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import * as XLSX from 'xlsx';
+import { useTableSort } from '@/hooks/useTableSort';
+import { SortableHeader } from '@/components/ui/SortableHeader';
 
 /* ── Formatters (matching Admin) ────────────────────────────── */
 const formatHrsMins = (hrs: number) => {
@@ -179,8 +181,13 @@ export default function ReportsPage() {
       .sort((a, b) => (a.zkId ?? 999999) - (b.zkId ?? 999999));
   }, [reportData, searchQuery, deptFilter, branchFilter]);
 
-  const totalPages = Math.ceil(filteredData.length / rowsPerPage) || 1;
-  const paginatedData = filteredData.slice(
+  const { sortedData: sortedFilteredData, sortKey, sortOrder, handleSort } = useTableSort({
+    initialData: filteredData
+  });
+  const sortKeyStr = sortKey as string | null;
+
+  const totalPages = Math.ceil(sortedFilteredData.length / rowsPerPage) || 1;
+  const paginatedData = sortedFilteredData.slice(
     (currentPage - 1) * rowsPerPage,
     currentPage * rowsPerPage
   );
@@ -198,12 +205,17 @@ export default function ReportsPage() {
     return pages;
   };
 
-  const sortedDetails = useMemo(() => {
+  const detailsFiltered = useMemo(() => {
     if (!viewingDetails) return [];
     return viewingDetails.details
       .filter((log: any) => logSearchDate ? log.date === logSearchDate : true)
       .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [viewingDetails, logSearchDate]);
+
+  const { sortedData: sortedDetails, sortKey: sortKeyDetails, sortOrder: sortOrderDetails, handleSort: handleSortDetails } = useTableSort<any>({
+    initialData: detailsFiltered
+  });
+  const sortKeyDetailsStr = sortKeyDetails as string | null;
 
   const handleExportIndividual = (emp: any) => {
     const reportInfo = [
@@ -247,7 +259,7 @@ export default function ReportsPage() {
       ['Employee Name', 'Branch', 'Department', 'Present', 'Late', 'Late Duration', 'Overtime', 'Undertime', 'Hours Worked']
     ];
 
-    const tableData = filteredData.map(row => [
+    const tableData = sortedFilteredData.map(row => [
       row.name,
       row.branch,
       row.dept,
@@ -361,13 +373,13 @@ export default function ReportsPage() {
           <table className="w-full text-left text-sm min-w-[900px]">
             <thead className="text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
               <tr>
-                <th className="px-6 py-4">Employee</th>
-                <th className="px-6 py-4">Shift</th>
-                <th className="px-6 py-4 text-center">Present</th>
-                <th className="px-6 py-4 text-center">Late</th>
-                <th className="px-6 py-4 text-center">Overtime</th>
-                <th className="px-6 py-4 text-center">Undertime</th>
-                <th className="px-6 py-4 text-center">Hours Worked</th>
+                <SortableHeader label="Employee" sortKey="name" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Shift" sortKey="shift.name" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Present" sortKey="present" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center items-center justify-center" />
+                <SortableHeader label="Late" sortKey="late" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center items-center justify-center" />
+                <SortableHeader label="Overtime" sortKey="totalOvertime" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center items-center justify-center" />
+                <SortableHeader label="Undertime" sortKey="totalUndertime" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center items-center justify-center" />
+                <SortableHeader label="Hours Worked" sortKey="totalHours" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center items-center justify-center" />
                 <th className="px-6 py-4 text-center"></th>
               </tr>
             </thead>
@@ -450,7 +462,7 @@ export default function ReportsPage() {
         {/* ── Pagination ──────────────────────────────────────── */}
         <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
           <span className="text-xs text-slate-400 font-bold">
-            Showing {paginatedData.length} of {filteredData.length} records · Page {currentPage} of {totalPages}
+            Showing {paginatedData.length} of {sortedFilteredData.length} records · Page {currentPage} of {totalPages}
           </span>
           <div className="flex items-center gap-1">
             <button
@@ -533,10 +545,10 @@ export default function ReportsPage() {
                 <table className="w-full text-center text-[11px] border-collapse bg-white">
                   <thead className="bg-slate-50 text-slate-400 font-black uppercase tracking-widest border-b border-slate-100">
                     <tr>
-                      <th className="py-3">Date</th>
-                      <th className="py-3">Shift</th>
-                      <th className="py-3">Type</th>
-                      <th className="py-3">Duration</th>
+                      <SortableHeader label="Date" sortKey="date" currentSortKey={sortKeyDetailsStr} currentSortOrder={sortOrderDetails} onSort={handleSortDetails} className="py-3 text-center items-center justify-center" />
+                      <SortableHeader label="Shift" sortKey="shift" currentSortKey={sortKeyDetailsStr} currentSortOrder={sortOrderDetails} onSort={handleSortDetails} className="py-3 text-center items-center justify-center" />
+                      <SortableHeader label="Type" sortKey="type" currentSortKey={sortKeyDetailsStr} currentSortOrder={sortOrderDetails} onSort={handleSortDetails} className="py-3 text-center items-center justify-center" />
+                      <SortableHeader label="Duration" sortKey="duration" currentSortKey={sortKeyDetailsStr} currentSortOrder={sortOrderDetails} onSort={handleSortDetails} className="py-3 text-center items-center justify-center" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">

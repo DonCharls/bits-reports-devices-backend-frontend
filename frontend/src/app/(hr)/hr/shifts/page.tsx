@@ -7,6 +7,8 @@ import {
     Clock, Plus, Search, Edit2, Trash2, ToggleLeft, ToggleRight,
     AlertTriangle, Moon, Sun, X as XIcon, Users, Shield, Coffee
 } from 'lucide-react'
+import { useTableSort } from '@/hooks/useTableSort'
+import { SortableHeader } from '@/components/ui/SortableHeader'
 
 interface Shift {
     id: number
@@ -116,6 +118,11 @@ export default function HRShiftsPage() {
         const matchStatus = filterActive === 'all' ? true : filterActive === 'active' ? s.isActive : !s.isActive
         return matchSearch && matchStatus
     })
+
+    const { sortedData: sortedShifts, sortKey, sortOrder, handleSort } = useTableSort<Shift>({
+        initialData: filtered
+    })
+    const sortKeyStr = sortKey as string | null
 
     const openCreate = () => { setEditingShift(null); setForm({ ...emptyForm }); setFormError(''); setIsFormOpen(true) }
     const openEdit = (s: Shift) => {
@@ -381,19 +388,19 @@ export default function HRShiftsPage() {
                 <table className="w-full text-left text-sm border-collapse">
                     <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
                         <tr>
-                            <th className="px-6 py-5">Shift</th>
-                            <th className="px-6 py-5">Schedule</th>
+                            <SortableHeader label="Shift" sortKey="name" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-5" />
+                            <SortableHeader label="Schedule" sortKey="startTime" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-5" />
                             <th className="px-6 py-5">Work Days</th>
-                            <th className="px-6 py-5">Grace / Break</th>
+                            <SortableHeader label="Grace / Break" sortKey="graceMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-5" />
                             <th className="px-6 py-5">Employees</th>
-                            <th className="px-6 py-5 text-center">Status</th>
+                            <SortableHeader label="Status" sortKey="isActive" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-5 text-center" />
                             <th className="px-6 py-5 text-center">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {loading ? (
                             <tr><td colSpan={7} className="px-6 py-24 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">Loading shifts…</td></tr>
-                        ) : filtered.length > 0 ? filtered.map(s => (
+                        ) : sortedShifts.length > 0 ? sortedShifts.map(s => (
                             <tr key={s.id} className="hover:bg-red-50/30 transition-colors duration-200">
                                 <td className="px-6 py-4">
                                     <div className="flex items-center gap-3">

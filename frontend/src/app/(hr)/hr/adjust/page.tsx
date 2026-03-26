@@ -2,6 +2,8 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { History, Search, CalendarSearch, X, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
+import { useTableSort } from '@/hooks/useTableSort';
+import { SortableHeader } from '@/components/ui/SortableHeader';
 
 interface AuditLog {
   id: number;
@@ -176,6 +178,49 @@ export default function AdjustmentsPage() {
     return `${day}/${month}/${year}`;
   };
 
+  const groupedLogs = useMemo(() => {
+    const groups: { key: string; logs: AuditLog[] }[] = [];
+    const groupMap = new Map<string, AuditLog[]>();
+    auditLogs.forEach((log) => {
+      const emp = log.attendance?.employee;
+      const adj = log.adjustedBy;
+      const key = `${adj?.firstName}_${adj?.lastName}_${emp?.firstName}_${emp?.lastName}_${log.createdAt.slice(0, 16)}`;
+      if (!groupMap.has(key)) {
+        const arr: AuditLog[] = [];
+        groupMap.set(key, arr);
+        groups.push({ key, logs: arr });
+      }
+      if (log.oldValue !== log.newValue) {
+        groupMap.get(key)!.push(log);
+      }
+    });
+
+    return groups.filter(g => g.logs.length > 0).map(group => {
+      const first = group.logs[0];
+      const emp = first.attendance?.employee;
+      const adjuster = first.adjustedBy;
+      const employeeName = emp ? `${emp.firstName} ${emp.lastName}` : 'Unknown';
+      const adjusterName = adjuster ? `${adjuster.firstName} ${adjuster.lastName}` : 'System';
+      const branch = emp?.branch || '—';
+      const reason = group.logs.find(l => l.reason)?.reason || '—';
+
+      return {
+        ...group,
+        createdAt: first.createdAt,
+        adjusterName,
+        employeeName,
+        branch,
+        reason,
+        first
+      };
+    });
+  }, [auditLogs]);
+
+  const { sortedData: sortedGroupedLogs, sortKey, sortOrder, handleSort } = useTableSort({
+    initialData: groupedLogs
+  });
+  const sortKeyStr = sortKey as string | null;
+
   const CustomSelect = ({ value, options, onChange, id }: any) => {
     const isOpen = openDropdown === id;
     return (
@@ -272,10 +317,10 @@ export default function AdjustmentsPage() {
           <table className="w-full text-left text-sm border-collapse table-auto min-w-[900px]">
             <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
               <tr>
-                <th className="px-4 py-3.5">Timestamp</th>
-                <th className="px-4 py-3.5">Adjusted By</th>
-                <th className="px-4 py-3.5">Branch</th>
-                <th className="px-4 py-3.5">Target Employee</th>
+                <SortableHeader label="Timestamp" sortKey="createdAt" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-3.5" />
+                <SortableHeader label="Adjusted By" sortKey="adjusterName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-3.5" />
+                <SortableHeader label="Branch" sortKey="branch" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-3.5" />
+                <SortableHeader label="Target Employee" sortKey="employeeName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-3.5" />
                 <th className="px-4 py-3.5">Modified Field</th>
                 <th className="px-4 py-3.5">Changes Made</th>
                 <th className="px-4 py-3.5 text-right pr-10">Reason</th>
@@ -291,73 +336,42 @@ export default function AdjustmentsPage() {
                     </div>
                   </td>
                 </tr>
-              ) : auditLogs.length > 0 ? (() => {
-                // Group logs by adjuster + target employee + minute-truncated timestamp
-                const groups: { key: string; logs: AuditLog[] }[] = [];
-                const groupMap = new Map<string, AuditLog[]>();
-                auditLogs.forEach((log) => {
-                  const emp = log.attendance?.employee;
-                  const adj = log.adjustedBy;
-                  const key = `${adj?.firstName}_${adj?.lastName}_${emp?.firstName}_${emp?.lastName}_${log.createdAt.slice(0, 16)}`;
-                  if (!groupMap.has(key)) {
-                    const arr: AuditLog[] = [];
-                    groupMap.set(key, arr);
-                    groups.push({ key, logs: arr });
-                  }
-                  // Only include entries where the value actually changed
-                  if (log.oldValue !== log.newValue) {
-                    groupMap.get(key)!.push(log);
-                  }
-                });
-
-                return groups.filter(g => g.logs.length > 0).map((group) => {
-                  const first = group.logs[0];
-                  const emp = first.attendance?.employee;
-                  const adjuster = first.adjustedBy;
-                  const employeeName = emp ? `${emp.firstName} ${emp.lastName}` : 'Unknown';
-                  const adjusterName = adjuster ? `${adjuster.firstName} ${adjuster.lastName}` : 'System';
-                  const branch = emp?.branch || '—';
-                  // Merge reasons: pick the first non-empty one
-                  const reason = group.logs.find(l => l.reason)?.reason || '—';
-
-                  return (
-                    <tr key={group.key} className="hover:bg-red-50 transition-colors duration-200 group cursor-default">
-                      <td className="px-4 py-2.5 font-mono text-[10px] text-slate-500 whitespace-nowrap align-top">{formatTimestamp(first.createdAt)}</td>
-                      <td className="px-4 py-2.5 font-bold text-slate-700 underline decoration-red-100 underline-offset-4 decoration-2 align-top">{adjusterName}</td>
-                      <td className="px-4 py-2.5 font-medium text-slate-500 text-xs align-top">{branch}</td>
-                      <td className="px-4 py-2.5 font-bold text-slate-700 align-top">{employeeName}</td>
-                      <td className="px-4 py-2.5 align-top">
-                        <div className="flex flex-col gap-1.5">
-                          {group.logs.map((log) => (
-                            <span key={log.id} className="text-[10px] font-black uppercase tracking-tight text-slate-600">
-                              {fieldLabels[log.field] || log.field}
-                            </span>
-                          ))}
+              ) : sortedGroupedLogs.length > 0 ? sortedGroupedLogs.map((group) => (
+                <tr key={group.key} className="hover:bg-red-50 transition-colors duration-200 group cursor-default">
+                  <td className="px-4 py-2.5 font-mono text-[10px] text-slate-500 whitespace-nowrap align-top">{formatTimestamp(group.createdAt)}</td>
+                  <td className="px-4 py-2.5 font-bold text-slate-700 underline decoration-red-100 underline-offset-4 decoration-2 align-top">{group.adjusterName}</td>
+                  <td className="px-4 py-2.5 font-medium text-slate-500 text-xs align-top">{group.branch}</td>
+                  <td className="px-4 py-2.5 font-bold text-slate-700 align-top">{group.employeeName}</td>
+                  <td className="px-4 py-2.5 align-top">
+                    <div className="flex flex-col gap-1.5">
+                      {group.logs.map((log: any) => (
+                        <span key={log.id} className="text-[10px] font-black uppercase tracking-tight text-slate-600">
+                          {fieldLabels[log.field] || log.field}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5 align-top">
+                    <div className="flex flex-col gap-1.5">
+                      {group.logs.map((log: any) => (
+                        <div key={log.id} className="flex items-center gap-2 whitespace-nowrap">
+                          <span className="text-[10px] text-slate-400 line-through decoration-slate-300">
+                            {formatValue(log.field, log.oldValue)}
+                          </span>
+                          <span className={`text-xs font-black ${getChangeColor(log.field, log.newValue)}`}>
+                            → {formatValue(log.field, log.newValue)}
+                          </span>
                         </div>
-                      </td>
-                      <td className="px-4 py-2.5 align-top">
-                        <div className="flex flex-col gap-1.5">
-                          {group.logs.map((log) => (
-                            <div key={log.id} className="flex items-center gap-2 whitespace-nowrap">
-                              <span className="text-[10px] text-slate-400 line-through decoration-slate-300">
-                                {formatValue(log.field, log.oldValue)}
-                              </span>
-                              <span className={`text-xs font-black ${getChangeColor(log.field, log.newValue)}`}>
-                                → {formatValue(log.field, log.newValue)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-right pr-10 align-top">
-                        <p className="text-[11px] font-medium text-slate-500 leading-relaxed max-w-[200px] ml-auto">
-                          {reason}
-                        </p>
-                      </td>
-                    </tr>
-                  );
-                });
-              })() : (
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5 text-right pr-10 align-top">
+                    <p className="text-[11px] font-medium text-slate-500 leading-relaxed max-w-[200px] ml-auto">
+                      {group.reason}
+                    </p>
+                  </td>
+                </tr>
+              )) : (
                 <tr>
                   <td colSpan={7} className="px-6 py-24 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">
                     No adjustment logs found

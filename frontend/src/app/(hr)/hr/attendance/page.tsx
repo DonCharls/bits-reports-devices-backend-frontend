@@ -6,6 +6,8 @@ import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react
 import { useSearchParams } from 'next/navigation';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import * as XLSX from 'xlsx';
+import { useTableSort } from '@/hooks/useTableSort';
+import { SortableHeader } from '@/components/ui/SortableHeader';
 import {
   Search,
   Calendar as CalendarIcon,
@@ -92,6 +94,11 @@ function AttendanceContent() {
 
   // Reset page on filter change
   useEffect(() => { setCurrentPage(1); }, [selectedDate, statusFilter, debouncedSearch, branchFilter, deptFilter]);
+
+  const { sortedData: sortedRecords, sortKey, sortOrder, handleSort } = useTableSort<AttendanceRecord>({
+    initialData: records
+  });
+  const sortKeyStr = sortKey as string | null;
 
   useEffect(() => {
     if (showSuccessToast) {
@@ -286,7 +293,7 @@ function AttendanceContent() {
 
   const exportToCSV = () => {
     const headers = ['Employee', 'Department', 'Branch', 'Date', 'Check In', 'Check Out', 'Shift', 'Late', 'Hours', 'OT', 'UT', 'Status'];
-    const rows = records.map(r => [
+    const rows = sortedRecords.map(r => [
       r.employeeName, r.department, r.branchName, r.date, r.checkIn, r.checkOut,
       r.shiftCode || 'No Shift', formatLate(r.lateMinutes),
       r.totalHours > 0 ? r.totalHours.toFixed(2) : '—',
@@ -419,7 +426,7 @@ function AttendanceContent() {
             <div className="px-6 py-16 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">No attendance records found</div>
           ) : (
             <div className="divide-y divide-slate-100">
-              {records
+              {sortedRecords
                 .slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
                 .map(row => (
                   <div key={row.id} className="p-4 hover:bg-red-50/30 transition-colors">
@@ -499,17 +506,17 @@ function AttendanceContent() {
           <table className="w-full text-left text-sm border-collapse min-w-[1100px]">
             <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
               <tr>
-                <th className="px-6 py-4">Employee</th>
-                <th className="px-6 py-4">Department</th>
-                <th className="px-6 py-4">Branch</th>
-                <th className="px-6 py-4">Shift</th>
-                <th className="px-6 py-4">Clock In</th>
-                <th className="px-6 py-4">Clock Out</th>
-                <th className="px-6 py-4">Late</th>
-                <th className="px-6 py-4">Hours</th>
-                <th className="px-6 py-4">OT</th>
-                <th className="px-6 py-4">UT</th>
-                <th className="px-6 py-4 text-center">Status</th>
+                <SortableHeader label="Employee" sortKey="employeeName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Department" sortKey="department" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Branch" sortKey="branchName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Shift" sortKey="shiftCode" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Clock In" sortKey="checkIn" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Clock Out" sortKey="checkOut" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Late" sortKey="lateMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Hours" sortKey="totalHours" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="OT" sortKey="overtimeMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="UT" sortKey="undertimeMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Status" sortKey="status" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
                 <th className="px-6 py-4 text-center">Actions</th>
               </tr>
             </thead>
@@ -521,10 +528,10 @@ function AttendanceContent() {
                     <span className="text-sm font-medium">Loading attendance...</span>
                   </div>
                 </td></tr>
-              ) : records.length === 0 ? (
+              ) : sortedRecords.length === 0 ? (
                 <tr><td colSpan={12} className="px-6 py-16 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">No attendance records found</td></tr>
               ) : (
-                records
+                sortedRecords
                   .slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
                   .map(row => (
                     <tr key={row.id} className="hover:bg-red-50/40 transition-colors duration-200 group cursor-default">

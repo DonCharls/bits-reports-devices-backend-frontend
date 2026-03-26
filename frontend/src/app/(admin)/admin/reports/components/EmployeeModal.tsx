@@ -7,6 +7,8 @@ import {
   getRecordStatusFromBackend,
   formatHrsMins,
 } from '../utils/formatters';
+import { useTableSort } from '@/hooks/useTableSort';
+import { SortableHeader } from '@/components/ui/SortableHeader';
 
 interface EmployeeModalProps {
   employee: ReportRow;
@@ -42,6 +44,74 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   };
 
   const calendarDates = getDatesInRange(startDate, endDate).reverse();
+
+  const tableRows = calendarDates.map(loopDate => {
+    const loopDateStr = loopDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+    const record = records.find(r => {
+        const rDateStr = new Date(r.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+        return rDateStr === loopDateStr;
+    });
+
+    let statusType = 'No Record';
+    let checkInVal = null;
+    let checkOutVal = null;
+    let workedHrsVal = 0;
+    let lateMinsVal = 0;
+    let otMinsVal = 0;
+    let utMinsVal = 0;
+
+    let isFuture = false;
+    let isWorkingDay = true;
+    let missingStatus = '';
+
+    if (!record) {
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+      isFuture = loopDateStr > todayStr;
+      const dayName = loopDate.toLocaleDateString('en-US', { weekday: 'short' });
+      isWorkingDay = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(dayName);
+      if (employee.shift?.workDays) {
+          try {
+            const wDays = typeof employee.shift.workDays === 'string'
+              ? JSON.parse(employee.shift.workDays)
+              : employee.shift.workDays;
+            if (Array.isArray(wDays)) {
+              isWorkingDay = wDays.includes(dayName);
+            }
+          } catch (e) {}
+      }
+      missingStatus = isFuture ? 'Upcoming' : (isWorkingDay ? 'Absent' : 'Rest Day');
+      statusType = missingStatus;
+    } else {
+      checkInVal = new Date(record.checkInTime);
+      checkOutVal = record.checkOutTime ? new Date(record.checkOutTime) : null;
+      workedHrsVal = record.totalHours ?? 0;
+      lateMinsVal = record.lateMinutes ?? 0;
+      otMinsVal = record.overtimeMinutes ?? 0;
+      utMinsVal = record.undertimeMinutes ?? 0;
+      statusType = getRecordStatusFromBackend(record);
+    }
+
+    return {
+      loopDate,
+      loopDateStr,
+      record,
+      statusType,
+      missingStatus,
+      isFuture,
+      isWorkingDay,
+      checkInVal,
+      checkOutVal,
+      workedHrsVal,
+      lateMinsVal,
+      otMinsVal,
+      utMinsVal,
+    };
+  });
+
+  const { sortedData, sortKey, sortOrder, handleSort } = useTableSort<any>({
+    initialData: tableRows
+  });
+  const sortKeyStr = sortKey as string | null;
 
   return (
     <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -183,18 +253,18 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100 sticky top-0 z-10">
               <tr>
-                <th className="px-5 py-3">Date</th>
-                <th className="px-5 py-3">Check In</th>
-                <th className="px-5 py-3">Check Out</th>
-                <th className="px-5 py-3">Worked Hrs</th>
-                <th className="px-5 py-3">Late</th>
-                <th className="px-5 py-3">OT</th>
-                <th className="px-5 py-3">UT</th>
-                <th className="px-5 py-3">Status</th>
+                <SortableHeader label="Date" sortKey="loopDateStr" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
+                <SortableHeader label="Check In" sortKey="checkInVal" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
+                <SortableHeader label="Check Out" sortKey="checkOutVal" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
+                <SortableHeader label="Worked Hrs" sortKey="workedHrsVal" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
+                <SortableHeader label="Late" sortKey="lateMinsVal" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
+                <SortableHeader label="OT" sortKey="otMinsVal" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
+                <SortableHeader label="UT" sortKey="utMinsVal" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
+                <SortableHeader label="Status" sortKey="statusType" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {calendarDates.length === 0 ? (
+              {sortedData.length === 0 ? (
                 <tr>
                   <td
                     colSpan={8}
@@ -204,36 +274,11 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                   </td>
                 </tr>
               ) : (
-                calendarDates.map((loopDate) => {
-                  const loopDateStr = loopDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
-                  const record = records.find(r => {
-                      const rDateStr = new Date(r.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
-                      return rDateStr === loopDateStr;
-                  });
+                sortedData.map((row) => {
+                  const { loopDate, loopDateStr, record, statusType, missingStatus, isFuture, checkInVal: checkIn, checkOutVal: checkOut, workedHrsVal: hoursWorked, lateMinsVal: lateMins, otMinsVal: otMins, utMinsVal: utMins } = row;
 
                   // If no record exists for this date in the range
                   if (!record) {
-                    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
-                    const isFuture = loopDateStr > todayStr;
-                    
-                    // Determine if the employee was scheduled to work
-                    const dayName = loopDate.toLocaleDateString('en-US', { weekday: 'short' });
-                    let isWorkingDay = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(dayName);
-                    if (employee.shift?.workDays) {
-                        try {
-                          const wDays = typeof employee.shift.workDays === 'string'
-                            ? JSON.parse(employee.shift.workDays)
-                            : employee.shift.workDays;
-                          
-                          if (Array.isArray(wDays)) {
-                            isWorkingDay = wDays.includes(dayName);
-                          }
-                        } catch (e) {
-                          console.error("Failed to parse workDays", e);
-                        }
-                    }
-                    
-                    const missingStatus = isFuture ? 'Upcoming' : (isWorkingDay ? 'Absent' : 'Rest Day');
                     const statusColor = missingStatus === 'Upcoming' ? 'bg-blue-50 text-blue-600 border-blue-200' :
                                         missingStatus === 'Absent' ? 'bg-red-50 text-red-600 border-red-200' :
                                         'bg-slate-100 text-slate-500 border-slate-200';
@@ -260,17 +305,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                   }
 
                   // Record exists
-                  const checkIn = new Date(record.checkInTime);
-                  const checkOut = record.checkOutTime
-                    ? new Date(record.checkOutTime)
-                    : null;
-                  
                   // Enforce backend totalHours exclusively
-                  const hoursWorked = record.totalHours ?? 0;
-                  const statusType = getRecordStatusFromBackend(record);
-                  const lateMins = record.lateMinutes ?? 0;
-                  const otMins = record.overtimeMinutes ?? 0;
-                  const utMins = record.undertimeMinutes ?? 0;
 
                   // Row highlight for anomaly
                   const rowBg =

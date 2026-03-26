@@ -3,6 +3,7 @@ import { ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { ReportRow } from '../types';
 import { formatHrsMins, formatShiftTime, formatLateHrs } from '../utils/formatters';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
+import { SortableHeader } from '@/components/ui/SortableHeader';
 
 interface ReportTableProps {
   paginatedData: ReportRow[];
@@ -12,6 +13,9 @@ interface ReportTableProps {
   totalPages: number;
   setCurrentPage: React.Dispatch<React.SetStateAction<number>>;
   setSelectedEmployee: (emp: ReportRow) => void;
+  sortKey: string | null;
+  sortOrder: 'asc' | 'desc';
+  handleSort: (key: any) => void;
 }
 
 export const ReportTable: React.FC<ReportTableProps> = ({
@@ -22,6 +26,9 @@ export const ReportTable: React.FC<ReportTableProps> = ({
   totalPages,
   setCurrentPage,
   setSelectedEmployee,
+  sortKey,
+  sortOrder,
+  handleSort,
 }) => {
   // Generate windowed page numbers
   const getPageNumbers = () => {
@@ -56,13 +63,13 @@ export const ReportTable: React.FC<ReportTableProps> = ({
         <table className="w-full text-left text-sm min-w-[900px]">
           <thead className="text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
             <tr>
-              <th className="px-6 py-4">Employee</th>
+              <SortableHeader label="Employee" sortKey="name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
               <th className="px-6 py-4">Shift</th>
-              <th className="px-6 py-4 text-center">Present</th>
-              <th className="px-6 py-4 text-center">Late</th>
-              <th className="px-6 py-4 text-center">Overtime</th>
-              <th className="px-6 py-4 text-center">Undertime</th>
-              <th className="px-6 py-4 text-center">Hours Worked</th>
+              <SortableHeader label="Present" sortKey="present" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
+              <SortableHeader label="Late" sortKey="lateMinutes" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
+              <SortableHeader label="Overtime" sortKey="overtime" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
+              <SortableHeader label="Undertime" sortKey="undertime" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
+              <SortableHeader label="Hours Worked" sortKey="totalHours" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
               <th className="px-6 py-4 text-center"></th>
             </tr>
           </thead>

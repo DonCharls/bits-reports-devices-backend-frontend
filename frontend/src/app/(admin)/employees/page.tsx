@@ -13,6 +13,9 @@ import { Search, Plus, Edit2, ChevronLeft, ChevronRight, Upload, AlertTriangle, 
 import { departmentsApi, branchesApi } from '@/lib/api'
 import type { Department, Branch } from '@/lib/api'
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll'
+import { validateEmployeeId } from '@/lib/employeeValidation'
+import { useTableSort } from '@/hooks/useTableSort'
+import { SortableHeader } from '@/components/ui/SortableHeader'
 
 type Employee = {
   id: number
@@ -182,6 +185,7 @@ export default function EmployeesPage() {
   }
 
   const [newEmployee, setNewEmployee] = useState({
+    employeeNumber: '',
     firstName: '',
     lastName: '',
     contactNumber: '',
@@ -279,8 +283,12 @@ export default function EmployeesPage() {
     return matchesSearch && matchesDept && matchesBranch
   })
 
-  const totalPages = Math.ceil(filteredEmployees.length / rowsPerPage)
-  const paginatedEmployees = filteredEmployees.slice(
+  const { sortedData: paginatedSource, sortKey, sortOrder, handleSort } = useTableSort<Employee>({
+    initialData: filteredEmployees
+  })
+
+  const totalPages = Math.ceil(paginatedSource.length / rowsPerPage)
+  const paginatedEmployees = paginatedSource.slice(
     (currentPage - 1) * rowsPerPage,
     currentPage * rowsPerPage
   )
@@ -288,6 +296,10 @@ export default function EmployeesPage() {
   const handleAddEmployee = async () => {
     // Validate required fields
     const errors: Record<string, string> = {}
+    
+    const empIdValidation = validateEmployeeId(newEmployee.employeeNumber);
+    if (!empIdValidation.isValid) errors.employeeNumber = empIdValidation.error!;
+    
     if (!newEmployee.firstName.trim()) errors.firstName = 'First name is required'
     if (!newEmployee.lastName.trim()) errors.lastName = 'Last name is required'
     if (!newEmployee.contactNumber.trim()) errors.contactNumber = 'Contact number is required'
@@ -305,6 +317,7 @@ export default function EmployeesPage() {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
+          employeeNumber: newEmployee.employeeNumber,
           firstName: newEmployee.firstName,
           lastName: newEmployee.lastName,
           contactNumber: newEmployee.contactNumber || undefined,
@@ -318,7 +331,7 @@ export default function EmployeesPage() {
       const data = await res.json()
       if (data.success) {
         await fetchEmployees()
-        setNewEmployee({ firstName: '', lastName: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '', shiftId: '' })
+        setNewEmployee({ employeeNumber: '', firstName: '', lastName: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '', shiftId: '' })
         setFormErrors({})
         setIsAddOpen(false)
         // Show toast based on device sync result
@@ -372,6 +385,15 @@ export default function EmployeesPage() {
 
   const handleUpdateEmployee = async () => {
     if (!editingEmployee || !editForm) return
+
+    if (editForm.employeeNumber !== undefined) {
+      const empIdValidation = validateEmployeeId(editForm.employeeNumber);
+      if (!empIdValidation.isValid) {
+        showToast('error', 'Validation Error', empIdValidation.error!);
+        return;
+      }
+    }
+
     try {
       const res = await fetch(`/api/employees/${editingEmployee.id}`, {
         method: 'PUT',
@@ -408,6 +430,10 @@ export default function EmployeesPage() {
             </div>
 
             <div className="p-6 space-y-4 overflow-y-auto">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Employee ID *</label>
+                <input type="text" placeholder="e.g. 10001" value={editForm.employeeNumber || ''} onChange={(e) => setEditForm({ ...editForm, employeeNumber: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">First Name</label>
@@ -668,6 +694,18 @@ export default function EmployeesPage() {
                 </button>
               </div>
               <div className="px-6 py-5 space-y-4">
+                <div className="grid grid-cols-1 gap-4">
+                  <div>
+                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Employee ID *</label>
+                    <input
+                      placeholder="e.g. 10001"
+                      className={`mt-1.5 w-full px-3 py-2.5 rounded-xl border ${formErrors.employeeNumber ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all`}
+                      value={newEmployee.employeeNumber}
+                      onChange={(e) => { setNewEmployee({ ...newEmployee, employeeNumber: e.target.value }); setFormErrors(p => ({ ...p, employeeNumber: '' })) }}
+                    />
+                    {formErrors.employeeNumber && <p className="mt-1 text-[11px] text-red-500 font-semibold">{formErrors.employeeNumber}</p>}
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">First Name *</label>
@@ -778,7 +816,7 @@ export default function EmployeesPage() {
                 <button
                   className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
                   onClick={() => {
-                    setNewEmployee({ firstName: '', lastName: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '', shiftId: '' })
+                    setNewEmployee({ employeeNumber: '', firstName: '', lastName: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '', shiftId: '' })
                     setFormErrors({})
                     setIsAddOpen(false)
                   }}
@@ -846,15 +884,15 @@ export default function EmployeesPage() {
           <table className="w-full text-left text-sm min-w-[900px]">
             <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
               <tr>
-                <th className="px-4 py-4 w-20">ZK ID</th>
-                <th className="px-6 py-4">Employee</th>
-                <th className="px-4 py-4">Employee ID</th>
+                <SortableHeader label="ZK ID" sortKey="zkId" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 w-20" />
+                <SortableHeader label="Employee" sortKey="firstName" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Employee ID" sortKey="employeeNumber" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4" />
                 <th className="px-4 py-4">Enrolled On</th>
-                <th className="px-6 py-4">Department</th>
+                <SortableHeader label="Department" sortKey="department" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
                 <th className="px-6 py-4">Shift</th>
-                <th className="px-6 py-4">Branch</th>
-                <th className="px-6 py-4">Contact</th>
-                <th className="px-6 py-4">Joined</th>
+                <SortableHeader label="Branch" sortKey="branch" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Contact" sortKey="contactNumber" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Joined" sortKey="hireDate" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
                 <th className="px-6 py-4">Actions</th>
               </tr>
             </thead>

@@ -6,6 +6,9 @@ import { Edit2, UserPlus, Search, Download, ChevronLeft, ChevronRight, Loader2, 
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
+import { validateEmployeeId } from '@/lib/employeeValidation';
+import { useTableSort } from '@/hooks/useTableSort';
+import { SortableHeader } from '@/components/ui/SortableHeader';
 
 type Toast = {
   id: number;
@@ -179,7 +182,7 @@ function EmployeeDirectoryContent() {
   };
 
   const [regForm, setRegForm] = useState({
-    firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: ""
+    employeeNumber: "", firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: ""
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
@@ -242,23 +245,36 @@ function EmployeeDirectoryContent() {
         const matchesBranch = branchFilter === "All Branches" || emp.branch === branchFilter;
         return matchesSearch && matchesStatus && matchesDept && matchesBranch;
       })
-      .sort((a, b) => (a.zkId ?? Infinity) - (b.zkId ?? Infinity));
   }, [employees, searchQuery, statusFilter, deptFilter, branchFilter]);
 
-  const totalPages = Math.ceil(filteredEmployees.length / itemsPerPage);
-  const paginatedEmployees = filteredEmployees.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const { sortedData: sortedEmployees, sortKey, sortOrder, handleSort } = useTableSort<Employee>({
+    initialData: filteredEmployees
+  });
+
+  const sortKeyStr = sortKey as string | null;
+
+  const totalPages = Math.ceil(sortedEmployees.length / itemsPerPage);
+  const paginatedEmployees = sortedEmployees.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, statusFilter, deptFilter, branchFilter]);
 
   const handleUpdate = async () => {
+    if (editingEmployee.employeeNumber !== undefined) {
+      const empIdValidation = validateEmployeeId(editingEmployee.employeeNumber);
+      if (!empIdValidation.isValid) {
+        showToast('error', 'Validation Error', empIdValidation.error!);
+        return;
+      }
+    }
     setActionLoading(true);
     try {
       const res = await fetch(`/api/employees/${editingEmployee.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          employeeNumber: editingEmployee.employeeNumber,
           firstName: editingEmployee.firstName,
           lastName: editingEmployee.lastName,
           email: editingEmployee.email,
@@ -280,6 +296,10 @@ function EmployeeDirectoryContent() {
 
   const handleRegister = async () => {
     const errors: Record<string, string> = {};
+
+    const empIdValidation = validateEmployeeId(regForm.employeeNumber);
+    if (!empIdValidation.isValid) errors.employeeNumber = empIdValidation.error!;
+    
     if (!regForm.firstName.trim()) errors.firstName = 'First name is required';
     if (!regForm.lastName.trim()) errors.lastName = 'Last name is required';
     if (!regForm.phone.trim()) errors.phone = 'Contact number is required';
@@ -296,6 +316,7 @@ function EmployeeDirectoryContent() {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
+          employeeNumber: regForm.employeeNumber,
           firstName: regForm.firstName,
           lastName: regForm.lastName,
           email: regForm.email || undefined,
@@ -317,7 +338,7 @@ function EmployeeDirectoryContent() {
             `${name} has been saved. Device sync is running in the background — click the 🔵 fingerprint button on their row when ready to scan.`);
         }
         setIsRegistering(false);
-        setRegForm({ firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "" });
+        setRegForm({ employeeNumber: "", firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "" });
         setFormErrors({});
         fetchData();
       } else {
@@ -431,14 +452,14 @@ function EmployeeDirectoryContent() {
           <table className="w-full text-left text-sm min-w-[900px]">
             <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
               <tr>
-                <th className="px-4 py-4 w-20">ZK ID</th>
-                <th className="px-6 py-4">Employee</th>
-                <th className="px-4 py-4">Employee ID</th>
+                <SortableHeader label="ZK ID" sortKey="zkId" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 w-20" />
+                <SortableHeader label="Employee" sortKey="firstName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Employee ID" sortKey="employeeNumber" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4" />
                 <th className="px-4 py-4">Enrolled On</th>
-                <th className="px-6 py-4">Department</th>
+                <SortableHeader label="Department" sortKey="dept" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
                 <th className="px-6 py-4">Shift</th>
-                <th className="px-6 py-4">Branch</th>
-                <th className="px-6 py-4">Contact</th>
+                <SortableHeader label="Branch" sortKey="branch" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
+                <SortableHeader label="Contact" sortKey="phone" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
                 <th className="px-6 py-4">Actions</th>
               </tr>
             </thead>
@@ -623,11 +644,23 @@ function EmployeeDirectoryContent() {
                 <h3 className="font-bold text-lg leading-tight tracking-tight">New Employee Registration</h3>
                 <p className="text-[10px] text-red-100 opacity-90 uppercase font-black tracking-widest mt-0.5">Add to employee directory</p>
               </div>
-              <button onClick={() => { setIsRegistering(false); setRegForm({ firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "" }); setFormErrors({}) }} className="text-white/80 hover:text-white transition-colors">
+              <button onClick={() => { setIsRegistering(false); setRegForm({ employeeNumber: "", firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "" }); setFormErrors({}) }} className="text-white/80 hover:text-white transition-colors">
                 <X size={20} />
               </button>
             </div>
             <div className="px-6 py-5 space-y-4 overflow-y-auto">
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Employee ID *</label>
+                  <input
+                    placeholder="e.g. 10001"
+                    className={`mt-1.5 w-full px-3 py-2.5 rounded-xl border ${formErrors.employeeNumber ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all`}
+                    value={regForm.employeeNumber}
+                    onChange={(e) => { setRegForm({ ...regForm, employeeNumber: e.target.value }); setFormErrors(p => ({ ...p, employeeNumber: '' })) }}
+                  />
+                  {formErrors.employeeNumber && <p className="mt-1 text-[11px] text-red-500 font-semibold">{formErrors.employeeNumber}</p>}
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">First Name *</label>
@@ -729,7 +762,7 @@ function EmployeeDirectoryContent() {
             <div className="flex items-center justify-center gap-6 px-6 py-4 border-t border-slate-100 shrink-0">
               <button
                 className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
-                onClick={() => { setIsRegistering(false); setRegForm({ firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "" }); setFormErrors({}) }}
+                onClick={() => { setIsRegistering(false); setRegForm({ employeeNumber: "", firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "" }); setFormErrors({}) }}
               >
                 Discard
               </button>
@@ -757,6 +790,9 @@ function EmployeeDirectoryContent() {
               <button onClick={handleCancelClick} className="text-white/80 hover:text-white transition-colors"><X size={20} /></button>
             </div>
             <div className="p-6 space-y-4 overflow-y-auto">
+              <div>
+                <input type="text" placeholder="e.g. 10001" value={editingEmployee.employeeNumber || ''} onChange={(e) => setEditingEmployee({ ...editingEmployee, employeeNumber: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none mb-3" />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <input type="text" value={editingEmployee.firstName} onChange={(e) => setEditingEmployee({ ...editingEmployee, firstName: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none" />
                 <input type="text" value={editingEmployee.lastName} onChange={(e) => setEditingEmployee({ ...editingEmployee, lastName: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none" />
