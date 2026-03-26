@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAttendanceStream, AttendanceStreamPayload } from '@/hooks/useAttendanceStream'
 import { useDeviceStream, DeviceStatusPayload, DeviceConnectedPayload } from '@/hooks/useDeviceStream'
@@ -95,6 +95,7 @@ export default function Dashboard() {
 
   const [loading, setLoading] = useState(true)
   const [devices, setDevices] = useState<DeviceWithStatus[]>([])
+  const activityScrollRef = useRef<HTMLDivElement>(null)
   const [branchSummaries, setBranchSummaries] = useState<BranchSummary[]>([])
   const [activity, setActivity] = useState<LiveRecord[]>([])
   const [weeklyData, setWeeklyData] = useState<WeekDay[]>([])
@@ -331,6 +332,12 @@ export default function Dashboard() {
   })
 
   useEffect(() => {
+    if (activityScrollRef.current) {
+      activityScrollRef.current.scrollTop = 0
+    }
+  }, [activity])
+
+  useEffect(() => {
     // Verify auth via cookie
     fetch('/api/auth/me', { credentials: 'include' })
       .then(r => { if (!r.ok) router.replace('/login') })
@@ -535,7 +542,7 @@ export default function Dashboard() {
                 All <ArrowRight className="w-3 h-3" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto min-h-0">
+            <div ref={activityScrollRef} className="flex-1 overflow-y-auto min-h-0">
               {activity.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full gap-3 px-6 py-8 lg:py-0">
                   <div className="relative w-16 h-16">

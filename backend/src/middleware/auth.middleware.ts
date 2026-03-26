@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { prisma } from '../lib/prisma';
 
 // JWT_SECRET is guaranteed to exist at startup by the validation in token.utils.ts.
 // If the server started, this variable is safe to use.
@@ -20,9 +21,18 @@ declare global {
     }
 }
 
+/** Cookie options for clearing auth cookies */
+const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    path: '/',
+};
+
 /**
  * Authentication Middleware
- * Verifies JWT token and attaches user info to request
+ * Verifies JWT token, checks current employment status in DB,
+ * and attaches user info to request.
  */
 export const authenticate = async (
     req: Request,
@@ -31,8 +41,6 @@ export const authenticate = async (
 ): Promise<void> => {
     try {
         // ── Token extraction (cookie-first, then Authorization header) ─────────
-        // Cookies are set as HttpOnly by the Next.js login route handler.
-        // Authorization header fallback keeps backward compatibility.
         const cookieToken = req.cookies?.auth_token as string | undefined;
         const authHeader = req.headers.authorization;
 
@@ -60,6 +68,24 @@ export const authenticate = async (
             lastName: string;
             name: string;
         };
+
+        // ── Fresh DB check: verify the account is still active ────────────────
+        const freshUser = await prisma.employee.findUnique({
+            where: { id: decoded.employeeId },
+            select: { employmentStatus: true },
+        });
+
+        if (!freshUser || freshUser.employmentStatus === 'INACTIVE' || freshUser.employmentStatus === 'TERMINATED') {
+            // Clear auth cookies so the browser stops sending them
+            res.clearCookie('auth_token', cookieOptions);
+            res.clearCookie('refresh_token', cookieOptions);
+            res.status(401).json({
+                success: false,
+                message: 'Session terminated. Your account has been deactivated.',
+                error: 'account_inactive'
+            });
+            return;
+        }
 
         // Attach user info to request
         req.user = {

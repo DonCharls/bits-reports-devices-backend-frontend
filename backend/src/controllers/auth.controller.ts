@@ -107,6 +107,15 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
+        // Block inactive/terminated accounts from logging in
+        if (employee.employmentStatus === 'INACTIVE' || employee.employmentStatus === 'TERMINATED') {
+            res.status(403).json({
+                success: false,
+                message: 'Your account has been deactivated. Please contact your administrator.'
+            });
+            return;
+        }
+
         // Role-based access control: Only ADMIN and HR can access the web app
         if (employee.role !== 'ADMIN' && employee.role !== 'HR') {
             res.status(403).json({
@@ -246,6 +255,15 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
 
         const employee = storedToken.employee;
 
+        // Block inactive/terminated accounts from refreshing tokens
+        if (employee.employmentStatus === 'INACTIVE' || employee.employmentStatus === 'TERMINATED') {
+            await prisma.refreshToken.deleteMany({ where: { employeeId: employee.id } });
+            res.clearCookie('auth_token', cookieOptions);
+            res.clearCookie('refresh_token', cookieOptions);
+            res.status(403).json({ success: false, message: 'Your account has been deactivated.', error: 'account_inactive' });
+            return;
+        }
+
         const tokenPayload = {
             employeeId: employee.id,
             role: employee.role,
@@ -345,6 +363,12 @@ export const me = async (req: Request, res: Response): Promise<void> => {
 
         if (!employee) {
             res.status(404).json({ success: false, message: 'Employee not found.' });
+            return;
+        }
+
+        // Boot out inactive/terminated accounts
+        if (employee.employmentStatus === 'INACTIVE' || employee.employmentStatus === 'TERMINATED') {
+            res.status(403).json({ success: false, message: 'Your account has been deactivated.', error: 'account_inactive' });
             return;
         }
 

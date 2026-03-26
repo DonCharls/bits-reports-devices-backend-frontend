@@ -1,30 +1,47 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Shield, Lock, Eye, EyeOff, Save, CheckCircle, Mail, MapPin, Calendar, X, AlertTriangle } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Shield, Lock, Eye, EyeOff, Save, CheckCircle, Mail, MapPin, Calendar, X, AlertTriangle, Phone } from 'lucide-react';
 import Image from 'next/image';
 
 export default function SettingsPage() {
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [toastType, setToastType] = useState<"success" | "error">("success");
 
+  // User data from API
   const [userData, setUserData] = useState({
-    name: "mwehehe",
-    role: "HR Payroll Officer",
-    email: "admin@bipbip.com",
-    site: "Cebu Office",
-    joined: "January 2024"
+    firstName: "",
+    lastName: "",
+    email: "",
+    role: "",
+    contactNumber: "",
+    branch: "",
+    department: "",
+    position: "",
   });
+
+  // Backup for cancel
+  const [originalData, setOriginalData] = useState(userData);
 
   const [passwordForm, setPasswordForm] = useState({
     current: "",
     new: "",
     confirm: ""
   });
+
+  const showToastMsg = (msg: string, type: "success" | "error" = "success") => {
+    setToastMessage(msg);
+    setToastType(type);
+    setShowToast(true);
+  };
 
   useEffect(() => {
     if (showToast) {
@@ -33,52 +50,139 @@ export default function SettingsPage() {
     }
   }, [showToast]);
 
+  // Fetch real user data from API
   useEffect(() => {
-    const savedData = localStorage.getItem('userData');
-    if (savedData) {
-      setUserData(JSON.parse(savedData));
-    }
-  }, []);
+    const fetchUser = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' });
+        if (!res.ok) {
+          router.replace('/login');
+          return;
+        }
+        const data = await res.json();
+        const emp = data.employee ?? data;
+        const user = {
+          firstName: emp.firstName || "",
+          lastName: emp.lastName || "",
+          email: emp.email || "",
+          role: emp.role || "",
+          contactNumber: emp.contactNumber || emp.phone || "",
+          branch: emp.branch || "",
+          department: emp.department || "",
+          position: emp.position || "",
+        };
+        setUserData(user);
+        setOriginalData(user);
+      } catch {
+        router.replace('/login');
+      }
+    };
+    fetchUser();
+  }, [router]);
 
-  const handleSaveAll = () => {
-    localStorage.setItem('userData', JSON.stringify(userData));
-    setIsEditingProfile(false);
-    setToastMessage("Account updated successfully!");
-    setShowToast(true);
-    window.dispatchEvent(new Event('profileUpdate'));
+  const handleSaveProfile = async () => {
+    setIsSavingProfile(true);
+    try {
+      const res = await fetch('/api/users/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          contactNumber: userData.contactNumber,
+        })
+      });
+
+      if (res.status === 401) {
+        router.replace('/login');
+        return;
+      }
+
+      const data = await res.json();
+      if (data.success) {
+        setOriginalData(userData);
+        setIsEditingProfile(false);
+        showToastMsg("Profile updated successfully!");
+        window.dispatchEvent(new Event('profileUpdate'));
+      } else {
+        showToastMsg(data.message || "Failed to update profile.", "error");
+      }
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      showToastMsg("Failed to update profile.", "error");
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
-  const handlePasswordChange = () => {
+  const handlePasswordChange = async () => {
     if (!passwordForm.current || !passwordForm.new || !passwordForm.confirm) {
-      setToastMessage("Please fill in all password fields.");
-      setShowToast(true);
+      showToastMsg("Please fill in all password fields.", "error");
+      return;
+    }
+
+    if (passwordForm.new.length < 8) {
+      showToastMsg("New password must be at least 8 characters.", "error");
       return;
     }
 
     if (passwordForm.new !== passwordForm.confirm) {
-      setToastMessage("New passwords do not match!");
-      setShowToast(true);
+      showToastMsg("New passwords do not match!", "error");
       return;
     }
 
     setIsUpdatingPassword(true);
 
-    setTimeout(() => {
+    try {
+      const res = await fetch('/api/users/change-password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          currentPassword: passwordForm.current,
+          newPassword: passwordForm.new,
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToastMsg("Password changed successfully!");
+        setPasswordForm({ current: "", new: "", confirm: "" });
+      } else {
+        showToastMsg(data.message || "Failed to change password.", "error");
+      }
+    } catch (error) {
+      console.error('Error changing password:', error);
+      showToastMsg("Failed to change password.", "error");
+    } finally {
       setIsUpdatingPassword(false);
-      setToastMessage("Password changed successfully!");
-      setShowToast(true);
-      setPasswordForm({ current: "", new: "", confirm: "" });
-    }, 1500);
+    }
   };
 
   const confirmCancel = () => {
+    setUserData(originalData);
     setIsEditingProfile(false);
     setShowCancelModal(false);
-    const savedData = localStorage.getItem('userData');
-    if (savedData) {
-      setUserData(JSON.parse(savedData));
-    }
   };
+
+  // Password strength
+  const getPasswordStrength = (pw: string) => {
+    if (!pw) return { label: '', color: '', width: '0%' };
+    let score = 0;
+    if (pw.length >= 8) score++;
+    if (/[A-Z]/.test(pw)) score++;
+    if (/[0-9]/.test(pw)) score++;
+    if (/[^A-Za-z0-9]/.test(pw)) score++;
+    if (score <= 1) return { label: 'Weak', color: 'bg-red-500', width: '25%' };
+    if (score === 2) return { label: 'Fair', color: 'bg-yellow-500', width: '50%' };
+    if (score === 3) return { label: 'Good', color: 'bg-blue-500', width: '75%' };
+    return { label: 'Strong', color: 'bg-green-500', width: '100%' };
+  };
+
+  const strength = getPasswordStrength(passwordForm.new);
+
+  const displayName = `${userData.firstName} ${userData.lastName}`.trim() || 'User';
 
   return (
     <div className="space-y-6 relative">
@@ -86,17 +190,12 @@ export default function SettingsPage() {
         <h2 className="text-2xl font-black text-slate-800 tracking-tight">
           Account Settings
         </h2>
-        <button
-          onClick={handleSaveAll}
-          className="flex items-center gap-2 px-6 py-2 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200 active:scale-95"
-        >
-          <Save size={18} /> Save All Changes
-        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
 
+          {/* Profile Card */}
           <div className="bg-white border border-slate-200 overflow-hidden shadow-sm rounded-3xl">
             <div className="h-32 bg-[#E60000]" />
             <div className="px-8 pb-8">
@@ -125,7 +224,14 @@ export default function SettingsPage() {
                       onClick={() => setShowCancelModal(true)}
                       className="px-6 py-2 border border-slate-400 text-slate-600 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 transition-all"
                     >
-                      Cancel Changes
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveProfile}
+                      disabled={isSavingProfile}
+                      className="flex items-center gap-2 px-6 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200 active:scale-95 disabled:opacity-50"
+                    >
+                      <Save size={14} /> {isSavingProfile ? 'Saving...' : 'Save'}
                     </button>
                   </div>
                 )}
@@ -134,23 +240,48 @@ export default function SettingsPage() {
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">Full Name</label>
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">First Name</label>
                     <input
                       disabled={!isEditingProfile}
-                      value={userData.name}
-                      onChange={(e) => setUserData({ ...userData, name: e.target.value })}
+                      value={userData.firstName}
+                      onChange={(e) => setUserData({ ...userData, firstName: e.target.value })}
                       className="w-full p-3 bg-red-50/30 border border-red-100 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/10 disabled:opacity-60"
                     />
                   </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">Last Name</label>
+                    <input
+                      disabled={!isEditingProfile}
+                      value={userData.lastName}
+                      onChange={(e) => setUserData({ ...userData, lastName: e.target.value })}
+                      className="w-full p-3 bg-red-50/30 border border-red-100 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/10 disabled:opacity-60"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">Email Address</label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-red-400" size={16} />
                       <input
-                        disabled={!isEditingProfile}
+                        disabled
                         value={userData.email}
-                        onChange={(e) => setUserData({ ...userData, email: e.target.value })}
-                        className="w-full pl-10 p-3 bg-red-50/30 border border-red-100 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 disabled:opacity-60"
+                        className="w-full pl-10 p-3 bg-red-50/30 border border-red-100 rounded-xl text-sm font-bold text-slate-700 outline-none disabled:opacity-60"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400 ml-1">Email cannot be changed</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">Contact Number</label>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-red-400" size={16} />
+                      <input
+                        disabled={!isEditingProfile}
+                        value={userData.contactNumber}
+                        onChange={(e) => setUserData({ ...userData, contactNumber: e.target.value })}
+                        placeholder="+63-000-000-0000"
+                        className="w-full pl-10 p-3 bg-red-50/30 border border-red-100 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 disabled:opacity-60 placeholder:text-slate-300"
                       />
                     </div>
                   </div>
@@ -158,33 +289,30 @@ export default function SettingsPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">Office Location</label>
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">Branch</label>
                     <div className="relative">
                       <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-red-400" size={16} />
                       <input
-                        disabled={!isEditingProfile}
-                        value={userData.site}
-                        onChange={(e) => setUserData({ ...userData, site: e.target.value })}
-                        className="w-full pl-10 p-3 bg-red-50/30 border border-red-100 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 disabled:opacity-60"
+                        disabled
+                        value={userData.branch || 'Not assigned'}
+                        className="w-full pl-10 p-3 bg-red-50/30 border border-red-100 rounded-xl text-sm font-bold text-slate-700 outline-none disabled:opacity-60"
                       />
                     </div>
                   </div>
-                  <div className="space-y-1 flex flex-col justify-center">
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">
-                      Joined Date
-                    </label>
-                    <div className="flex items-center gap-2 px-1">
-                      <Calendar className="text-red-400" size={16} />
-                      <span className="text-sm font-bold text-slate-600">
-                        {userData.joined}
-                      </span>
-                    </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">Department</label>
+                    <input
+                      disabled
+                      value={userData.department || 'Not assigned'}
+                      className="w-full p-3 bg-red-50/30 border border-red-100 rounded-xl text-sm font-bold text-slate-700 outline-none disabled:opacity-60"
+                    />
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
+          {/* Password Card */}
           <div className="bg-white border border-slate-200 p-8 shadow-sm rounded-3xl">
             <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
               <Lock size={16} className="text-red-500" /> Security & Password
@@ -214,6 +342,17 @@ export default function SettingsPage() {
                       className="w-full p-3 bg-red-50/30 border border-red-100 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20"
                     />
                   </div>
+                  {/* Strength meter */}
+                  {passwordForm.new && (
+                    <div className="mt-1">
+                      <div className="w-full bg-slate-100 rounded-full h-1.5">
+                        <div className={`h-1.5 rounded-full transition-all duration-300 ${strength.color}`} style={{ width: strength.width }} />
+                      </div>
+                      <p className={`text-[10px] mt-1 font-bold ${strength.label === 'Weak' ? 'text-red-500' : strength.label === 'Fair' ? 'text-yellow-500' : strength.label === 'Good' ? 'text-blue-500' : 'text-green-500'}`}>
+                        Password strength: {strength.label}
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider ml-1">Confirm New Password</label>
@@ -246,6 +385,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Sidebar */}
         <div className="space-y-6">
           <div className="bg-slate-900 p-8 text-white rounded-3xl shadow-sm">
             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
@@ -253,33 +393,40 @@ export default function SettingsPage() {
             </h3>
             <div className="space-y-4">
               <div className="pb-4 border-b border-white/10">
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Signed In As</p>
+                <p className="text-sm font-black text-white mt-1">{displayName}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{userData.email}</p>
+              </div>
+              <div className="pb-4 border-b border-white/10">
                 <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Account Role</p>
                 <p className="text-sm font-black text-red-500 uppercase tracking-tighter">
-                  {userData.role}
+                  {userData.role === 'HR' ? 'HR Personnel' : userData.role || 'HR'}
                 </p>
               </div>
               <div className="space-y-3">
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Active Permissions</p>
-                {['Full Access', 'Attendance Correction', 'Report Generation', 'User Management'].map((perm) => (
+                {['Attendance Monitoring', 'Attendance Correction', 'Report Generation', 'Employee Management'].map((perm) => (
                   <div key={perm} className="flex items-center gap-2 text-xs font-bold text-slate-300">
                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {perm}
                   </div>
                 ))}
               </div>
-              <div className="pt-4 border-t border-white/10">
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Last Login</p>
-                <p className="text-sm font-medium">Today at {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-              </div>
+              {userData.branch && (
+                <div className="pt-4 border-t border-white/10">
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Branch</p>
+                  <p className="text-sm font-medium">{userData.branch}</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
 
+      {/* Cancel Confirmation Modal */}
       {showCancelModal && (
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-6 text-center space-y-4">
-
               <div>
                 <h3 className="text-lg font-black text-slate-800 tracking-tight">Discard changes?</h3>
                 <p className="text-sm font-medium text-slate-500 mt-1">Your unsaved modifications will be lost.</p>
@@ -293,9 +440,9 @@ export default function SettingsPage() {
                 </button>
                 <button
                   onClick={confirmCancel}
-                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl text-smfont-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200 active:scale-95"
+                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200 active:scale-95"
                 >
-                  Yes
+                  Yes, Discard
                 </button>
               </div>
             </div>
@@ -303,8 +450,10 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {/* Toast */}
       {showToast && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-500 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 z-50">
+        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 ${toastType === 'error' ? 'bg-red-600' : 'bg-emerald-600'} text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 z-50`}>
+          {toastType === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
           <span className="text-sm font-bold tracking-tight">{toastMessage}</span>
         </div>
       )}

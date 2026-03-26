@@ -1,7 +1,8 @@
 "use client"
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAttendanceStream, AttendanceStreamPayload } from '@/hooks/useAttendanceStream';
+import { useDeviceStream, DeviceStatusPayload, DeviceConnectedPayload } from '@/hooks/useDeviceStream';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
@@ -19,7 +20,11 @@ import {
   ArrowRight,
   Clock,
   LogIn,
-  LogOut
+  LogOut,
+  Fingerprint,
+  RadioTower,
+  CheckCircle2,
+  XCircle
 } from 'lucide-react';
 
 interface StatItem {
@@ -36,6 +41,9 @@ interface BranchData {
   percentage: number;
   color: string;
 }
+
+interface Device { id: number; name: string; ip: string; port: number; location?: string; isActive: boolean; syncEnabled: boolean }
+interface DeviceWithStatus extends Device { online: boolean | null }
 
 interface LiveLog {
   label: string;
@@ -105,6 +113,8 @@ export default function HRDashboard() {
   const [branchPresence, setBranchPresence] = useState<BranchData[]>([]);
   const [liveLogs, setLiveLogs] = useState<LiveLog[]>([]);
   const [weeklyData, setWeeklyData] = useState<WeekDay[]>([]);
+  const [devices, setDevices] = useState<DeviceWithStatus[]>([]);
+  const activityScrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -113,11 +123,12 @@ export default function HRDashboard() {
       const weekStart = phtStr(weekDates[0].date);
       const weekEnd = phtStr(weekDates[4].date);
 
-      const [bRes, eRes, aRes, wRes] = await Promise.all([
+      const [bRes, eRes, aRes, wRes, dRes] = await Promise.all([
         fetch('/api/branches', { credentials: 'include' }),
         fetch('/api/employees?limit=5000', { credentials: 'include' }),
         fetch(`/api/attendance?startDate=${todayStr}&endDate=${todayStr}&limit=5000`, { credentials: 'include' }),
         fetch(`/api/attendance?startDate=${weekStart}&endDate=${weekEnd}&limit=5000`, { credentials: 'include' }),
+        fetch('/api/devices', { credentials: 'include' }),
       ]);
 
       if (eRes.status === 401) { router.replace('/login'); return; }
@@ -126,6 +137,7 @@ export default function HRDashboard() {
       const ed = await eRes.json();
       const ad = await aRes.json();
       const wd = await wRes.json();
+      const dd = dRes.ok ? await dRes.json() : { success: false };
 
       const branchList: any[] = bd.success ? (bd.branches || bd.data || []) : [];
       const allEmps: any[] = ed.success ? (ed.employees || ed.data || []) : [];
@@ -182,6 +194,15 @@ export default function HRDashboard() {
         return { name: b.name, percentage: pct, color };
       });
       setBranchPresence(branchData);
+
+      // ── Devices ──
+      const deviceList: Device[] = dd.success ? (dd.devices || dd.data || []) : [];
+      const devicesWithStatus: DeviceWithStatus[] = deviceList.map(dev => ({
+        ...dev,
+        syncEnabled: (dev as any).syncEnabled ?? true,
+        online: dev.isActive,
+      }));
+      setDevices(devicesWithStatus);
 
       // ── Live Logs ──
       const events: LiveLog[] = [];
@@ -267,6 +288,34 @@ export default function HRDashboard() {
   useAttendanceStream({
     onRecord: handleStreamRecord,
   });
+
+  // ── SSE: real-time device status updates ──
+  const handleDeviceConnected = useCallback((payload: DeviceConnectedPayload) => {
+    setDevices(prev => prev.map(d => {
+      const fresh = payload.devices.find(sd => sd.id === d.id);
+      if (!fresh) return d;
+      return { ...d, online: fresh.isActive, isActive: fresh.isActive, syncEnabled: fresh.syncEnabled };
+    }));
+  }, []);
+
+  const handleDeviceStatusChange = useCallback((payload: DeviceStatusPayload) => {
+    setDevices(prev => prev.map(d =>
+      d.id === payload.id
+        ? { ...d, online: payload.isActive, isActive: payload.isActive }
+        : d
+    ));
+  }, []);
+
+  useDeviceStream({
+    onConnected: handleDeviceConnected,
+    onStatusChange: handleDeviceStatusChange,
+  });
+
+  useEffect(() => {
+    if (activityScrollRef.current) {
+      activityScrollRef.current.scrollTop = 0;
+    }
+  }, [liveLogs]);
 
   useEffect(() => {
     fetch('/api/auth/me', { credentials: 'include' })
@@ -443,8 +492,10 @@ export default function HRDashboard() {
           </div>
         </div>
 
-        {/* Activity Feed */}
-        <div className="flex flex-col min-h-0">
+        {/* Right column: Activity Feed + Devices */}
+        <div className="flex flex-col gap-2.5 min-h-0">
+
+          {/* Activity Feed */}
           <div className="bg-white rounded-xl border border-slate-100 shadow-sm flex flex-col min-h-[280px] lg:min-h-0 lg:flex-1 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 shrink-0">
               <h2 className="text-xs font-black text-slate-600 uppercase tracking-widest flex items-center gap-1.5">
@@ -457,7 +508,7 @@ export default function HRDashboard() {
                 All <ArrowRight className="w-3 h-3" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto min-h-0">
+            <div ref={activityScrollRef} className="flex-1 overflow-y-auto min-h-0">
               {liveLogs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full gap-3 px-6 py-8 lg:py-0">
                   <div className="relative w-16 h-16">
@@ -536,6 +587,61 @@ export default function HRDashboard() {
               )}
             </div>
           </div>
+
+          {/* Devices */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm shrink-0">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100">
+              <h2 className="text-xs font-black text-slate-600 uppercase tracking-widest flex items-center gap-1.5">
+                <RadioTower className="w-3.5 h-3.5 text-red-500" /> Devices
+              </h2>
+              <div className="flex gap-1.5">
+                <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />{devices.filter(d => d.online).length} on
+                </span>
+                <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-rose-500 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />{devices.filter(d => !d.online).length} off
+                </span>
+              </div>
+            </div>
+            <div className="p-2">
+              {devices.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-4 gap-1.5">
+                  <Fingerprint className="w-6 h-6 text-slate-200" />
+                  <p className="text-slate-400 text-sm font-semibold">No devices configured</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {devices.map(dev => (
+                    <div
+                      key={dev.id}
+                      className={`rounded-lg border p-2 flex items-center gap-2 ${dev.online ? 'border-emerald-100 bg-emerald-50/30' : 'border-rose-100 bg-rose-50/30'
+                        }`}
+                    >
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${dev.online ? 'bg-emerald-100' : 'bg-rose-100'
+                        }`}>
+                        <Fingerprint className={`w-3.5 h-3.5 ${dev.online ? 'text-emerald-600' : 'text-rose-500'}`} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-slate-800 truncate leading-tight">{dev.name}</p>
+                        <p className="text-[10px] text-slate-500 font-mono">{dev.ip}:{dev.port}</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {!dev.syncEnabled && (
+                          <span className="text-[8px] font-black uppercase text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full leading-none" title="Sync disabled">
+                            Sync Off
+                          </span>
+                        )}
+                        {dev.online
+                          ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                          : <XCircle className="w-3.5 h-3.5 text-rose-400" />}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
         </div>
       </div>
     </div>

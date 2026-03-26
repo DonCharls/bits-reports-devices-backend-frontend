@@ -19,7 +19,10 @@ import {
   Eye,
   EyeOff,
   Users,
-  X as XIcon
+  X as XIcon,
+  AlertTriangle,
+  Ban,
+  UserCheck
 } from 'lucide-react'
 
 interface UserAccount {
@@ -68,6 +71,9 @@ export default function UserAccountsPage() {
   })
   const [showPassword, setShowPassword] = useState(false)
   const [formError, setFormError] = useState('')
+  const [statusConfirm, setStatusConfirm] = useState<{
+    open: boolean; userId: number | null; userName: string; currentStatus: string; loading: boolean
+  }>({ open: false, userId: null, userName: '', currentStatus: '', loading: false })
 
   // Fetch users from backend
   const fetchUsers = async () => {
@@ -185,20 +191,30 @@ export default function UserAccountsPage() {
     }
   }
 
-  const toggleStatus = async (id: number) => {
+  const confirmStatusToggle = async () => {
+    if (!statusConfirm.userId) return
+    setStatusConfirm(prev => ({ ...prev, loading: true }))
     try {
-      const res = await fetch(`/api/users/${id}/toggle-status`, {
+      const res = await fetch(`/api/users/${statusConfirm.userId}/toggle-status`, {
         method: 'PATCH',
         credentials: 'include',
       })
       const data = await res.json()
       if (data.success) {
+        if (data.selfDeactivated) {
+          // Admin deactivated their own account — force logout
+          await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+          window.location.href = '/login'
+          return
+        }
         await fetchUsers()
       } else {
         alert(data.message || 'Failed to toggle status')
       }
     } catch (error) {
       console.error('Error toggling status:', error)
+    } finally {
+      setStatusConfirm({ open: false, userId: null, userName: '', currentStatus: '', loading: false })
     }
   }
 
@@ -470,17 +486,15 @@ export default function UserAccountsPage() {
                       </Badge>
                     </td>
                     <td className="px-6 py-4 hidden sm:table-cell">
-                      <button onClick={() => toggleStatus(user.id)}>
-                        <Badge
-                          variant="outline"
-                          className={`cursor-pointer ${user.status === 'active'
-                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200 text-xs'
-                            : 'bg-red-50 text-red-600 border-red-200 text-xs'
-                            }`}
-                        >
-                          {user.status === 'active' ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </button>
+                      <Badge
+                        variant="outline"
+                        className={user.status === 'active'
+                          ? 'bg-emerald-50 text-emerald-600 border-emerald-200 text-xs'
+                          : 'bg-red-50 text-red-600 border-red-200 text-xs'
+                        }
+                      >
+                        {user.status === 'active' ? 'Active' : 'Inactive'}
+                      </Badge>
                     </td>
                     <td className="px-6 py-4 hidden lg:table-cell">
                       <span className="text-xs font-medium text-slate-500">
@@ -488,12 +502,34 @@ export default function UserAccountsPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <button
-                        onClick={() => openEditDialog(user)}
-                        className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => openEditDialog(user)}
+                          className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90"
+                          title="Edit user"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setStatusConfirm({
+                            open: true,
+                            userId: user.id,
+                            userName: `${user.firstName} ${user.lastName}`,
+                            currentStatus: user.status,
+                            loading: false,
+                          })}
+                          className={`p-2.5 rounded-xl transition-all active:scale-90 ${user.status === 'active'
+                            ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                            : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'
+                          }`}
+                          title={user.status === 'active' ? 'Deactivate account' : 'Reactivate account'}
+                        >
+                          {user.status === 'active'
+                            ? <Ban className="w-4 h-4" />
+                            : <UserCheck className="w-4 h-4" />
+                          }
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -538,6 +574,57 @@ export default function UserAccountsPage() {
           </div>
         </div>
       </div>
+
+      {/* Status Toggle Confirmation Modal */}
+      {statusConfirm.open && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="p-6 text-center space-y-4">
+              <div className={`w-14 h-14 rounded-full mx-auto flex items-center justify-center ${
+                statusConfirm.currentStatus === 'active' ? 'bg-rose-100' : 'bg-emerald-100'
+              }`}>
+                <AlertTriangle className={`w-7 h-7 ${
+                  statusConfirm.currentStatus === 'active' ? 'text-rose-600' : 'text-emerald-600'
+                }`} />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-800">
+                  {statusConfirm.currentStatus === 'active' ? 'Deactivate Account?' : 'Reactivate Account?'}
+                </h3>
+                <p className="text-sm text-slate-500 mt-2 leading-relaxed">
+                  {statusConfirm.currentStatus === 'active'
+                    ? <>Are you sure you want to deactivate <span className="font-bold text-slate-700">{statusConfirm.userName}</span>? This will <span className="font-bold text-rose-600">revoke their login access</span>.&nbsp;</>
+                    : <>Reactivate <span className="font-bold text-slate-700">{statusConfirm.userName}</span>? This will <span className="font-bold text-emerald-600">restore their login access</span>.&nbsp;</>
+                  }
+                </p>
+              </div>
+            </div>
+            <div className="flex border-t border-slate-100">
+              <button
+                onClick={() => setStatusConfirm({ open: false, userId: null, userName: '', currentStatus: '', loading: false })}
+                disabled={statusConfirm.loading}
+                className="flex-1 px-4 py-3.5 text-sm font-bold text-slate-500 hover:bg-slate-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmStatusToggle}
+                disabled={statusConfirm.loading}
+                className={`flex-1 px-4 py-3.5 text-sm font-black transition-colors disabled:opacity-70 ${
+                  statusConfirm.currentStatus === 'active'
+                    ? 'text-rose-600 hover:bg-rose-50'
+                    : 'text-emerald-600 hover:bg-emerald-50'
+                }`}
+              >
+                {statusConfirm.loading
+                  ? 'Processing…'
+                  : statusConfirm.currentStatus === 'active' ? 'Yes, Deactivate' : 'Yes, Reactivate'
+                }
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

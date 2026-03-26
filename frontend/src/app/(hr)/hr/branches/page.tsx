@@ -109,6 +109,7 @@ export default function HRBranchesPage() {
         setLoading(false)
       }
     }
+
     load()
   }, [])
 

@@ -286,6 +286,11 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
             },
         });
 
+        // When deactivating, invalidate all sessions by deleting refresh tokens
+        if (newStatus === 'INACTIVE') {
+            await prisma.refreshToken.deleteMany({ where: { employeeId: id } });
+        }
+
         await audit({
             action: 'STATUS_CHANGE',
             entityType: 'User Account',
@@ -295,9 +300,12 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
             details: `Changed user account status to ${newStatus}`
         });
 
+        const selfDeactivated = newStatus === 'INACTIVE' && req.user?.employeeId === id;
+
         res.json({
             success: true,
             message: `User status changed to ${newStatus}`,
+            selfDeactivated,
             user: {
                 ...updated,
                 status: updated.employmentStatus === 'ACTIVE' ? 'active' : 'inactive',

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Edit2, UserPlus, Search, Download, ChevronLeft, ChevronRight, Loader2, X, Fingerprint, CheckCircle2, WifiOff, Timer } from 'lucide-react';
+import { Edit2, UserPlus, Search, Download, ChevronLeft, ChevronRight, Loader2, X, Fingerprint, CheckCircle2, WifiOff, Timer, AlertCircle } from 'lucide-react';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
@@ -266,7 +266,8 @@ function EmployeeDirectoryContent() {
           department: editingEmployee.dept,
           branch: editingEmployee.branch,
           hireDate: editingEmployee.hireDate,
-          employmentStatus: editingEmployee.status === 'Active' ? 'ACTIVE' : 'INACTIVE'
+          employmentStatus: editingEmployee.status === 'Active' ? 'ACTIVE' : 'INACTIVE',
+          shiftId: editingEmployee.shiftId ? parseInt(editingEmployee.shiftId) : null,
         })
       });
       if ((await res.json()).success) {
@@ -335,9 +336,10 @@ function EmployeeDirectoryContent() {
   };
 
   const handleEditClick = (emp: any) => {
-    const dataString = JSON.stringify(emp);
-    setEditingEmployee(JSON.parse(dataString));
-    setInitialEmployeeData(dataString);
+    const clone = JSON.parse(JSON.stringify(emp));
+    clone.shiftId = emp.Shift?.id ? String(emp.Shift.id) : '';
+    setEditingEmployee(clone);
+    setInitialEmployeeData(JSON.stringify(clone));
   };
 
   const handleCancelClick = () => {
@@ -748,8 +750,11 @@ function EmployeeDirectoryContent() {
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-5 bg-red-600 text-white flex justify-between items-center shrink-0">
-              <h3 className="font-bold text-lg">Edit Employee Profile</h3>
-              <button onClick={handleCancelClick} className="hover:opacity-70"><X size={20} /></button>
+              <div>
+                <h3 className="font-bold text-lg leading-tight tracking-tight">Edit Employee Profile</h3>
+                <p className="text-[10px] text-red-100 opacity-90 uppercase font-black tracking-widest mt-0.5">Update employee info</p>
+              </div>
+              <button onClick={handleCancelClick} className="text-white/80 hover:text-white transition-colors"><X size={20} /></button>
             </div>
             <div className="p-6 space-y-4 overflow-y-auto">
               <div className="grid grid-cols-2 gap-3">
@@ -768,15 +773,55 @@ function EmployeeDirectoryContent() {
                   {branches.map(b => (<option key={b} value={b}>{b}</option>))}
                 </select>
               </div>
-              <div className="flex items-center gap-6 px-1">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="status" value="Active" checked={editingEmployee.status === "Active"} onChange={(e) => setEditingEmployee({ ...editingEmployee, status: e.target.value })} className="accent-red-600" />
-                  <span className="text-xs font-bold text-slate-600">Active</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="status" value="Inactive" checked={editingEmployee.status === "Inactive"} onChange={() => setShowInactiveConfirm(true)} className="accent-red-600" />
-                  <span className="text-xs font-bold text-slate-600">Inactive</span>
-                </label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Date Hired</label>
+                  <input
+                    type="date"
+                    className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+                    value={editingEmployee.hireDate || ''}
+                    onChange={(e) => setEditingEmployee({ ...editingEmployee, hireDate: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Status</label>
+                  <div className="flex items-center gap-6 mt-3">
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <div className="relative flex items-center justify-center">
+                        <input type="radio" name="status" value="Active" checked={editingEmployee.status === "Active"} onChange={(e) => setEditingEmployee({ ...editingEmployee, status: e.target.value })} className="peer appearance-none w-4 h-4 border-2 border-slate-300 rounded-full checked:border-red-600 transition-all cursor-pointer" />
+                        <div className="absolute w-2 h-2 bg-red-600 rounded-full opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-600 group-hover:text-slate-900 transition-colors">Active</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <div className="relative flex items-center justify-center">
+                        <input type="radio" name="status" value="Inactive" checked={editingEmployee.status === "Inactive"} onChange={() => setShowInactiveConfirm(true)} className="peer appearance-none w-4 h-4 border-2 border-slate-300 rounded-full checked:border-red-600 transition-all cursor-pointer" />
+                        <div className="absolute w-2 h-2 bg-red-600 rounded-full opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-600 group-hover:text-slate-900 transition-colors">Inactive</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Work Shift</label>
+                <select
+                  className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none cursor-pointer transition-all appearance-none"
+                  value={(editingEmployee as any).shiftId || ''}
+                  onChange={(e) => setEditingEmployee({ ...editingEmployee, shiftId: e.target.value })}
+                >
+                  <option value="">No shift assigned</option>
+                  {shifts.map(s => (
+                    <option key={s.id} value={s.id}>[{s.shiftCode}] {s.name} ({formatTime(s.startTime)} – {formatTime(s.endTime)})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="bg-amber-50 border border-amber-100 p-3 rounded-xl flex gap-3 shadow-sm shadow-amber-600/5">
+                <AlertCircle size={18} className="text-amber-600 shrink-0" />
+                <div className="text-[10px] text-amber-800 leading-relaxed font-medium">
+                  <strong className="block mb-0.5 tracking-tight uppercase">Audit Log Notice</strong>
+                  <strong>Warning:</strong> These changes will be logged under your account for audit purposes.
+                </div>
               </div>
             </div>
             <div className="p-5 bg-slate-50 flex gap-3">
