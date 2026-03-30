@@ -287,22 +287,41 @@ export const autoCloseIncompleteAttendance = async (): Promise<number> => {
     try {
         const today = getTodayPHT();
 
-        // Find all records before today with no check-out time
-        const result = await prisma.attendance.updateMany({
+        // Find all records before today with no check-out time that haven't been flagged yet
+        const incompleteRecords = await prisma.attendance.findMany({
             where: {
                 date: { lt: today },
-                checkOutTime: null
-            },
-            data: {
-                status: 'incomplete',
-                updatedAt: new Date()
+                checkOutTime: null,
+                NOT: { notes: { contains: 'No checkout recorded' } }
             }
         });
 
-        console.log(`[Attendance] Auto-closed ${result.count} incomplete records`);
-        return result.count;
+        if (incompleteRecords.length === 0) return 0;
+
+        let flaggedCount = 0;
+
+        for (const record of incompleteRecords) {
+            const existingNotes = record.notes || '';
+            const flagNote = 'No checkout recorded \u2014 please review and adjust manually';
+            const newNotes = existingNotes
+                ? `${existingNotes} | ${flagNote}`
+                : flagNote;
+
+            await prisma.attendance.update({
+                where: { id: record.id },
+                data: {
+                    status: 'incomplete',
+                    notes: newNotes,
+                    updatedAt: new Date()
+                }
+            });
+            flaggedCount++;
+        }
+
+        console.log(`[Attendance] Flagged ${flaggedCount} incomplete records (no checkout) for manual review`);
+        return flaggedCount;
     } catch (error: any) {
-        console.error('[Attendance] Error auto-closing records:', error);
+        console.error('[Attendance] Error flagging incomplete records:', error);
         return 0;
     }
 };
@@ -418,86 +437,51 @@ export const repairMissingCheckouts = async (): Promise<number> => {
         const records = await prisma.attendance.findMany({
             where: {
                 date: { lt: today },
-                checkOutTime: null
-            },
-            include: {
-                employee: {
-                    include: { Shift: true }
-                }
+                checkOutTime: null,
+                NOT: { notes: { contains: 'No checkout recorded' } }
             }
         });
 
         if (records.length === 0) return 0;
 
-        let repairedCount = 0;
+        let flaggedCount = 0;
 
         for (const record of records) {
-            const shift = record.employee?.Shift ?? null;
-
-            let checkoutHour = 17;
-            let checkoutMin = 0;
-            let shiftLabel = 'default (no shift assigned)';
-
-            if (shift) {
-                const [h, m] = shift.endTime.split(':').map(Number);
-                checkoutHour = h;
-                checkoutMin = m;
-                shiftLabel = shift.name;
-            }
-
-            // For night shifts, the end time belongs to the NEXT calendar day.
-            const checkoutBase = (shift?.isNightShift)
-                ? new Date(record.date.getTime() + 24 * 60 * 60 * 1000)
-                : new Date(record.date.getTime());
-
-            const repairTime = new Date(
-                checkoutBase.getTime() +
-                (checkoutHour * 60 + checkoutMin) * 60 * 1000
-            );
-
-            // Safety guard: skip impossible checkouts
-            if (repairTime <= record.checkInTime) {
-                console.warn(
-                    `[Attendance] Startup repair skipped for employee ${record.employeeId} ` +
-                    `on ${record.date.toISOString().split('T')[0]} — checkout would be ` +
-                    `before or equal to check-in. Needs manual correction.`
-                );
-                continue;
-            }
+            const existingNotes = record.notes || '';
+            const flagNote = 'No checkout recorded \u2014 please review and adjust manually';
+            const newNotes = existingNotes
+                ? `${existingNotes} | ${flagNote}`
+                : flagNote;
 
             await prisma.attendance.update({
                 where: { id: record.id },
                 data: {
-                    checkOutTime: repairTime,
-                    status: 'present',
-                    notes: record.notes
-                        ? `${record.notes} | Auto-repair: estimated shift end (${shiftLabel})`
-                        : `Auto-repair: estimated shift end (${shiftLabel})`,
+                    status: 'incomplete',
+                    notes: newNotes,
                     updatedAt: new Date()
                 }
             });
 
-            repairedCount++;
+            flaggedCount++;
             console.log(
-                `[Attendance] Startup repair: fixed employee ${record.employeeId} ` +
-                `on ${record.date.toISOString().split('T')[0]} (${shiftLabel})`
+                `[Attendance] Startup flag: employee ${record.employeeId} ` +
+                `on ${record.date.toISOString().split('T')[0]} — no checkout, flagged for review`
             );
         }
 
-        if (repairedCount > 0) {
+        if (flaggedCount > 0) {
             await audit({
-                action: 'AUTO_CHECKOUT',
+                action: 'FLAG_MISSING_CHECKOUT',
                 entityType: 'System',
                 source: 'startup-repair',
-                details: `Startup repair: Auto-checkout applied to ${repairedCount} historic records`
+                details: `Startup: Flagged ${flaggedCount} records with missing checkouts for manual review`
             });
         }
 
         console.log(
-            `[Attendance] Startup repair complete: fixed ${repairedCount} records, ` +
-            `${records.length - repairedCount} skipped.`
+            `[Attendance] Startup repair complete: flagged ${flaggedCount} records for review`
         );
-        return repairedCount;
+        return flaggedCount;
 
     } catch (error: any) {
         console.error('[Attendance] Error during startup repair:', error);

@@ -163,6 +163,35 @@ router.get('/employee/:id', getEmployeeHistory);
 
 /**
  * @swagger
+ * /api/attendance/audit-logs:
+ *   get:
+ *     summary: Get attendance audit logs (manual corrections history)
+ *     tags: [Attendance]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of audit log entries
+ */
+router.get('/audit-logs', getAttendanceAuditLogs);
+
+/**
+ * @swagger
  * /api/attendance/{id}:
  *   put:
  *     summary: Manually update an attendance record (HR correction)
@@ -196,8 +225,6 @@ router.get('/employee/:id', getEmployeeHistory);
  *       200:
  *         description: Record updated
  */
-router.get('/audit-logs', getAttendanceAuditLogs);
-
 router.put('/:id', updateAttendance);
 
 export default router;

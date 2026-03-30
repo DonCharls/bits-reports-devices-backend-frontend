@@ -199,7 +199,7 @@ export default function AdjustmentsPage() {
       const first = group.logs[0];
       const emp = first.attendance?.employee;
       const adjuster = first.adjustedBy;
-      const employeeName = emp ? `${emp.firstName} ${emp.lastName}` : 'Unknown';
+      const employeeName = emp ? `${emp.firstName}${(emp as any).middleName ? ` ${(emp as any).middleName[0]}.` : ''} ${emp.lastName}${(emp as any).suffix ? ` ${(emp as any).suffix}` : ''}` : 'Unknown';
       const adjusterName = adjuster ? `${adjuster.firstName} ${adjuster.lastName}` : 'System';
       const branch = emp?.branch || '—';
       const reason = group.logs.find(l => l.reason)?.reason || '—';

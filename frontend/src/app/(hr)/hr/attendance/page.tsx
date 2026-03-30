@@ -191,14 +191,12 @@ function AttendanceContent() {
           const overtimeMinutes: number = log.overtimeMinutes ?? 0;
           const undertimeMinutes: number = log.undertimeMinutes ?? 0;
           const shiftCode: string | null = log.shiftCode ?? emp.Shift?.shiftCode ?? null;
-          // For present/late: use computed lateMinutes (always accurate based on actual checkIn vs shift)
-          // For absent or other: use stored DB status
           const dbStatus = (log.status || '').toLowerCase();
           const status = dbStatus === 'absent' ? 'absent' : (lateMinutes > 0 ? 'late' : 'present');
           return {
             id: log.id,
             employeeId: log.employeeId,
-            employeeName: emp.firstName ? `${emp.firstName} ${emp.lastName}` : 'Unknown',
+            employeeName: emp.firstName ? `${emp.firstName}${emp.middleName ? ` ${emp.middleName[0]}.` : ''} ${emp.lastName}${emp.suffix ? ` ${emp.suffix}` : ''}` : 'Unknown',
             department: emp.Department?.name || emp.department || 'General',
             branchName: emp.branch || '—',
             date: new Date(log.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }),
@@ -206,6 +204,7 @@ function AttendanceContent() {
             checkOut: checkOut ? checkOut.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true }) : '—',
             status, lateMinutes, totalHours, overtimeMinutes, undertimeMinutes, shiftCode,
             isNightShift: emp.Shift?.isNightShift ?? false,
+            notes: log.notes || null,
           };
         });
 
@@ -294,7 +293,6 @@ function AttendanceContent() {
     setActionLoading(true);
     try {
       const body: any = { reason: editReason };
-      // Only send manual status if no time changes (let backend auto-recalculate when times change)
       if (editCheckIn) body.checkInTime = `${editingLog.date}T${editCheckIn}:00+08:00`;
       if (editCheckOut) body.checkOutTime = `${editingLog.date}T${editCheckOut}:00+08:00`;
       if (!editCheckIn && !editCheckOut) body.status = editStatus;
@@ -332,14 +330,12 @@ function AttendanceContent() {
 
     const allRows: (string | number)[][] = [];
 
-    // ── Header block ──
     allRows.push(['BITS Attendance Report']);
     allRows.push(['Branch', branchLabel]);
     allRows.push(['Date', formattedDate]);
     allRows.push(['Generated', new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })]);
     allRows.push([]);
 
-    // ── Summary stats ──
     allRows.push(['SUMMARY']);
     allRows.push(['Total Employees', records.length, '', 'Avg Hours', `${stats.avgHours}h`]);
     allRows.push(['Present', presentCount, '', 'Overtime Total', `${stats.totalOT}h`]);
@@ -347,14 +343,12 @@ function AttendanceContent() {
     allRows.push(['Absent', absentCount]);
     allRows.push([]);
 
-    // ── Column headers ──
     allRows.push([
       '#', 'Employee', 'Branch', 'Department', 'Shift',
       'Check In', 'Check Out', 'Hours Worked',
       'Late By', 'Overtime', 'Undertime', 'Status'
     ]);
 
-    // ── Data rows ──
     sortedRecords.forEach((r, i) => {
       const statusLabel = r.status.charAt(0).toUpperCase() + r.status.slice(1);
       allRows.push([
@@ -388,29 +382,33 @@ function AttendanceContent() {
     { value: 'absent', label: 'Absent' },
   ];
 
-
-
   return (
-    <div className="space-y-6 relative">
+    <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight">Attendance Logs</h1>
-          <p className="text-slate-500 text-sm font-medium">Monitor and manage daily employee time records</p>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight">Attendance Logs</h1>
+          <p className="text-slate-500 text-sm font-medium mt-0.5">
+            {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
+              weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+            })}
+          </p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto relative">
+        <div className="flex items-center gap-2">
           <input type="date" ref={dateInputRef} className="absolute opacity-0 pointer-events-none" onChange={e => setSelectedDate(e.target.value)} value={selectedDate} />
-          <button onClick={() => dateInputRef.current?.showPicker()} className="flex items-center justify-center gap-2 px-6 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 hover:border-red-200 transition-all shadow-sm w-full sm:w-auto">
-            <CalendarIcon size={16} className="text-red-500" />
+          <button onClick={() => dateInputRef.current?.showPicker()} className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 hover:border-red-200 transition-all shadow-sm">
+            <CalendarIcon className="w-4 h-4 text-red-500" />
             <span>{selectedDate === getTodayDate() ? `Today, ${new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
           </button>
-          <button onClick={exportToCSV} className="flex items-center justify-center gap-2 px-6 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-600/20 hover:bg-red-700 transition-all active:scale-95 w-full sm:w-auto">
-            <Download size={16} /><span>Export Log</span>
+          <button onClick={exportToCSV} className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-600/20 active:scale-95">
+            <Download className="w-4 h-4" /> Export Log
           </button>
         </div>
       </div>
 
-      {/* Stats */}
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-medium px-4 py-3 rounded-xl flex items-center gap-2"><AlertCircle className="w-4 h-4" />{error}</div>}
+
+      {/* Stats Cards */}
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: 'Avg Hours', value: `${stats.avgHours}h`, icon: Timer, color: 'text-blue-500', bg: 'bg-blue-500/10' },
@@ -419,22 +417,22 @@ function AttendanceContent() {
         ].map(s => {
           const Icon = s.icon;
           return (
-            <div key={s.label} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+            <div key={s.label} className="bg-white rounded-2xl border border-slate-100 p-3 sm:p-4 shadow-sm">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{s.label}</p>
-                  <p className={`text-2xl font-black mt-1 ${s.color}`}>{s.value}</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{s.label}</p>
+                  <p className={`text-xl sm:text-2xl font-black mt-1 ${s.color}`}>{s.value}</p>
                 </div>
-                <div className={`${s.bg} p-2 rounded-xl`}><Icon className={`w-4 h-4 ${s.color}`} /></div>
+                <div className={`${s.bg} p-2 rounded-xl shrink-0`}><Icon className={`w-4 h-4 ${s.color}`} /></div>
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Mini stats */}
+      {/* Mini Stats Bar */}
       <div className="flex items-center gap-4 bg-white px-5 py-3 rounded-2xl border border-slate-100 shadow-sm w-fit">
-        <div className="text-center"><p className="text-[9px] font-black uppercase tracking-wider text-slate-400">On Time</p><p className="text-xl font-black text-slate-700">{stats.onTime}</p></div>
+        <div className="text-center"><p className="text-[9px] font-black uppercase tracking-wider text-slate-400">On Time</p><p className="text-xl font-black text-emerald-500">{stats.onTime}</p></div>
         <div className="w-px h-8 bg-slate-100" />
         <div className="text-center"><p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Late</p><p className="text-xl font-black text-yellow-500">{stats.late}</p></div>
         <div className="w-px h-8 bg-slate-100" />
@@ -444,13 +442,12 @@ function AttendanceContent() {
       </div>
 
       {/* Filters */}
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-medium px-4 py-3 rounded-xl flex items-center gap-2"><AlertCircle size={16} />{error}</div>}
       <div className="flex flex-col md:flex-row gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input type="text" placeholder="Search employees..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500/20 outline-none" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input placeholder="Search employee..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-red-500/20" />
         </div>
-        <div className="flex flex-wrap gap-2 items-center">
+        <div className="flex gap-2">
           <Select value={branchFilter} onValueChange={setBranchFilter}>
             <SelectTrigger className="w-44 bg-white border-slate-200 font-bold text-xs uppercase tracking-widest"><SelectValue placeholder="Branch" /></SelectTrigger>
             <SelectContent className="bg-white border-slate-200">
@@ -472,7 +469,7 @@ function AttendanceContent() {
         </div>
       </div>
 
-      {/* Table (desktop) + Cards (mobile) */}
+      {/* Table Card */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
 
         {/* ── Mobile Card View ── */}
@@ -485,80 +482,51 @@ function AttendanceContent() {
               </div>
             </div>
           ) : records.length === 0 ? (
-            <div className="px-6 py-16 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">No attendance records found</div>
+            <div className="px-6 py-16 text-center text-slate-400 font-black uppercase text-[10px] tracking-widest">No attendance records found</div>
           ) : (
             <div className="divide-y divide-slate-100">
-              {sortedRecords
-                .slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
-                .map(row => (
-                  <div key={row.id} className="p-4 hover:bg-red-50/30 transition-colors">
-                    {/* Header: Name + Status + Edit */}
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-bold text-slate-700 text-sm truncate">{row.employeeName}</p>
-                        <p className="text-[10px] text-slate-400 font-medium">{row.department} • {row.branchName}</p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className={`font-black text-[10px] uppercase px-2.5 py-1 rounded-full border whitespace-nowrap ${row.status === 'present' ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
-                          : row.status === 'late' ? 'text-yellow-600 bg-yellow-50 border-yellow-100'
-                            : 'text-red-600 bg-red-50 border-red-100'
-                        }`}>
-                          {row.status === 'present' ? 'On Time' : row.status}
-                        </span>
-                        <button onClick={() => handleEditClick(row)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
-                          <Edit2 size={14} />
-                        </button>
-                      </div>
+              {sortedRecords.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage).map(row => (
+                <div key={row.id} className="p-4 hover:bg-red-50/30 transition-colors">
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-black text-slate-700 text-sm truncate uppercase tracking-tight">{row.employeeName}</p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{row.department} • {row.branchName}</p>
                     </div>
-
-                    {/* Grid: Clock In/Out + Details */}
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Clock In</p>
-                        <p className="font-mono text-green-600 font-bold text-sm">{row.checkIn}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Clock Out</p>
-                        <p className="font-mono text-slate-600 font-bold text-sm">{row.checkOut}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Shift</p>
-                        {row.shiftCode ? (
-                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${row.isNightShift ? 'bg-purple-100 text-purple-600 border-purple-200' : 'bg-blue-100 text-blue-600 border-blue-200'}`}>
-                            {row.shiftCode}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-slate-400 italic">No shift</span>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Hours</p>
-                        <p className="font-mono text-slate-700 font-bold text-sm">{fmtHours(row.totalHours)}</p>
-                      </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${row.status === 'present' ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
+                        : row.status === 'late' ? 'text-yellow-600 bg-yellow-50 border-yellow-100'
+                          : 'text-red-600 bg-red-50 border-red-100'
+                      }`}>
+                        {row.status === 'present' ? 'On Time' : row.status}
+                      </span>
+                      <button onClick={() => handleEditClick(row)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
+                        <Edit2 size={14} />
+                      </button>
                     </div>
-
-                    {/* Bottom row: Late / OT / UT */}
-                    {(row.lateMinutes > 0 || row.overtimeMinutes > 0 || row.undertimeMinutes > 0) && (
-                      <div className="flex items-center gap-3 mt-2 pt-2 border-t border-slate-50">
-                        {row.lateMinutes > 0 && (
-                          <span className="text-[10px] font-bold text-yellow-600 bg-yellow-50 border border-yellow-100 px-2 py-0.5 rounded-full">
-                            Late {formatLate(row.lateMinutes)}
-                          </span>
-                        )}
-                        {row.overtimeMinutes > 0 && (
-                          <span className="text-[10px] font-bold text-emerald-600">
-                            OT +{fmtMins(row.overtimeMinutes)}
-                          </span>
-                        )}
-                        {row.undertimeMinutes > 0 && (
-                          <span className="text-[10px] font-bold text-red-500">
-                            UT -{fmtMins(row.undertimeMinutes)}
-                          </span>
-                        )}
-                      </div>
-                    )}
                   </div>
-                ))}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Clock In</p><p className="font-mono text-emerald-600 font-black text-sm">{row.checkIn}</p></div>
+                    <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Clock Out</p>
+                      {row.checkOut === '—' && (row as any).notes?.includes('No checkout recorded') ? (
+                        <span className="text-[10px] font-bold text-amber-600">⚠️ No checkout</span>
+                      ) : (
+                        <p className="font-mono text-slate-600 font-black text-sm">{row.checkOut}</p>
+                      )}
+                    </div>
+                    <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Shift</p>
+                      {row.shiftCode ? <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${row.isNightShift ? 'bg-purple-100 text-purple-600 border-purple-200' : 'bg-blue-100 text-blue-600 border-blue-200'}`}>{row.shiftCode}</span> : <span className="text-[10px] text-slate-400 italic font-medium">No shift</span>}
+                    </div>
+                    <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Hours</p><p className="font-mono text-slate-700 font-black text-sm">{fmtHours(row.totalHours)}</p></div>
+                  </div>
+                  {(row.lateMinutes > 0 || row.overtimeMinutes > 0 || row.undertimeMinutes > 0) && (
+                    <div className="flex items-center gap-3 mt-2 pt-2 border-t border-slate-50">
+                      {row.lateMinutes > 0 && <span className="text-[10px] font-bold text-yellow-600 bg-yellow-50 border border-yellow-100 px-2 py-0.5 rounded-full">Late {formatLate(row.lateMinutes)}</span>}
+                      {row.overtimeMinutes > 0 && <span className="text-[10px] font-bold text-emerald-600">OT +{fmtMins(row.overtimeMinutes)}</span>}
+                      {row.undertimeMinutes > 0 && <span className="text-[10px] font-bold text-red-500">UT -{fmtMins(row.undertimeMinutes)}</span>}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -569,17 +537,17 @@ function AttendanceContent() {
             <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
               <tr>
                 <SortableHeader label="Employee" sortKey="employeeName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
-                <SortableHeader label="Department" sortKey="department" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
-                <SortableHeader label="Branch" sortKey="branchName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
-                <SortableHeader label="Shift" sortKey="shiftCode" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
-                <SortableHeader label="Clock In" sortKey="checkIn" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
-                <SortableHeader label="Clock Out" sortKey="checkOut" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
-                <SortableHeader label="Late" sortKey="lateMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
-                <SortableHeader label="Hours" sortKey="totalHours" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
-                <SortableHeader label="OT" sortKey="overtimeMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
-                <SortableHeader label="UT" sortKey="undertimeMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
-                <SortableHeader label="Status" sortKey="status" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
-                <th className="px-6 py-4 text-center">Actions</th>
+                <SortableHeader label="Department" sortKey="department" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4" />
+                <SortableHeader label="Branch" sortKey="branchName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4" />
+                <SortableHeader label="Shift" sortKey="shiftCode" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-center" />
+                <SortableHeader label="Clock In" sortKey="checkIn" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4" />
+                <SortableHeader label="Clock Out" sortKey="checkOut" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4" />
+                <SortableHeader label="Late" sortKey="lateMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-center text-yellow-500" />
+                <SortableHeader label="Hours" sortKey="totalHours" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-center" />
+                <SortableHeader label="OT" sortKey="overtimeMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-center text-emerald-500" />
+                <SortableHeader label="UT" sortKey="undertimeMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-center text-red-500" />
+                <SortableHeader label="Status" sortKey="status" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-center" />
+                <th className="px-4 py-4 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -591,66 +559,69 @@ function AttendanceContent() {
                   </div>
                 </td></tr>
               ) : sortedRecords.length === 0 ? (
-                <tr><td colSpan={12} className="px-6 py-16 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">No attendance records found</td></tr>
+                <tr><td colSpan={12} className="px-6 py-16 text-center text-slate-400 font-black uppercase text-[10px] tracking-widest">No attendance records found</td></tr>
               ) : (
-                sortedRecords
-                  .slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
-                  .map(row => (
-                    <tr key={row.id} className="hover:bg-red-50/40 transition-colors duration-200 group cursor-default">
-                      <td className="px-6 py-4">
-                        <p className="font-bold text-slate-700">{row.employeeName}</p>
-                        <p className="text-[10px] text-slate-400 font-medium">{row.branchName}</p>
-                      </td>
-                      <td className="px-6 py-4 text-xs font-medium text-slate-500">{row.department}</td>
-                      <td className="px-6 py-4 text-xs font-medium text-slate-500">{row.branchName}</td>
-                      <td className="px-6 py-4">
-                        {row.shiftCode ? (
-                          <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border whitespace-nowrap ${row.isNightShift ? 'bg-purple-100 text-purple-600 border-purple-200' : 'bg-blue-100 text-blue-600 border-blue-200'}`}>
-                            {row.shiftCode}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-slate-400 font-medium italic">No shift</span>
-                        )}
-                      </td>
-                      <td className={`px-6 py-4 font-mono font-bold text-sm ${
-                        row.status === 'late' ? 'text-yellow-600' :
-                        row.status === 'present' ? 'text-green-600' :
-                        'text-slate-400'
-                      }`}>{row.checkIn}</td>
-                      <td className="px-6 py-4 font-mono text-slate-600 font-bold text-sm">{row.checkOut}</td>
-                      <td className="px-6 py-4 text-center">
-                        {row.lateMinutes > 0 ? (
-                          <span className="text-[10px] font-black text-yellow-600 bg-yellow-50 border border-yellow-100 px-2.5 py-1 rounded-full whitespace-nowrap">
-                            {formatLate(row.lateMinutes)}
-                          </span>
-                        ) : <span className="text-[10px] text-slate-300 font-black">—</span>}
-                      </td>
-                      <td className="px-6 py-4 font-mono text-slate-700 font-bold text-sm">{fmtHours(row.totalHours)}</td>
-                      <td className="px-6 py-4">
-                        <span className={`text-sm font-bold ${row.overtimeMinutes > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
-                          {row.overtimeMinutes > 0 ? `+${fmtMins(row.overtimeMinutes)}` : '—'}
+                sortedRecords.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage).map(row => (
+                  <tr key={row.id} className="hover:bg-red-50/40 transition-colors duration-200 group cursor-default">
+                    <td className="px-6 py-4 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-red-600/20 flex items-center justify-center text-red-600 font-bold text-[10px] shrink-0 uppercase tracking-tight">{row.employeeName.charAt(0)}</div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-700 leading-tight uppercase tracking-tight">{row.employeeName}</p>
+                        <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest mt-0.5">{row.branchName}</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">{row.department}</td>
+                    <td className="px-4 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">{row.branchName}</td>
+                    <td className="px-4 py-4 text-center">
+                      {row.shiftCode ? (
+                        <span className={`text-[9px] font-black px-2.5 py-1 rounded-lg border uppercase tracking-widest whitespace-nowrap ${row.isNightShift ? 'bg-purple-100 text-purple-600 border-purple-200' : 'bg-blue-100 text-blue-600 border-blue-200'}`}>{row.shiftCode}</span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 italic font-medium">No Shift</span>
+                      )}
+                    </td>
+                    <td className={`px-4 py-4 text-sm font-mono font-bold ${row.status === 'late' ? 'text-yellow-600' : row.status === 'present' ? 'text-emerald-600' : 'text-slate-400'}`}>{row.checkIn}</td>
+                    <td className="px-4 py-4 text-sm font-mono text-slate-600 font-bold">
+                      {row.checkOut === '—' && (row as any).notes?.includes('No checkout recorded') ? (
+                        <span className="inline-flex items-center gap-1 text-amber-600 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title={(row as any).notes}>
+                          <AlertCircle className="w-3 h-3" />
+                          No checkout
                         </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`text-sm font-bold ${row.undertimeMinutes > 0 ? 'text-red-500' : 'text-slate-300'}`}>
-                          {row.undertimeMinutes > 0 ? `-${fmtMins(row.undertimeMinutes)}` : '—'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${row.status === 'present' ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
-                            : row.status === 'late' ? 'text-yellow-600 bg-yellow-50 border-yellow-100'
-                              : 'text-red-600 bg-red-50 border-red-100'
-                          }`}>
-                          {row.status === 'present' ? 'On Time' : row.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <button onClick={() => handleEditClick(row)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
-                          <Edit2 size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                      ) : (
+                        row.checkOut
+                      )}
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      {row.lateMinutes > 0 ? (
+                        <span className="text-[10px] font-black text-yellow-600 bg-yellow-50 border border-yellow-100 px-2.5 py-1 rounded-full whitespace-nowrap">{formatLate(row.lateMinutes)}</span>
+                      ) : <span className="text-[10px] text-slate-300 font-black">—</span>}
+                    </td>
+                    <td className="px-4 py-4 text-sm font-mono text-slate-700 font-bold text-center">{fmtHours(row.totalHours)}</td>
+                    <td className="px-4 py-4 text-center">
+                      <span className={`text-sm font-bold ${row.overtimeMinutes > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
+                        {row.overtimeMinutes > 0 ? `+${fmtMins(row.overtimeMinutes)}` : '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <span className={`text-sm font-bold ${row.undertimeMinutes > 0 ? 'text-red-500' : 'text-slate-300'}`}>
+                        {row.undertimeMinutes > 0 ? `-${fmtMins(row.undertimeMinutes)}` : '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${row.status === 'present' ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
+                        : row.status === 'late' ? 'text-yellow-600 bg-yellow-50 border-yellow-100'
+                          : row.status === 'incomplete' ? 'text-amber-600 bg-amber-50 border-amber-100'
+                            : 'text-red-600 bg-red-50 border-red-100'
+                      }`}>
+                        {row.status === 'present' ? 'On Time' : row.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <button onClick={() => handleEditClick(row)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
+                        <Edit2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -758,7 +729,7 @@ function AttendanceContent() {
 
       {/* Cancel confirm modal */}
       {showCancelModal && (
-        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-150 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-6 text-center space-y-4">
               <h3 className="text-lg font-black text-slate-800 tracking-tight">Discard changes?</h3>

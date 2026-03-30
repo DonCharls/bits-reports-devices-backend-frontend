@@ -139,6 +139,7 @@ export default function HRShiftsPage() {
 
     const handleSubmit = async () => {
         if (!form.shiftCode.trim() || !form.name.trim() || !form.startTime || !form.endTime) { setFormError('Shift Code, Name, Start Time, and End Time are required.'); return }
+        if (hasInvalidBreaks) { setFormError('Please fix invalid break time ranges before saving.'); return }
         setFormLoading(true); setFormError('')
         try {
             const url = editingShift ? `/api/shifts/${editingShift.id}` : '/api/shifts'
@@ -173,6 +174,22 @@ export default function HRShiftsPage() {
     }
 
     const activeCount = shifts.filter(s => s.isActive).length
+
+    // Break validation helper
+    const toMinutes = (t: string) => {
+        if (!t) return -1
+        const [h, m] = t.split(':').map(Number)
+        return h * 60 + m
+    }
+    const hasInvalidBreaks = form.breaks.some(b => {
+        if (!b.start || !b.end) return false
+        return toMinutes(b.end) <= toMinutes(b.start)
+    })
+    const getBreakError = (b: { start: string; end: string }) => {
+        if (!b.start || !b.end) return null
+        if (toMinutes(b.end) <= toMinutes(b.start)) return '⚠️ "To" time must be later than "From" time.'
+        return null
+    }
 
     return (
         <div className="space-y-6 relative">
@@ -269,12 +286,17 @@ export default function HRShiftsPage() {
                                 ) : (
                                     <div className="space-y-2">
                                         {form.breaks.map((b, i) => (
-                                            <div key={i} className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-2 rounded-xl">
+                                            <div key={i} className="flex flex-col gap-1">
+                                            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-2 rounded-xl">
                                                 <input type="text" placeholder="Name" value={b.name} onChange={e => setForm(f => { const newBreaks = [...f.breaks]; newBreaks[i].name = e.target.value; return { ...f, breaks: newBreaks }; })} className="w-1/3 p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
-                                                <input type="time" value={b.start} onChange={e => setForm(f => { const newBreaks = [...f.breaks]; newBreaks[i].start = e.target.value; return { ...f, breaks: newBreaks }; })} className="w-1/3 p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                                                <input type="time" value={b.start} onChange={e => setForm(f => { const newBreaks = [...f.breaks]; newBreaks[i].start = e.target.value; return { ...f, breaks: newBreaks }; })} className={`w-1/3 p-2 bg-white border rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 ${getBreakError(b) ? 'border-red-400' : 'border-slate-200'}`} />
                                                 <span className="text-slate-400 font-bold">-</span>
-                                                <input type="time" value={b.end} onChange={e => setForm(f => { const newBreaks = [...f.breaks]; newBreaks[i].end = e.target.value; return { ...f, breaks: newBreaks }; })} className="w-1/3 p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                                                <input type="time" value={b.end} onChange={e => setForm(f => { const newBreaks = [...f.breaks]; newBreaks[i].end = e.target.value; return { ...f, breaks: newBreaks }; })} className={`w-1/3 p-2 bg-white border rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 ${getBreakError(b) ? 'border-red-400' : 'border-slate-200'}`} />
                                                 <button type="button" onClick={() => setForm(f => ({ ...f, breaks: f.breaks.filter((_, index) => index !== i) }))} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"><Trash2 size={14} /></button>
+                                            </div>
+                                            {getBreakError(b) && (
+                                                <p className="text-[11px] text-red-500 font-semibold ml-1">{getBreakError(b)}</p>
+                                            )}
                                             </div>
                                         ))}
                                     </div>
@@ -339,7 +361,7 @@ export default function HRShiftsPage() {
                         </div>
                         <div className="p-5 bg-slate-50 flex gap-3 shrink-0">
                             <button onClick={() => setIsFormOpen(false)} className="flex-1 px-4 py-3.5 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">Discard</button>
-                            <button onClick={handleSubmit} disabled={formLoading} className="flex-1 px-4 py-3.5 bg-red-600 text-white rounded-xl text-sm font-black shadow-lg shadow-red-600/30 hover:bg-red-700 disabled:opacity-70 transition-all active:scale-95">
+                            <button onClick={handleSubmit} disabled={formLoading || hasInvalidBreaks} className="flex-1 px-4 py-3.5 bg-red-600 text-white rounded-xl text-sm font-black shadow-lg shadow-red-600/30 hover:bg-red-700 disabled:opacity-70 transition-all active:scale-95">
                                 {formLoading ? 'Saving…' : editingShift ? 'Save Changes' : 'Create Shift'}
                             </button>
                         </div>

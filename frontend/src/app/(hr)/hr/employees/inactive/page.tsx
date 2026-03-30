@@ -43,7 +43,7 @@ function InactiveRecordsContent() {
 
     const filteredEmployees = employees
         .filter((emp) => {
-            const fullName = `${emp.firstName} ${emp.lastName}`.toLowerCase();
+            const fullName = `${emp.firstName}${(emp as any).middleName ? ` ${(emp as any).middleName[0]}.` : ''} ${emp.lastName}${(emp as any).suffix ? ` ${(emp as any).suffix}` : ''}`.toLowerCase();
             const matchesSearch = fullName.includes(searchQuery.toLowerCase());
             const matchesDept = deptFilter === "All Departments" || emp.dept === deptFilter;
             const matchesBranch = branchFilter === "All Branches" || emp.branch === branchFilter;
@@ -74,7 +74,7 @@ function InactiveRecordsContent() {
 
     const exportEmployees = () => {
         const exportData = sortedEmployees.map(emp => ({
-            'Full Name': `${emp.firstName} ${emp.lastName}`,
+            'Full Name': `${emp.firstName}${(emp as any).middleName ? ` ${(emp as any).middleName[0]}.` : ''} ${emp.lastName}${(emp as any).suffix ? ` ${(emp as any).suffix}` : ''}`,
             'Department': emp.dept,
             'Branch': emp.branch,
             'Email': emp.email

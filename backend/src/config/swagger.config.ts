@@ -5,17 +5,31 @@ const options = {
         openapi: '3.0.0',
         info: {
             title: 'BITS API Documentation',
-            version: '1.0.0',
-            description: 'Biometric Integrated Timekeeping System API',
+            version: '2.0.0',
+            description: 'Biometric Integrated Timekeeping System API — full endpoint reference for Auth, Attendance, Employees, Devices, Shifts, Reports, and more.',
             contact: {
                 name: 'Avega Bros',
             },
         },
         servers: [
             {
-                url: 'http://localhost:3001',
-                description: 'Development server',
+                url: '/',
+                description: 'Current environment (auto-detected)',
             },
+        ],
+        tags: [
+            { name: 'Auth', description: 'Authentication & session management' },
+            { name: 'Users', description: 'Admin/HR user account management' },
+            { name: 'Employees', description: 'Employee CRUD & biometric enrollment' },
+            { name: 'Attendance', description: 'Attendance records, sync, & corrections' },
+            { name: 'Shifts', description: 'Shift schedule management' },
+            { name: 'Branches', description: 'Branch management' },
+            { name: 'Departments', description: 'Department management' },
+            { name: 'Devices', description: 'ZKTeco biometric device management' },
+            { name: 'Reports', description: 'Attendance summary reports' },
+            { name: 'Logs', description: 'System audit / activity logs' },
+            { name: 'Me (Employee Self-Service)', description: 'Endpoints for logged-in users to access their own data' },
+            { name: 'Time', description: 'Server time synchronization' },
         ],
         components: {
             securitySchemes: {
@@ -23,6 +37,12 @@ const options = {
                     type: 'http',
                     scheme: 'bearer',
                     bearerFormat: 'JWT',
+                },
+                cookieAuth: {
+                    type: 'apiKey',
+                    in: 'cookie',
+                    name: 'accessToken',
+                    description: 'HTTP-only cookie set after login',
                 },
             },
             schemas: {
@@ -42,7 +62,7 @@ const options = {
             },
         ],
     },
-    apis: ['./src/routes/*.ts', './src/controllers/*.ts'], // Path to the API docs
+    apis: ['./src/routes/*.ts', './src/controllers/*.ts'],
 };
 
 export const swaggerSpec = swaggerJsdoc(options);

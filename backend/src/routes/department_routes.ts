@@ -36,13 +36,54 @@ router.post('/', adminOrHR, createDepartment);
 /**
  * @swagger
  * /api/departments/{id}:
+ *   put:
+ *     summary: Rename a department
+ *     tags: [Departments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Department renamed
+ *       404:
+ *         description: Department not found
+ */
+router.put('/:id', adminOrHR, renameDepartment);
+
+/**
+ * @swagger
+ * /api/departments/{id}:
  *   delete:
  *     summary: Delete a department
  *     tags: [Departments]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Department deleted
+ *       404:
+ *         description: Department not found
  */
-router.put('/:id', adminOrHR, renameDepartment);
 router.delete('/:id', adminOrHR, deleteDepartment);
 
 export default router;

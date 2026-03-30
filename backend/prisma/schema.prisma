@@ -102,6 +102,10 @@ model Employee {
   zkId             Int?             @unique
   firstName        String
   lastName         String
+  middleName       String?
+  suffix           String?
+  gender           String?
+  dateOfBirth      DateTime?
   role             Role             @default(USER)
   email            String?          @unique
   password         String?

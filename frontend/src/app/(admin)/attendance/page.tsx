@@ -193,7 +193,7 @@ export default function BiometricPage() {
           return {
             id: log.id,
             employeeId: log.employeeId,
-            employeeName: emp.firstName ? `${emp.firstName} ${emp.lastName}` : 'Unknown',
+            employeeName: emp.firstName ? `${emp.firstName}${emp.middleName ? ` ${emp.middleName[0]}.` : ''} ${emp.lastName}${emp.suffix ? ` ${emp.suffix}` : ''}` : 'Unknown',
             branchName: emp.branch || '—',
             department: emp.Department?.name || emp.department || 'General',
             date: new Date(log.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }),
@@ -211,6 +211,7 @@ export default function BiometricPage() {
             isAnomaly,
             isShiftActive,
             gracePeriodApplied,
+            notes: log.notes || null,
           }
         })
 
@@ -494,7 +495,13 @@ export default function BiometricPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div><p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Clock In</p><p className="font-mono text-emerald-500 font-black text-sm">{row.checkIn}</p></div>
-                      <div><p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Clock Out</p><p className="font-mono text-muted-foreground font-black text-sm">{row.checkOut}</p></div>
+                      <div><p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Clock Out</p>
+                        {row.checkOut === '—' && row.notes?.includes('No checkout recorded') ? (
+                          <span className="text-[10px] font-bold text-amber-600">⚠️ No checkout</span>
+                        ) : (
+                          <p className="font-mono text-muted-foreground font-black text-sm">{row.checkOut}</p>
+                        )}
+                      </div>
                       <div><p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Shift</p>
                         {row.shiftCode ? <span className={`text-[9px] font-black px-2 py-0.5 rounded-md border ${row.isNightShift ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>{row.shiftCode}</span> : <span className="text-[10px] text-muted-foreground italic font-medium">No shift</span>}
                       </div>
@@ -565,6 +572,11 @@ export default function BiometricPage() {
                           </span>
                           Active
                         </span>
+                      ) : record.checkOut === '—' && record.notes?.includes('No checkout recorded') ? (
+                        <span className="inline-flex items-center gap-1 text-amber-600 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title={record.notes}>
+                          <AlertCircle className="w-3 h-3" />
+                          No checkout
+                        </span>
                       ) : (
                         record.checkOut
                       )}
@@ -615,9 +627,11 @@ export default function BiometricPage() {
                                   ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
                                   : record.status === 'undertime'
                                     ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'
-                                    : record.status === 'absent'
-                                      ? 'bg-red-500/20 text-red-400 border-red-500/30'
-                                      : 'bg-secondary/50 text-muted-foreground border-border'
+                                    : record.status === 'incomplete'
+                                      ? 'bg-amber-500/20 text-amber-500 border-amber-500/30'
+                                      : record.status === 'absent'
+                                        ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                                        : 'bg-secondary/50 text-muted-foreground border-border'
                           }
                         >
                           {record.status === 'IN_PROGRESS' ? 'In Progress' : record.status.charAt(0).toUpperCase() + record.status.slice(1)}

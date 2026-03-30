@@ -62,7 +62,7 @@ export default function InactiveEmployeesPage() {
   }, [])
 
   const filteredEmployees = employees.filter(emp => {
-    const fullName = `${emp.firstName} ${emp.lastName}`.toLowerCase()
+    const fullName = `${emp.firstName}${(emp as any).middleName ? ` ${(emp as any).middleName[0]}.` : ''} ${emp.lastName}${(emp as any).suffix ? ` ${(emp as any).suffix}` : ''}`.toLowerCase()
     return fullName.includes(searchTerm.toLowerCase()) ||
       (emp.contactNumber || '').toLowerCase().includes(searchTerm.toLowerCase())
   })

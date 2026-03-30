@@ -36,13 +36,54 @@ router.post('/', adminOrHR, createBranch);
 /**
  * @swagger
  * /api/branches/{id}:
+ *   put:
+ *     summary: Rename a branch
+ *     tags: [Branches]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Branch renamed
+ *       404:
+ *         description: Branch not found
+ */
+router.put('/:id', adminOrHR, renameBranch);
+
+/**
+ * @swagger
+ * /api/branches/{id}:
  *   delete:
  *     summary: Delete a branch
  *     tags: [Branches]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Branch deleted
+ *       404:
+ *         description: Branch not found
  */
-router.put('/:id', adminOrHR, renameBranch);
 router.delete('/:id', adminOrHR, deleteBranch);
 
 export default router;

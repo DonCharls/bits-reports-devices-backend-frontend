@@ -23,6 +23,8 @@ type Employee = {
   employeeNumber: string | null
   firstName: string
   lastName: string
+  middleName: string | null
+  suffix: string | null
   email: string | null
   role: string
   department: string | null
@@ -32,6 +34,8 @@ type Employee = {
   branch: string | null
   contactNumber: string | null
   hireDate: string | null
+  gender: string | null
+  dateOfBirth: string | null
   employmentStatus: 'ACTIVE' | 'INACTIVE' | 'TERMINATED'
   shiftId?: number | null
   Shift?: { id: number; name: string; shiftCode: string; startTime: string; endTime: string } | null
@@ -45,6 +49,14 @@ type Employee = {
       isActive: boolean
     }
   }[]
+}
+
+const SUFFIX_OPTIONS = ['', 'Jr.', 'Sr.', 'II', 'III', 'IV', 'V'] as const;
+
+function formatFullName(firstName: string, middleName?: string | null, lastName?: string, suffix?: string | null) {
+  const mi = middleName ? ` ${middleName[0]}.` : '';
+  const sfx = suffix ? ` ${suffix}` : '';
+  return `${firstName}${mi} ${lastName || ''}${sfx}`.trim();
 }
 
 type ShiftOption = {
@@ -192,15 +204,20 @@ export default function EmployeesPage() {
     employeeNumber: '',
     firstName: '',
     lastName: '',
+    middleName: '',
+    suffix: '',
     contactNumber: '',
     department: '',
     branch: '',
     email: '',
     hireDate: '',
     shiftId: '',
+    gender: '',
+    dateOfBirth: '',
   })
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [isRegistering, setIsRegistering] = useState(false)
+  const [emailChecking, setEmailChecking] = useState(false)
 
   const [currentPage, setCurrentPage] = useState(1)
   const rowsPerPage = 10
@@ -278,7 +295,7 @@ export default function EmployeesPage() {
   }, [scanModal.open, scanModal.countdown])
 
   const filteredEmployees = employees.filter(emp => {
-    const fullName = `${emp.firstName} ${emp.lastName}`.toLowerCase()
+    const fullName = formatFullName(emp.firstName, emp.middleName, emp.lastName, emp.suffix).toLowerCase()
     const matchesSearch = fullName.includes(searchTerm.toLowerCase()) || (emp.contactNumber || '').toLowerCase().includes(searchTerm.toLowerCase())
     // Resolve effective department name from relation or string field
     const empDept = emp.Department?.name || emp.department || ''
@@ -309,6 +326,7 @@ export default function EmployeesPage() {
     if (!newEmployee.contactNumber.trim()) errors.contactNumber = 'Contact number is required'
     else if (newEmployee.contactNumber.replace(/\D/g, '').length !== 11) errors.contactNumber = 'Must be exactly 11 digits'
     if (!newEmployee.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmployee.email.trim())) errors.email = 'A valid email is required'
+    if (formErrors.email && formErrors.email.includes('already in use')) errors.email = formErrors.email
     if (!newEmployee.department) errors.department = 'Department is required'
     if (!newEmployee.branch) errors.branch = 'Branch is required'
     if (Object.keys(errors).length > 0) { setFormErrors(errors); return }
@@ -324,18 +342,22 @@ export default function EmployeesPage() {
           employeeNumber: newEmployee.employeeNumber,
           firstName: newEmployee.firstName,
           lastName: newEmployee.lastName,
+          middleName: newEmployee.middleName || undefined,
+          suffix: newEmployee.suffix || undefined,
           contactNumber: newEmployee.contactNumber || undefined,
           department: newEmployee.department,
           branch: newEmployee.branch,
           email: newEmployee.email || undefined,
           hireDate: newEmployee.hireDate || undefined,
           shiftId: newEmployee.shiftId ? parseInt(newEmployee.shiftId) : undefined,
+          gender: newEmployee.gender || undefined,
+          dateOfBirth: newEmployee.dateOfBirth || undefined,
         })
       })
       const data = await res.json()
       if (data.success) {
         await fetchEmployees()
-        setNewEmployee({ employeeNumber: '', firstName: '', lastName: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '', shiftId: '' })
+        setNewEmployee({ employeeNumber: '', firstName: '', lastName: '', middleName: '', suffix: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '', shiftId: '', gender: '', dateOfBirth: '' })
         setFormErrors({})
         setIsAddOpen(false)
         // Show toast based on device sync result
@@ -470,11 +492,53 @@ export default function EmployeesPage() {
                   <input type="text" value={editForm.lastName || ''} onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Middle Name</label>
+                  <input type="text" placeholder="Optional" value={(editForm as any).middleName || ''} onChange={(e) => setEditForm({ ...editForm, middleName: e.target.value } as any)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Suffix</label>
+                  <select value={(editForm as any).suffix || ''} onChange={(e) => setEditForm({ ...editForm, suffix: e.target.value } as any)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20">
+                    <option value="">None</option>
+                    {SUFFIX_OPTIONS.filter(Boolean).map(s => (<option key={s} value={s}>{s}</option>))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Gender</label>
+                  <select value={(editForm as any).gender || ''} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value } as any)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20">
+                    <option value="">Select Gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Prefer not to say">Prefer not to say</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Date of Birth</label>
+                  <input type="date" value={(editForm as any).dateOfBirth ? (editForm as any).dateOfBirth.split('T')[0] : ''} onChange={(e) => setEditForm({ ...editForm, dateOfBirth: e.target.value } as any)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                </div>
+              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Email Address</label>
-                  <input type="email" value={editForm.email || ''} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+                  <input type="email" value={editForm.email || ''}
+                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                    onBlur={async () => {
+                      const email = (editForm.email || '').trim()
+                      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return
+                      try {
+                        const res = await fetch(`/api/employees/check-email?email=${encodeURIComponent(email)}&excludeId=${editingEmployee!.id}`, { credentials: 'include' })
+                        const data = await res.json()
+                        if (data.success && !data.available) {
+                          showToast('error', 'Email Taken', '⚠️ This email address is already in use by another employee.')
+                        }
+                      } catch (e) { console.error('Email check failed:', e) }
+                    }}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Contact Number</label>
@@ -794,6 +858,52 @@ export default function EmployeesPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
+                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Middle Name</label>
+                    <input
+                      placeholder="Middle Name (optional)"
+                      className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+                      value={newEmployee.middleName}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, middleName: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Suffix</label>
+                    <select
+                      className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none cursor-pointer transition-all appearance-none"
+                      value={newEmployee.suffix}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, suffix: e.target.value })}
+                    >
+                      <option value="">None</option>
+                      {SUFFIX_OPTIONS.filter(Boolean).map(s => (<option key={s} value={s}>{s}</option>))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Gender</label>
+                    <select
+                      className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none cursor-pointer transition-all appearance-none"
+                      value={newEmployee.gender}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, gender: e.target.value })}
+                    >
+                      <option value="">Select Gender</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Prefer not to say">Prefer not to say</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Date of Birth</label>
+                    <input
+                      type="date"
+                      className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+                      value={newEmployee.dateOfBirth}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, dateOfBirth: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
                     <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Email Address *</label>
                     <input
                       type="email"
@@ -801,6 +911,19 @@ export default function EmployeesPage() {
                       className={`mt-1.5 w-full px-3 py-2.5 rounded-xl border ${formErrors.email ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all`}
                       value={newEmployee.email}
                       onChange={(e) => { setNewEmployee({ ...newEmployee, email: e.target.value }); setFormErrors(p => ({ ...p, email: '' })) }}
+                      onBlur={async () => {
+                        const email = newEmployee.email.trim()
+                        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return
+                        setEmailChecking(true)
+                        try {
+                          const res = await fetch(`/api/employees/check-email?email=${encodeURIComponent(email)}`, { credentials: 'include' })
+                          const data = await res.json()
+                          if (data.success && !data.available) {
+                            setFormErrors(p => ({ ...p, email: '⚠️ This email address is already in use. Please use a different email address.' }))
+                          }
+                        } catch (e) { console.error('Email check failed:', e) }
+                        finally { setEmailChecking(false) }
+                      }}
                     />
                     {formErrors.email && <p className="mt-1 text-[11px] text-red-500 font-semibold">{formErrors.email}</p>}
                   </div>
@@ -880,14 +1003,14 @@ export default function EmployeesPage() {
                 <button
                   className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
                   onClick={() => {
-                    setNewEmployee({ employeeNumber: '', firstName: '', lastName: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '', shiftId: '' })
+                    setNewEmployee({ employeeNumber: '', firstName: '', lastName: '', middleName: '', suffix: '', contactNumber: '', department: '', branch: '', email: '', hireDate: '', shiftId: '', gender: '', dateOfBirth: '' })
                     setFormErrors({})
                     setIsAddOpen(false)
                   }}
                 >
                   Discard
                 </button>
-                <button onClick={handleAddEmployee} disabled={isRegistering} className="px-8 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-bold rounded-xl transition-colors flex items-center gap-2">
+                <button onClick={handleAddEmployee} disabled={isRegistering || emailChecking} className="px-8 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-bold rounded-xl transition-colors flex items-center gap-2">
                   {isRegistering ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -975,7 +1098,7 @@ export default function EmployeesPage() {
                       {employee.zkId ?? '—'}
                     </td>
                     <td className="px-6 py-4">
-                      <p className="font-bold text-slate-700">{employee.firstName} {employee.lastName}</p>
+                      <p className="font-bold text-slate-700">{formatFullName(employee.firstName, employee.middleName, employee.lastName, employee.suffix)}</p>
                       <p className="text-xs text-slate-400">{employee.email || '—'}</p>
                     </td>
                     {/* Employee ID (employeeNumber field) */}

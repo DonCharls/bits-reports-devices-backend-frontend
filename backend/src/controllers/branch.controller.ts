@@ -113,6 +113,28 @@ export const deleteBranch = async (req: Request, res: Response) => {
             return res.status(400).json({ success: false, message: 'Invalid branch ID' });
         }
 
+        const existing = await prisma.branch.findUnique({ where: { id } });
+        if (!existing) {
+            return res.status(404).json({ success: false, message: 'Branch not found' });
+        }
+
+        // Check for active employees in this branch (check both string name and FK)
+        const activeEmployeeCount = await prisma.employee.count({
+            where: {
+                OR: [
+                    { branchId: id },
+                    { branch: existing.name }
+                ],
+                employmentStatus: 'ACTIVE'
+            }
+        });
+        if (activeEmployeeCount > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `⚠️ Cannot delete this Branch. There are currently ${activeEmployeeCount} employee(s) assigned to it. Please reassign or remove all employees before deleting.`
+            });
+        }
+
         await prisma.branch.delete({ where: { id } });
 
         await audit({
@@ -121,18 +143,12 @@ export const deleteBranch = async (req: Request, res: Response) => {
             entityId: id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Deleted branch ID ${id}`
+            details: `Deleted branch "${existing.name}"`
         });
 
-        res.json({ success: true, message: 'Branch deleted' });
-    } catch (error: any) {
+        res.json({ success: true, message: `Branch "${existing.name}" deleted` });
+    } catch (error) {
         console.error('Error deleting branch:', error);
-        if (error.code === 'P2003') {
-            return res.status(400).json({
-                success: false,
-                message: 'Cannot delete branch that has employees assigned to it'
-            });
-        }
         res.status(500).json({ success: false, message: 'Failed to delete branch' });
     }
 };

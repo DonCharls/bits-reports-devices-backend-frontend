@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { syncZkData, syncAllDeviceClocks } from '../services/zkServices';
-import { autoCloseIncompleteAttendance, autoCheckoutEmployees } from '../services/attendance.service';
+import { autoCloseIncompleteAttendance } from '../services/attendance.service';
 
 /**
  * Initialize all cron jobs for automated attendance tracking
@@ -35,16 +35,9 @@ export const startCronJobs = () => {
         }
     });
 
-    // Job 3: Auto-checkout employees at 11:59 PM (sets checkout to 5:00 PM)
-    cron.schedule('59 23 * * *', async () => {
-        console.log('[CronJob] Running automatic checkout at end of day...');
-        try {
-            const count = await autoCheckoutEmployees();
-            console.log(`[CronJob] Auto-checkout completed: ${count} employees checked out at 5:00 PM`);
-        } catch (error) {
-            console.error('[CronJob] Auto-checkout error:', error);
-        }
-    });
+
+    // Job 3: REMOVED — Auto-checkout has been permanently disabled.
+    // Missing checkouts are now flagged by Job 2 for manual review.
 
     // Job 4: Sync all ZK device clocks to server PHT time every hour
     // SAFE — only calls setTime(), never touches attendance or employee data.
@@ -59,6 +52,5 @@ export const startCronJobs = () => {
 
     console.log('[CronJobs] ✓ Periodic sync scheduled (every 30 seconds, skips when device is busy)');
     console.log('[CronJobs] ✓ Midnight cleanup scheduled (00:00 daily)');
-    console.log('[CronJobs] ✓ Auto-checkout scheduled (23:59 daily)');
     console.log('[CronJobs] ✓ Hourly device clock sync scheduled (top of every hour)');
 };

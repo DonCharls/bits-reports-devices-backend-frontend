@@ -112,6 +112,24 @@ export const deleteDepartment = async (req: Request, res: Response) => {
         if (!existing) {
             return res.status(404).json({ success: false, message: 'Department not found' });
         }
+
+        // Check for active employees in this department (check both string name and FK)
+        const activeEmployeeCount = await prisma.employee.count({
+            where: {
+                OR: [
+                    { departmentId: id },
+                    { department: existing.name }
+                ],
+                employmentStatus: 'ACTIVE'
+            }
+        });
+        if (activeEmployeeCount > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `⚠️ Cannot delete this Department. There are currently ${activeEmployeeCount} employee(s) assigned to it. Please reassign or remove all employees before deleting.`
+            });
+        }
+
         await prisma.department.delete({ where: { id } });
 
         await audit({

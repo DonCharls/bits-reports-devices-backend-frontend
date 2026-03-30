@@ -12,6 +12,8 @@ export default function ProfilePage() {
   const [userData, setUserData] = useState({
     firstName: "",
     lastName: "",
+    middleName: "" as string,
+    suffix: "" as string,
     role: "HR",
     email: "",
     phone: "",
@@ -39,6 +41,8 @@ export default function ProfilePage() {
           setUserData({
             firstName: emp.firstName || '',
             lastName: emp.lastName || '',
+            middleName: emp.middleName || '',
+            suffix: emp.suffix || '',
             role: emp.role || 'HR',
             email: emp.email || '',
             phone: emp.contactNumber || emp.phone || '',
@@ -195,7 +199,7 @@ export default function ProfilePage() {
                 ) : (
                   <>
                     <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">
-                      {userData.firstName} {userData.lastName}
+                      {userData.firstName}{userData.middleName ? ` ${userData.middleName[0]}.` : ''} {userData.lastName}{userData.suffix ? ` ${userData.suffix}` : ''}
                     </h3>
                     <p className="text-red-600 font-bold text-sm uppercase tracking-widest">{displayRole}</p>
                   </>

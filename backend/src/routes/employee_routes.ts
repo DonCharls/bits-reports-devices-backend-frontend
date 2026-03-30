@@ -8,7 +8,8 @@ import {
     enrollEmployeeFingerprintController,
     updateEmployee,
     permanentDeleteEmployee,
-    resetEmployeePassword
+    resetEmployeePassword,
+    checkEmailAvailability
 } from '../controllers/employee.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { adminOrHR } from '../middleware/role.middleware';
@@ -103,6 +104,32 @@ router.post('/', validate(createEmployeeValidator), createEmployee);
 
 /**
  * @swagger
+ * /api/employees/check-email:
+ *   get:
+ *     summary: Check if an email address is already in use
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: email
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Email address to check
+ *       - in: query
+ *         name: excludeId
+ *         schema:
+ *           type: integer
+ *         description: Employee ID to exclude (for edit mode)
+ *     responses:
+ *       200:
+ *         description: Returns availability status
+ */
+router.get('/check-email', checkEmailAvailability);
+
+/**
+ * @swagger
  * /api/employees/sync-to-device:
  *   post:
  *     summary: Sync all employees to ZKTeco device
@@ -150,19 +177,136 @@ router.post('/sync-to-device', syncEmployeesToDeviceController);
  */
 router.post('/:id/enroll-fingerprint', validate(enrollFingerprintValidator), enrollEmployeeFingerprintController);
 
-// DELETE /api/employees/:id/permanent - Permanently delete an inactive employee
+/**
+ * @swagger
+ * /api/employees/{id}/permanent:
+ *   delete:
+ *     summary: Permanently delete an inactive employee
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Employee permanently deleted
+ *       400:
+ *         description: Employee must be inactive first
+ *       404:
+ *         description: Employee not found
+ */
 router.delete('/:id/permanent', permanentDeleteEmployee);
 
-// DELETE /api/employees/:id - Soft delete (mark as inactive)
+/**
+ * @swagger
+ * /api/employees/{id}:
+ *   delete:
+ *     summary: Soft-delete an employee (mark as inactive)
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Employee deactivated
+ *       404:
+ *         description: Employee not found
+ */
 router.delete('/:id', deleteEmployee);
 
-// PATCH /api/employees/:id/reactivate - Reactivate inactive employee
+/**
+ * @swagger
+ * /api/employees/{id}/reactivate:
+ *   patch:
+ *     summary: Reactivate an inactive employee
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Employee reactivated
+ *       404:
+ *         description: Employee not found
+ */
 router.patch('/:id/reactivate', reactivateEmployee);
 
-// PUT /api/employees/:id - Update an employee's details
+/**
+ * @swagger
+ * /api/employees/{id}:
+ *   put:
+ *     summary: Update an employee's details
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               firstName:
+ *                 type: string
+ *               lastName:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               department:
+ *                 type: string
+ *               position:
+ *                 type: string
+ *               branch:
+ *                 type: string
+ *               shiftId:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Employee updated
+ *       404:
+ *         description: Employee not found
+ */
 router.put('/:id', updateEmployee);
 
-// POST /api/employees/:id/reset-password - Reset password
+/**
+ * @swagger
+ * /api/employees/{id}/reset-password:
+ *   post:
+ *     summary: Reset an employee's password
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Password reset successful (returns new temporary password)
+ *       404:
+ *         description: Employee not found
+ */
 router.post('/:id/reset-password', resetEmployeePassword);
 
 export default router;

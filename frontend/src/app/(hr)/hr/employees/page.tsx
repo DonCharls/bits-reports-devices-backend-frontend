@@ -21,12 +21,16 @@ interface Employee {
   id?: number;
   firstName: string;
   lastName: string;
+  middleName?: string | null;
+  suffix?: string | null;
   dept: string;
   branch: string;
   email: string;
   phone: string;
   hireDate: string;
   status: string;
+  gender?: string | null;
+  dateOfBirth?: string | null;
   employeeNumber?: string;
   zkId?: number | null;
   Shift?: { id: number; name: string; startTime: string; endTime: string } | null;
@@ -39,6 +43,14 @@ interface Employee {
       isActive: boolean;
     };
   }[];
+}
+
+const SUFFIX_OPTIONS = ['', 'Jr.', 'Sr.', 'II', 'III', 'IV', 'V'] as const;
+
+function formatFullName(firstName: string, middleName?: string | null, lastName?: string, suffix?: string | null) {
+  const mi = middleName ? ` ${middleName[0]}.` : '';
+  const sfx = suffix ? ` ${suffix}` : '';
+  return `${firstName}${mi} ${lastName || ''}${sfx}`.trim();
 }
 
 type ShiftOption = {
@@ -186,9 +198,10 @@ function EmployeeDirectoryContent() {
   };
 
   const [regForm, setRegForm] = useState({
-    employeeNumber: "", firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: ""
+    employeeNumber: "", firstName: "", lastName: "", middleName: "", suffix: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "", gender: "", dateOfBirth: ""
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [emailChecking, setEmailChecking] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -213,12 +226,16 @@ function EmployeeDirectoryContent() {
           id: e.id,
           firstName: e.firstName,
           lastName: e.lastName,
+          middleName: e.middleName || null,
+          suffix: e.suffix || null,
           email: e.email || "",
           phone: e.contactNumber || "",
           dept: e.department || "",
           branch: e.branch || "",
           hireDate: e.hireDate ? e.hireDate.split('T')[0] : "",
           status: e.employmentStatus === 'ACTIVE' ? 'Active' : 'Inactive',
+          gender: e.gender || null,
+          dateOfBirth: e.dateOfBirth ? e.dateOfBirth.split('T')[0] : null,
           employeeNumber: e.employeeNumber,
           zkId: e.zkId ?? null,
           Shift: e.Shift ?? null,
@@ -242,7 +259,7 @@ function EmployeeDirectoryContent() {
   const filteredEmployees = useMemo(() => {
     return employees
       .filter((emp) => {
-        const fullName = `${emp.firstName} ${emp.lastName}`.toLowerCase();
+        const fullName = formatFullName(emp.firstName, emp.middleName, emp.lastName, emp.suffix).toLowerCase();
         const matchesSearch = fullName.includes(searchQuery.toLowerCase());
         const matchesStatus = emp.status === statusFilter;
         const matchesDept = deptFilter === "All Departments" || emp.dept === deptFilter;
@@ -281,6 +298,8 @@ function EmployeeDirectoryContent() {
           employeeNumber: editingEmployee.employeeNumber,
           firstName: editingEmployee.firstName,
           lastName: editingEmployee.lastName,
+          middleName: editingEmployee.middleName || undefined,
+          suffix: editingEmployee.suffix || undefined,
           email: editingEmployee.email,
           contactNumber: editingEmployee.phone,
           department: editingEmployee.dept,
@@ -288,6 +307,8 @@ function EmployeeDirectoryContent() {
           hireDate: editingEmployee.hireDate,
           employmentStatus: editingEmployee.status === 'Active' ? 'ACTIVE' : 'INACTIVE',
           shiftId: editingEmployee.shiftId ? parseInt(editingEmployee.shiftId) : null,
+          gender: editingEmployee.gender || undefined,
+          dateOfBirth: editingEmployee.dateOfBirth || undefined,
         })
       });
       if ((await res.json()).success) {
@@ -331,6 +352,7 @@ function EmployeeDirectoryContent() {
     if (!regForm.phone.trim()) errors.phone = 'Contact number is required';
     else if (regForm.phone.replace(/\D/g, '').length !== 11) errors.phone = 'Must be exactly 11 digits';
     if (regForm.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regForm.email.trim())) errors.email = 'Enter a valid email address';
+    if (formErrors.email && formErrors.email.includes('already in use')) errors.email = formErrors.email;
     if (!regForm.dept) errors.dept = 'Department is required';
     if (!regForm.branch) errors.branch = 'Branch is required';
     if (Object.keys(errors).length > 0) { setFormErrors(errors); return; }
@@ -345,12 +367,16 @@ function EmployeeDirectoryContent() {
           employeeNumber: regForm.employeeNumber,
           firstName: regForm.firstName,
           lastName: regForm.lastName,
+          middleName: regForm.middleName || undefined,
+          suffix: regForm.suffix || undefined,
           email: regForm.email || undefined,
           contactNumber: regForm.phone || undefined,
           department: regForm.dept,
           branch: regForm.branch,
           hireDate: regForm.hireDate || undefined,
           shiftId: regForm.shiftId ? parseInt(regForm.shiftId) : undefined,
+          gender: regForm.gender || undefined,
+          dateOfBirth: regForm.dateOfBirth || undefined,
         })
       });
       const data = await res.json();
@@ -364,7 +390,7 @@ function EmployeeDirectoryContent() {
             `${name} has been saved. Device sync is running in the background — click the 🔵 fingerprint button on their row when ready to scan.`);
         }
         setIsRegistering(false);
-        setRegForm({ employeeNumber: "", firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "" });
+        setRegForm({ employeeNumber: "", firstName: "", lastName: "", middleName: "", suffix: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "", gender: "", dateOfBirth: "" });
         setFormErrors({});
         fetchData();
       } else {
@@ -399,7 +425,7 @@ function EmployeeDirectoryContent() {
 
   const exportEmployees = () => {
     const exportData = filteredEmployees.map(emp => ({
-      'Full Name': `${emp.firstName} ${emp.lastName}`,
+      'Full Name': formatFullName(emp.firstName, emp.middleName, emp.lastName, emp.suffix),
       'Department': emp.dept,
       'Branch Location': emp.branch,
       'Employment Status': emp.status
@@ -505,7 +531,7 @@ function EmployeeDirectoryContent() {
                     </td>
                     {/* Employee Name */}
                     <td className="px-6 py-4">
-                      <p className="font-bold text-slate-700">{emp.firstName} {emp.lastName}</p>
+                      <p className="font-bold text-slate-700">{formatFullName(emp.firstName, emp.middleName, emp.lastName, emp.suffix)}</p>
                       <p className="text-xs text-slate-400">{emp.email || '—'}</p>
                     </td>
                     {/* Employee ID */}
@@ -679,7 +705,7 @@ function EmployeeDirectoryContent() {
                 <h3 className="font-bold text-lg leading-tight tracking-tight">New Employee Registration</h3>
                 <p className="text-[10px] text-red-100 opacity-90 uppercase font-black tracking-widest mt-0.5">Add to employee directory</p>
               </div>
-              <button onClick={() => { setIsRegistering(false); setRegForm({ employeeNumber: "", firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "" }); setFormErrors({}) }} className="text-white/80 hover:text-white transition-colors">
+              <button onClick={() => { setIsRegistering(false); setRegForm({ employeeNumber: "", firstName: "", lastName: "", middleName: "", suffix: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "", gender: "", dateOfBirth: "" }); setFormErrors({}) }} className="text-white/80 hover:text-white transition-colors">
                 <X size={20} />
               </button>
             </div>
@@ -720,6 +746,52 @@ function EmployeeDirectoryContent() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Middle Name</label>
+                  <input
+                    placeholder="Middle Name (optional)"
+                    className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+                    value={regForm.middleName}
+                    onChange={(e) => setRegForm({ ...regForm, middleName: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Suffix</label>
+                  <select
+                    className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none cursor-pointer transition-all appearance-none"
+                    value={regForm.suffix}
+                    onChange={(e) => setRegForm({ ...regForm, suffix: e.target.value })}
+                  >
+                    <option value="">None</option>
+                    {SUFFIX_OPTIONS.filter(Boolean).map(s => (<option key={s} value={s}>{s}</option>))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Gender</label>
+                  <select
+                    className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none cursor-pointer transition-all appearance-none"
+                    value={regForm.gender}
+                    onChange={(e) => setRegForm({ ...regForm, gender: e.target.value })}
+                  >
+                    <option value="">Select Gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Prefer not to say">Prefer not to say</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Date of Birth</label>
+                  <input
+                    type="date"
+                    className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+                    value={regForm.dateOfBirth}
+                    onChange={(e) => setRegForm({ ...regForm, dateOfBirth: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
                   <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Email Address</label>
                   <input
                     type="email"
@@ -727,6 +799,19 @@ function EmployeeDirectoryContent() {
                     className={`mt-1.5 w-full px-3 py-2.5 rounded-xl border ${formErrors.email ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'} text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all`}
                     value={regForm.email}
                     onChange={(e) => { setRegForm({ ...regForm, email: e.target.value }); setFormErrors(p => ({ ...p, email: '' })) }}
+                    onBlur={async () => {
+                      const email = regForm.email.trim()
+                      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return
+                      setEmailChecking(true)
+                      try {
+                        const res = await fetch(`/api/employees/check-email?email=${encodeURIComponent(email)}`, { credentials: 'include' })
+                        const data = await res.json()
+                        if (data.success && !data.available) {
+                          setFormErrors(p => ({ ...p, email: '⚠️ This email address is already in use. Please use a different email address.' }))
+                        }
+                      } catch (e) { console.error('Email check failed:', e) }
+                      finally { setEmailChecking(false) }
+                    }}
                   />
                   {formErrors.email && <p className="mt-1 text-[11px] text-red-500 font-semibold">{formErrors.email}</p>}
                 </div>
@@ -797,13 +882,13 @@ function EmployeeDirectoryContent() {
             <div className="flex items-center justify-center gap-6 px-6 py-4 border-t border-slate-100 shrink-0">
               <button
                 className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
-                onClick={() => { setIsRegistering(false); setRegForm({ employeeNumber: "", firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "" }); setFormErrors({}) }}
+                onClick={() => { setIsRegistering(false); setRegForm({ employeeNumber: "", firstName: "", lastName: "", middleName: "", suffix: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: "", gender: "", dateOfBirth: "" }); setFormErrors({}) }}
               >
                 Discard
               </button>
               <button
                 onClick={handleRegister}
-                disabled={actionLoading}
+                disabled={actionLoading || emailChecking}
                 className="px-8 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-bold rounded-xl transition-colors flex items-center gap-2"
               >
                 {actionLoading ? (<><Loader2 className="w-4 h-4 animate-spin" />Registering...</>) : 'Register Employee'}
@@ -833,7 +918,48 @@ function EmployeeDirectoryContent() {
                 <input type="text" value={editingEmployee.lastName} onChange={(e) => setEditingEmployee({ ...editingEmployee, lastName: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none" />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <input type="email" value={editingEmployee.email} onChange={(e) => setEditingEmployee({ ...editingEmployee, email: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none" />
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Middle Name</label>
+                  <input type="text" placeholder="Optional" value={editingEmployee.middleName || ''} onChange={(e) => setEditingEmployee({ ...editingEmployee, middleName: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Suffix</label>
+                  <select value={editingEmployee.suffix || ''} onChange={(e) => setEditingEmployee({ ...editingEmployee, suffix: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none">
+                    <option value="">None</option>
+                    {SUFFIX_OPTIONS.filter(Boolean).map(s => (<option key={s} value={s}>{s}</option>))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Gender</label>
+                  <select value={editingEmployee.gender || ''} onChange={(e) => setEditingEmployee({ ...editingEmployee, gender: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none">
+                    <option value="">Select Gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Prefer not to say">Prefer not to say</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Date of Birth</label>
+                  <input type="date" value={editingEmployee.dateOfBirth ? editingEmployee.dateOfBirth.split('T')[0] : ''} onChange={(e) => setEditingEmployee({ ...editingEmployee, dateOfBirth: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input type="email" value={editingEmployee.email}
+                  onChange={(e) => setEditingEmployee({ ...editingEmployee, email: e.target.value })}
+                  onBlur={async () => {
+                    const email = (editingEmployee.email || '').trim()
+                    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return
+                    try {
+                      const res = await fetch(`/api/employees/check-email?email=${encodeURIComponent(email)}&excludeId=${editingEmployee.id}`, { credentials: 'include' })
+                      const data = await res.json()
+                      if (data.success && !data.available) {
+                        showToast('error', 'Email Taken', '⚠️ This email address is already in use by another employee.')
+                      }
+                    } catch (e) { console.error('Email check failed:', e) }
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none" />
                 <input type="text" value={editingEmployee.phone} onChange={(e) => setEditingEmployee({ ...editingEmployee, phone: e.target.value })} className="w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none" />
               </div>
               <div className="grid grid-cols-2 gap-3">

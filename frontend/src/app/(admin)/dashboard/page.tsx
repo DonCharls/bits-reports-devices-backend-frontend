@@ -270,7 +270,7 @@ export default function Dashboard() {
   const handleStreamRecord = useCallback((payload: AttendanceStreamPayload) => {
     const emp = payload.record.employee
     const empName = emp
-      ? `${emp.firstName} ${emp.lastName}`.trim()
+      ? `${emp.firstName}${(emp as any).middleName ? ` ${(emp as any).middleName[0]}.` : ''} ${emp.lastName}${(emp as any).suffix ? ` ${(emp as any).suffix}` : ''}`.trim()
       : 'Unknown'
     const isLate = payload.record.lateMinutes > 0
     const isUndertime = payload.record.undertimeMinutes > 0

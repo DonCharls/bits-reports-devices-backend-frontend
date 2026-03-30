@@ -92,7 +92,7 @@ export default function DepartmentsPage() {
         const empData = await empRes.json()
         if (empData.success) {
           const activeEmps = (empData.employees || []).filter((e: any) =>
-            e.employmentStatus === 'ACTIVE' && (!e.role || e.role === 'USER')
+            e.employmentStatus === 'ACTIVE'
           )
           setAllEmployees(activeEmps)
 
@@ -510,13 +510,22 @@ export default function DepartmentsPage() {
                         <span className="text-[10px] font-bold text-emerald-500">Active</span>
                       </div>
                     )}
-                    <button
-                      onClick={() => { setConfirmDeleteBranch(branch); setDeleteError(null) }}
-                      title="Remove branch"
-                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {count === 0 ? (
+                      <button
+                        onClick={() => { setConfirmDeleteBranch(branch); setDeleteError(null) }}
+                        title="Remove branch"
+                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <span
+                        title={`Cannot delete — ${count} active employee${count > 1 ? 's' : ''} assigned`}
+                        className="opacity-0 group-hover:opacity-40 p-1.5 rounded-lg text-slate-300 cursor-not-allowed"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </span>
+                    )}
                   </div>
                 </div>
               )
@@ -598,13 +607,22 @@ export default function DepartmentsPage() {
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                   </button>
-                  <button
-                    onClick={() => { setConfirmDeleteDept(dept); setDeleteError(null) }}
-                    className="p-2 rounded-xl text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
-                    title="Remove department"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {count === 0 ? (
+                    <button
+                      onClick={() => { setConfirmDeleteDept(dept); setDeleteError(null) }}
+                      className="p-2 rounded-xl text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                      title="Remove department"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <span
+                      title={`Cannot delete — ${count} active employee${count > 1 ? 's' : ''} assigned`}
+                      className="p-2 rounded-xl text-slate-200 cursor-not-allowed"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-start gap-4">
                   <div
@@ -688,13 +706,22 @@ export default function DepartmentsPage() {
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={() => { setConfirmDeleteDept(dept); setDeleteError(null) }}
-                            title="Remove department"
-                            className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {count === 0 ? (
+                            <button
+                              onClick={() => { setConfirmDeleteDept(dept); setDeleteError(null) }}
+                              title="Remove department"
+                              className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          ) : (
+                            <span
+                              title={`Cannot delete — ${count} active employee${count > 1 ? 's' : ''} assigned`}
+                              className="p-2.5 text-slate-200 cursor-not-allowed"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>

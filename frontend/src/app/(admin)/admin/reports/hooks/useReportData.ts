@@ -103,7 +103,7 @@ export const useReportData = (startDate: string, endDate: string) => {
 
           rowMap.set(e.id, {
             id: e.id,
-            name: `${e.firstName} ${e.lastName}`.trim(),
+            name: `${e.firstName}${e.middleName ? ` ${e.middleName[0]}.` : ''} ${e.lastName}${e.suffix ? ` ${e.suffix}` : ''}`.trim(),
             department: e.Department?.name || e.department || '—',
             branch: e.branch || '—',
             totalDays,

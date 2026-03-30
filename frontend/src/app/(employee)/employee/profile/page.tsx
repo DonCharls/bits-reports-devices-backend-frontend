@@ -10,6 +10,8 @@ interface EmployeeProfile {
   zkId: number | null
   firstName: string
   lastName: string
+  middleName: string | null
+  suffix: string | null
   email: string
   role: string
   department: string | null
@@ -139,7 +141,7 @@ export default function MyProfilePage() {
                <div className="w-24 h-24 rounded-full bg-slate-100 mb-4 flex items-center justify-center border-4 border-white shadow-md">
                  <span className="text-2xl font-black text-slate-400">{initials}</span>
                </div>
-               <h2 className="text-xl font-black text-slate-900">{profile.firstName} {profile.lastName}</h2>
+               <h2 className="text-xl font-black text-slate-900">{profile.firstName}{profile.middleName ? ` ${profile.middleName[0]}.` : ''} {profile.lastName}{profile.suffix ? ` ${profile.suffix}` : ''}</h2>
                <p className="text-slate-500 text-sm mt-1 mb-4">{profile.position || 'Employee'}</p>
                
                <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest ${

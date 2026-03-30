@@ -17,6 +17,10 @@ export const getAllEmployees = async (req: Request, res: Response) => {
                 employeeNumber: true,
                 firstName: true,
                 lastName: true,
+                middleName: true,
+                suffix: true,
+                gender: true,
+                dateOfBirth: true,
                 email: true,
                 role: true,
                 department: true,
@@ -243,6 +247,10 @@ export const createEmployee = async (req: Request, res: Response) => {
             employeeNumber,
             firstName,
             lastName,
+            middleName,
+            suffix,
+            gender,
+            dateOfBirth,
             email,
             role,
             department,
@@ -306,18 +314,19 @@ export const createEmployee = async (req: Request, res: Response) => {
         });
 
         if (existingEmployee) {
+            const duplicateField = existingEmployee.email === email ? 'email address' : 'employee number';
             await audit({
                 action: 'CREATE',
                 level: 'WARN',
                 entityType: 'Employee',
                 performedBy: req.user?.employeeId,
-                details: `Failed to create employee: employee already exist or device cannot be reached`,
+                details: `Failed to create employee: duplicate ${duplicateField}`,
                 metadata: { email, employeeNumber }
             });
 
             return res.status(400).json({
                 success: false,
-                message: 'Employee with this email or employee number already exists'
+                message: `This ${duplicateField} is already in use by another employee`
             });
         }
 
@@ -340,6 +349,10 @@ export const createEmployee = async (req: Request, res: Response) => {
                     employeeNumber: employeeNumber.trim(),
                     firstName,
                     lastName,
+                    middleName: middleName || null,
+                    suffix: suffix || null,
+                    gender: gender || null,
+                    dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
                     email,
                     password: hashedPassword,
                     role: role || 'USER',
@@ -360,6 +373,10 @@ export const createEmployee = async (req: Request, res: Response) => {
                     employeeNumber: true,
                     firstName: true,
                     lastName: true,
+                    middleName: true,
+                    suffix: true,
+                    gender: true,
+                    dateOfBirth: true,
                     email: true,
                     role: true,
                     department: true,
@@ -561,6 +578,10 @@ export const updateEmployee = async (req: Request, res: Response) => {
             employeeNumber,
             firstName,
             lastName,
+            middleName,
+            suffix,
+            gender,
+            dateOfBirth,
             email,
             contactNumber,
             position,
@@ -604,11 +625,28 @@ export const updateEmployee = async (req: Request, res: Response) => {
             }
         }
 
+        // Validate email uniqueness (exclude the current employee)
+        if (email !== undefined && email !== '' && email !== existingEmployee.email) {
+            const emailDup = await prisma.employee.findFirst({
+                where: { email, id: { not: employeeId } }
+            });
+            if (emailDup) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'This email address is already in use by another employee'
+                });
+            }
+        }
+
         // Prepare data for update
         const updateData: any = {};
         if (employeeNumber !== undefined) updateData.employeeNumber = employeeNumber.trim();
         if (firstName !== undefined) updateData.firstName = firstName;
         if (lastName !== undefined) updateData.lastName = lastName;
+        if (middleName !== undefined) updateData.middleName = middleName || null;
+        if (suffix !== undefined) updateData.suffix = suffix || null;
+        if (gender !== undefined) updateData.gender = gender || null;
+        if (dateOfBirth !== undefined) updateData.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
         if (email !== undefined) updateData.email = email === '' ? null : email;
         if (contactNumber !== undefined) updateData.contactNumber = contactNumber;
         if (position !== undefined) updateData.position = position;
@@ -635,6 +673,10 @@ export const updateEmployee = async (req: Request, res: Response) => {
                 employeeNumber: true,
                 firstName: true,
                 lastName: true,
+                middleName: true,
+                suffix: true,
+                gender: true,
+                dateOfBirth: true,
                 email: true,
                 role: true,
                 department: true,
@@ -848,6 +890,35 @@ export const resetEmployeePassword = async (req: Request, res: Response) => {
             success: false,
             message: 'Failed to reset password',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+        });
+    }
+};
+
+// GET /api/employees/check-email?email=...&excludeId=...
+export const checkEmailAvailability = async (req: Request, res: Response) => {
+    try {
+        const { email, excludeId } = req.query;
+
+        if (!email || typeof email !== 'string') {
+            return res.status(400).json({ success: false, message: 'Email is required' });
+        }
+
+        const where: any = { email: email.trim().toLowerCase() };
+        if (excludeId) {
+            where.id = { not: parseInt(excludeId as string, 10) };
+        }
+
+        const existing = await prisma.employee.findFirst({ where });
+
+        res.json({
+            success: true,
+            available: !existing,
+        });
+    } catch (error: any) {
+        console.error('Error checking email:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to check email availability',
         });
     }
 };

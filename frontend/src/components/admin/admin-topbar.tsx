@@ -46,7 +46,7 @@ export function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
         if (res.ok) {
           const data = await res.json()
           const emp = data.employee ?? data
-          setUserName(`${emp.firstName} ${emp.lastName}`)
+          setUserName(`${emp.firstName}${emp.middleName ? ` ${emp.middleName[0]}.` : ''} ${emp.lastName}${emp.suffix ? ` ${emp.suffix}` : ''}`)
         }
       } catch {
         setUserName('Admin')

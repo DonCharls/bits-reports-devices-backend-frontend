@@ -55,6 +55,40 @@ export const createShift = async (req: Request, res: Response) => {
             return res.status(400).json({ success: false, message: 'Times must be in H:MM or HH:MM format (24-hour)' });
         }
 
+        // Validate break time ranges
+        if (Array.isArray(breaks) && breaks.length > 0) {
+            for (const brk of breaks) {
+                const brkFrom = (brk.from || brk.start || '').trim();
+                const brkTo = (brk.to || brk.end || '').trim();
+
+                if (!brkFrom || !brkTo) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Each break must have both a "from" and "to" time.'
+                    });
+                }
+
+                if (!timeRegex.test(brkFrom) || !timeRegex.test(brkTo)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Break times must be in H:MM or HH:MM format (24-hour).'
+                    });
+                }
+
+                const toMinutes = (t: string) => {
+                    const [h, m] = t.split(':').map(Number);
+                    return h * 60 + m;
+                };
+
+                if (toMinutes(brkTo) <= toMinutes(brkFrom)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Break "to" time (${brkTo}) must be later than "from" time (${brkFrom}).`
+                    });
+                }
+            }
+        }
+
         const existingCode = await prisma.shift.findFirst({ where: { shiftCode: shiftCode.trim().toUpperCase() } });
         if (existingCode) return res.status(409).json({ success: false, message: 'Shift code already exists' });
 
@@ -107,6 +141,40 @@ export const updateShift = async (req: Request, res: Response) => {
         const timeRegex = /^([01]?\d|2[0-3]):([0-5]\d)$/;
         if (startTime && !timeRegex.test(startTime)) return res.status(400).json({ success: false, message: 'startTime must be H:MM or HH:MM (24-hour)' });
         if (endTime && !timeRegex.test(endTime)) return res.status(400).json({ success: false, message: 'endTime must be H:MM or HH:MM (24-hour)' });
+
+        // Validate break time ranges
+        if (Array.isArray(breaks) && breaks.length > 0) {
+            for (const brk of breaks) {
+                const brkFrom = (brk.from || brk.start || '').trim();
+                const brkTo = (brk.to || brk.end || '').trim();
+
+                if (!brkFrom || !brkTo) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Each break must have both a "from" and "to" time.'
+                    });
+                }
+
+                if (!timeRegex.test(brkFrom) || !timeRegex.test(brkTo)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Break times must be in H:MM or HH:MM format (24-hour).'
+                    });
+                }
+
+                const toMinutes = (t: string) => {
+                    const [h, m] = t.split(':').map(Number);
+                    return h * 60 + m;
+                };
+
+                if (toMinutes(brkTo) <= toMinutes(brkFrom)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Break "to" time (${brkTo}) must be later than "from" time (${brkFrom}).`
+                    });
+                }
+            }
+        }
 
         // Check uniqueness for code/name only if they differ from existing
         if (shiftCode && shiftCode.trim().toUpperCase() !== existing.shiftCode) {
