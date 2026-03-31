@@ -148,7 +148,7 @@ export default function EmployeesPage() {
     employeeName: string
   }>({ open: false, employeeId: null, employeeName: '' })
 
-  const [devices, setDevices] = useState<{ id: number; name: string; location: string | null; isActive: boolean }[]>([])
+  const [devices, setDevices] = useState<{ id: number; name: string; location: string | null; isActive: boolean; syncEnabled?: boolean }[]>([])
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null)
   const [loadingDevices, setLoadingDevices] = useState(false)
 
@@ -1205,12 +1205,16 @@ export default function EmployeesPage() {
                             )
                           }
                           if (status === 'error') {
+                            const msgLower = msg.toLowerCase();
+                            const isOffline = msgLower.includes('offline');
                             return (
-                              <div className="flex items-center gap-1">
-                                <span className="p-2.5 rounded-xl bg-amber-50 text-amber-500">
-                                  <WifiOff className="w-4 h-4" />
+                              <div className="flex items-center gap-1" title={msg}>
+                                <span className={`p-2.5 rounded-xl ${isOffline ? 'bg-slate-100 text-slate-500' : 'bg-amber-50 text-amber-500'}`}>
+                                  {isOffline ? <WifiOff className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
                                 </span>
-                                <span className="text-[10px] text-amber-600 font-semibold max-w-[90px] leading-tight">{msg}</span>
+                                <span className={`text-[10px] font-semibold max-w-[90px] leading-tight ${isOffline ? 'text-slate-500' : 'text-amber-600'}`}>
+                                  {isOffline ? 'Device Offline' : msgLower.includes('sync') ? 'Sync Paused' : 'Failed'}
+                                </span>
                               </div>
                             )
                           }
@@ -1478,20 +1482,32 @@ export default function EmployeesPage() {
                   {devices.map(device => (
                     <button
                       key={device.id}
+                      disabled={!device.isActive}
                       onClick={() => setSelectedDeviceId(device.id)}
-                      className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-colors text-left ${selectedDeviceId === device.id
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-colors text-left ${!device.isActive ? 'opacity-60 cursor-not-allowed bg-slate-50 border-slate-200' : selectedDeviceId === device.id
                         ? 'border-red-500 bg-red-50'
                         : 'border-slate-200 hover:bg-slate-50'
                         }`}
                     >
                       <div className={`w-2 h-2 rounded-full shrink-0 ${device.isActive ? 'bg-green-500' : 'bg-slate-300'}`} />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-700 truncate">{device.name}</p>
-                        {device.location && (
-                          <p className="text-xs text-slate-400 truncate">{device.location}</p>
-                        )}
+                      <div className="min-w-0 flex-1 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-700 truncate">{device.name}</p>
+                          {device.location && (
+                            <p className="text-xs text-slate-400 truncate">{device.location}</p>
+                          )}
+                        </div>
+                        {!device.isActive ? (
+                          <span className="text-[9px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-1 rounded uppercase tracking-wider shrink-0">
+                            Offline
+                          </span>
+                        ) : device.syncEnabled === false ? (
+                          <span className="text-[9px] font-bold text-amber-600 bg-amber-50/80 border border-amber-200/50 px-2 py-1 rounded uppercase tracking-wider shrink-0" title="Device sync is paused, but you can still enroll fingerprints.">
+                            Sync Paused
+                          </span>
+                        ) : null}
                       </div>
-                      {selectedDeviceId === device.id && (
+                      {selectedDeviceId === device.id && device.isActive && (
                         <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center shrink-0">
                           <div className="w-2 h-2 rounded-full bg-white" />
                         </div>

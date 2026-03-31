@@ -141,6 +141,8 @@ async function main() {
             lowFreqIntervalSec: 600,
             shiftAwareSyncEnabled: false,
             shiftBufferMinutes: 120,
+            autoTimeSyncEnabled: true,
+            timeSyncIntervalSec: 3600,
             updatedAt: new Date()
         }
     })
