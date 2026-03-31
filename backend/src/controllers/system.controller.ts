@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { syncScheduler } from '../services/system/syncScheduler';
 import { timeSyncScheduler } from '../services/system/timeSyncScheduler';
+import { healthCheckScheduler } from '../services/system/healthCheckScheduler';
 import { audit } from '../lib/auditLogger';
 import { z } from 'zod';
 import deviceEmitter from '../lib/deviceEmitter';
@@ -14,6 +15,8 @@ const updateSyncConfigSchema = z.object({
     shiftBufferMinutes: z.number().max(240, "Shift buffer cannot exceed 4 hours (240 min)").optional(),
     autoTimeSyncEnabled: z.boolean().optional(),
     timeSyncIntervalSec: z.number().min(300, "Time sync interval must be at least 5 minutes (300s)").optional(),
+    healthCheckEnabled: z.boolean().optional(),
+    healthCheckIntervalSec: z.number().min(15, "Health check interval must be at least 15s").optional(),
 });
 
 // ─── GET /api/system/sync-status ──────────────────────────────────────────────
@@ -25,12 +28,14 @@ export const getSyncStatus = async (req: Request, res: Response) => {
         }
 
         const schedulerStatus = syncScheduler.getStatus();
+        const healthStatus = healthCheckScheduler.getStatus();
 
         res.json({
             success: true,
             status: {
                 ...schedulerStatus,
                 globalSyncEnabled: config.globalSyncEnabled,
+                healthCheck: healthStatus,
             }
         });
     } catch (error: unknown) {
@@ -95,7 +100,9 @@ export const updateSyncConfig = async (req: Request, res: Response) => {
             { key: 'shiftBufferMinutes', label: 'Shift buffer', suffix: ' min' },
             { key: 'shiftAwareSyncEnabled', label: 'Shift-aware sync' },
             { key: 'autoTimeSyncEnabled', label: 'Automated time sync' },
-            { key: 'timeSyncIntervalSec', label: 'Time sync interval', suffix: 's' }
+            { key: 'timeSyncIntervalSec', label: 'Time sync interval', suffix: 's' },
+            { key: 'healthCheckEnabled', label: 'Health check' },
+            { key: 'healthCheckIntervalSec', label: 'Health check interval', suffix: 's' },
         ];
 
         for (const field of trackableFields) {
@@ -132,6 +139,7 @@ export const updateSyncConfig = async (req: Request, res: Response) => {
         // instead of waiting for the old interval to finish its long sleep.
         syncScheduler.reloadConfigAndReset().catch(err => console.error('[System] Error resetting scheduler timer:', err));
         timeSyncScheduler.reloadConfigAndReset().catch(err => console.error('[System] Error resetting time sync scheduler timer:', err));
+        healthCheckScheduler.reloadConfigAndReset().catch(err => console.error('[System] Error resetting health check scheduler timer:', err));
 
         deviceEmitter.emit('config-update');
 

@@ -517,7 +517,7 @@ export const getAdjustments = async (req: Request, res: Response) => {
  */
 export const reviewAdjustment = async (req: Request, res: Response) => {
   try {
-    const adjustmentId = parseInt(req.params.id);
+    const adjustmentId = parseInt(String(req.params.id));
     if (isNaN(adjustmentId)) {
       return res.status(400).json({ success: false, message: 'Invalid adjustment ID' });
     }

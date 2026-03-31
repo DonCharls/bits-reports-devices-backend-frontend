@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { syncZkData, syncAllDeviceClocks } from '../services/zkServices';
 import { syncScheduler } from '../services/system/syncScheduler';
 import { timeSyncScheduler } from '../services/system/timeSyncScheduler';
+import { healthCheckScheduler } from '../services/system/healthCheckScheduler';
 import { autoCloseIncompleteAttendance, autoCheckoutEmployees } from '../services/attendance.service';
 
 /**
@@ -33,7 +34,12 @@ export const startCronJobs = () => {
     // Managed by dynamic timeSyncScheduler (configurable interval)
     timeSyncScheduler.start();
 
+    // Job 5: Independent device health monitoring (TCP ping)
+    // Runs on its own timer, completely independent of data sync
+    healthCheckScheduler.start();
+
     console.log('[CronJobs] ✓ Periodic sync scheduled (every 30 seconds, skips when device is busy)');
     console.log('[CronJobs] ✓ Midnight cleanup scheduled (00:00 daily)');
     console.log('[CronJobs] ✓ Hourly device clock sync scheduled (top of every hour)');
+    console.log('[CronJobs] ✓ Device health monitor started (configurable interval)');
 };

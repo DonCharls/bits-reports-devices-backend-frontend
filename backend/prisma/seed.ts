@@ -143,6 +143,8 @@ async function main() {
             shiftBufferMinutes: 120,
             autoTimeSyncEnabled: true,
             timeSyncIntervalSec: 3600,
+            healthCheckEnabled: true,
+            healthCheckIntervalSec: 60,
             updatedAt: new Date()
         }
     })

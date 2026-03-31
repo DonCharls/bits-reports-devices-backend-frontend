@@ -278,6 +278,8 @@ model SyncConfig {
   shiftBufferMinutes    Int      @default(120)      // ±2 hour window around shift start/end
   autoTimeSyncEnabled   Boolean  @default(true)     // Enable background clock sync
   timeSyncIntervalSec   Int      @default(3600)     // How often to sync device clocks (1 hour)
+  healthCheckEnabled    Boolean  @default(true)     // Independent device health monitoring (TCP ping)
+  healthCheckIntervalSec Int     @default(60)       // How often to ping devices for connectivity (seconds)
   updatedAt             DateTime @updatedAt
 }
 

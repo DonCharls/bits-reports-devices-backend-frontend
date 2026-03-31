@@ -46,6 +46,9 @@ export default function DevicesPage() {
     const [saving, setSaving] = useState(false)
     const [formError, setFormError] = useState<string | null>(null)
 
+    // Global Sync State
+    const [globalSyncEnabled, setGlobalSyncEnabled] = useState(true)
+
     // Delete confirm
     const [deletingId, setDeletingId] = useState<number | null>(null)
     const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
@@ -69,10 +72,20 @@ export default function DevicesPage() {
         setLoading(true)
         setError(null)
         try {
-            const res = await fetch('/api/devices', { credentials: 'include' })
-            const data = await res.json()
+            const [devRes, syncRes] = await Promise.all([
+                fetch('/api/devices', { credentials: 'include' }),
+                fetch('/api/system/sync-status', { credentials: 'include' })
+            ])
+            const data = await devRes.json()
             if (data.success) setDevices(data.devices)
             else setError(data.message || 'Failed to fetch devices')
+
+            if (syncRes.ok) {
+                const syncData = await syncRes.json()
+                if (syncData.success) {
+                    setGlobalSyncEnabled(syncData.status.globalSyncEnabled)
+                }
+            }
         } catch (e: any) {
             setError(e.message || 'Network error')
         } finally {
@@ -275,6 +288,18 @@ export default function DevicesPage() {
                 <Alert variant="destructive"><AlertCircle className="h-4 w-4" />
                     <AlertTitle>Error</AlertTitle>
                     <AlertDescription>{error}</AlertDescription>
+                </Alert>
+            )}
+
+            {/* Global Sync Warning */}
+            {!globalSyncEnabled && (
+                <Alert variant="destructive" className="bg-red-50 text-red-700 border-red-200">
+                    <AlertCircle className="h-4 w-4 text-red-600" />
+                    <AlertTitle className="font-bold">Global Synchronization is Paused</AlertTitle>
+                    <AlertDescription>
+                        System-wide synchronization is currently disabled in System Settings. 
+                        Even if individual devices have sync enabled below, no logs will be pulled until global sync is resumed.
+                    </AlertDescription>
                 </Alert>
             )}
 
