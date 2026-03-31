@@ -9,17 +9,19 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import { Search, Plus, Edit2, ChevronLeft, ChevronRight, Upload, AlertTriangle, AlertCircle, X as XIcon, Fingerprint, CheckCircle2, WifiOff, Timer, Loader2, Key } from 'lucide-react'
+import { Search, Plus, Edit2, ChevronLeft, ChevronRight, Upload, AlertTriangle, AlertCircle, X as XIcon, Fingerprint, CheckCircle2, WifiOff, Timer, Loader2, Key, CreditCard } from 'lucide-react'
 import { departmentsApi, branchesApi } from '@/lib/api'
 import type { Department, Branch } from '@/lib/api'
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll'
 import { validateEmployeeId } from '@/lib/employeeValidation'
 import { useTableSort } from '@/hooks/useTableSort'
 import { SortableHeader } from '@/components/ui/SortableHeader'
+import RFIDCardEnrollmentModal from './components/RFIDCardEnrollmentModal'
 
 type Employee = {
   id: number
   zkId: number | null
+  cardNumber: number | null
   employeeNumber: string | null
   firstName: string
   lastName: string
@@ -150,6 +152,9 @@ export default function EmployeesPage() {
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null)
   const [loadingDevices, setLoadingDevices] = useState(false)
 
+  // ── RFID Card Enrollment state ──
+  const [cardEnrollOpen, setCardEnrollOpen] = useState<{ open: boolean, employeeId: number | null, employeeName: string }>({ open: false, employeeId: null, employeeName: '' })
+
   const fetchDevices = async () => {
     setLoadingDevices(true)
     try {
@@ -199,6 +204,8 @@ export default function EmployeesPage() {
       showToast('error', 'Enrollment Failed', 'Could not reach the server')
     }
   }
+
+
 
   const [newEmployee, setNewEmployee] = useState({
     employeeNumber: '',
@@ -1074,6 +1081,7 @@ export default function EmployeesPage() {
                 <SortableHeader label="ZK ID" sortKey="zkId" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 w-20" />
                 <SortableHeader label="Employee" sortKey="firstName" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
                 <SortableHeader label="Employee ID" sortKey="employeeNumber" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4" />
+                <th className="px-4 py-4">Badge</th>
                 <th className="px-4 py-4">Enrolled On</th>
                 <SortableHeader label="Department" sortKey="department" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
                 <th className="px-6 py-4">Shift</th>
@@ -1086,7 +1094,7 @@ export default function EmployeesPage() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-12 text-center text-slate-400 font-bold text-xs">
+                  <td colSpan={11} className="px-6 py-12 text-center text-slate-400 font-bold text-xs">
                     Loading employees...
                   </td>
                 </tr>
@@ -1104,6 +1112,17 @@ export default function EmployeesPage() {
                     {/* Employee ID (employeeNumber field) */}
                     <td className="px-4 py-3 text-xs text-muted-foreground font-mono">
                       {employee.employeeNumber ?? '—'}
+                    </td>
+                    {/* Badge (RFID Card Number) */}
+                    <td className="px-4 py-3">
+                      {employee.cardNumber ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-100">
+                          <CreditCard className="w-3 h-3" />
+                          {employee.cardNumber}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground italic">—</span>
+                      )}
                     </td>
                     {/* Fingerprint Enrollment Badges */}
                     <td className="px-4 py-3">
@@ -1210,6 +1229,22 @@ export default function EmployeesPage() {
                           )
                         })()}
 
+                        {/* RFID Badge Enrollment */}
+                        <button
+                          onClick={() => {
+                            const name = `${employee.firstName} ${employee.lastName}`
+                            setCardEnrollOpen({ open: true, employeeId: employee.id, employeeName: name })
+                          }}
+                          className={`p-2.5 rounded-xl transition-all active:scale-90 ${
+                            employee.cardNumber
+                              ? 'text-blue-500 hover:text-blue-700 hover:bg-blue-50'
+                              : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                          }`}
+                          title={employee.cardNumber ? `Badge #${employee.cardNumber}` : 'Enroll RFID Badge'}
+                        >
+                          <CreditCard className="w-4 h-4" />
+                        </button>
+
                         {/* Reset Password */}
                         <button
                           onClick={() => setConfirmResetPassword(employee)}
@@ -1224,7 +1259,7 @@ export default function EmployeesPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={10} className="px-6 py-20 text-center text-slate-400 font-bold uppercase text-xs tracking-widest">
+                  <td colSpan={11} className="px-6 py-20 text-center text-slate-400 font-bold uppercase text-xs tracking-widest">
                     No matching employees found
                   </td>
                 </tr>
@@ -1495,7 +1530,20 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ── Enrollment Loading Full-Screen Modal ────────────────────────────── */}
+      {/* ── RFID Card Enrollment Modal ── */}
+      <RFIDCardEnrollmentModal
+        isOpen={cardEnrollOpen.open}
+        employeeId={cardEnrollOpen.employeeId}
+        employeeName={cardEnrollOpen.employeeName}
+        onClose={() => setCardEnrollOpen({ open: false, employeeId: null, employeeName: '' })}
+        onSuccess={(msg) => {
+          showToast('success', 'Badge Enrolled', msg)
+          fetchEmployees()
+        }}
+        onError={(msg) => showToast('error', 'Enrollment Failed', msg)}
+      />
+
+      {/* ── Enrollment Loading Full-Screen Modal ──────────────────────────────────────── */}
       {(() => {
         const enrollingIdStr = Object.keys(enrollStatus).find(id => enrollStatus[Number(id)] === 'loading');
         if (!enrollingIdStr) return null;

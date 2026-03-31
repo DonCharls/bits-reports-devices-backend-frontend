@@ -398,7 +398,7 @@ export const streamDeviceStatus = async (req: Request, res: Response): Promise<v
     // client has accurate status immediately without a separate HTTP request.
     try {
         const devices = await prisma.device.findMany({
-            select: { id: true, name: true, ip: true, isActive: true, syncEnabled: true },
+            select: { id: true, name: true, ip: true, isActive: true, syncEnabled: true, lastSyncedAt: true, lastSyncStatus: true, lastSyncError: true },
             orderBy: { id: 'asc' },
         });
         res.write(`event: connected\ndata: ${JSON.stringify({ devices })}\n\n`);
@@ -423,11 +423,28 @@ export const streamDeviceStatus = async (req: Request, res: Response): Promise<v
         res.write(`event: device-status\ndata: ${JSON.stringify(payload)}\n\n`);
     };
 
+    const onSyncResult = (payload: {
+        id: number;
+        lastSyncStatus: string;
+        lastSyncedAt: Date | string | null;
+        lastSyncError: string | null;
+    }) => {
+        res.write(`event: device-sync-result\ndata: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    const onConfigUpdate = () => {
+        res.write(`event: config-update\ndata: {}\n\n`);
+    };
+
     deviceEmitter.on('status-change', onStatusChange);
+    deviceEmitter.on('device-sync-result', onSyncResult);
+    deviceEmitter.on('config-update', onConfigUpdate);
 
     req.on('close', () => {
         clearInterval(heartbeatInterval);
         deviceEmitter.off('status-change', onStatusChange);
+        deviceEmitter.off('device-sync-result', onSyncResult);
+        deviceEmitter.off('config-update', onConfigUpdate);
         console.log(`[SSE] Client disconnected from device stream`);
     });
 

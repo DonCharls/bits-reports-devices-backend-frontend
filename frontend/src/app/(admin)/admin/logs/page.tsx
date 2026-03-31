@@ -11,7 +11,7 @@ import {
 /* ── Types ── */
 interface LogEntry {
     id: string
-    type: 'timekeeping' | 'system'
+    type: 'timekeeping' | 'system' | 'device'
     timestamp: string
     employeeName: string
     employeeId: number
@@ -28,7 +28,7 @@ interface LogMeta {
     page: number
     limit: number
     totalPages: number
-    counts: { timekeeping: number; system: number }
+    counts: { timekeeping: number; system: number; device?: number }
 }
 
 /* ── Helpers ── */
@@ -47,7 +47,7 @@ export default function SystemLogsPage() {
     const [expandedLogId, setExpandedLogId] = useState<string | null>(null)
 
     // Filters
-    const [activeTab, setActiveTab] = useState<'all' | 'timekeeping' | 'system'>('all')
+    const [activeTab, setActiveTab] = useState<'all' | 'timekeeping' | 'system' | 'device'>('all')
     const [startDate, setStartDate] = useState(() => {
         const d = new Date()
         d.setDate(d.getDate() - 7)
@@ -91,7 +91,7 @@ export default function SystemLogsPage() {
     useEffect(() => { fetchLogs() }, [fetchLogs])
 
     const handleRefresh = () => { setRefreshing(true); fetchLogs() }
-    const handleTabChange = (tab: 'all' | 'timekeeping' | 'system') => {
+    const handleTabChange = (tab: 'all' | 'timekeeping' | 'system' | 'device') => {
         setActiveTab(tab)
         setPage(1)
     }
@@ -125,6 +125,8 @@ export default function SystemLogsPage() {
         if (a === 'DELETE') return <Trash2 className="w-4 h-4 text-red-600" />
         if (a === 'STATUS_CHANGE') return <Shield className="w-4 h-4 text-amber-600" />
         if (a === 'AUTO_CHECKOUT') return <Bot className="w-4 h-4 text-violet-600" />
+        if (a === 'MANUAL_SYNC' || a === 'DEVICE_SYNC') return <RefreshCw className="w-4 h-4 text-blue-600" />
+        if (a === 'CONFIG_UPDATE') return <Edit className="w-4 h-4 text-indigo-600" />
         return <Clock className="w-4 h-4 text-slate-400" />
     }
 
@@ -135,6 +137,9 @@ export default function SystemLogsPage() {
         if (a === 'DELETE') return 'bg-red-50 text-red-700 border-red-200'
         if (a === 'STATUS_CHANGE') return 'bg-amber-50 text-amber-700 border-amber-200'
         if (a === 'AUTO_CHECKOUT') return 'bg-violet-50 text-violet-700 border-violet-200'
+        if (a === 'MANUAL_SYNC') return 'bg-blue-50 text-blue-700 border-blue-200'
+        if (a === 'DEVICE_SYNC') return 'bg-indigo-50 text-indigo-700 border-indigo-200'
+        if (a === 'CONFIG_UPDATE') return 'bg-indigo-50 text-indigo-700 border-indigo-200'
         return 'bg-slate-50 text-slate-600 border-slate-200'
     }
 
@@ -198,9 +203,10 @@ export default function SystemLogsPage() {
                 {/* Type Tabs */}
                 <div className="flex bg-slate-100 rounded-lg p-0.5 w-full sm:w-auto">
                     {([
-                        { key: 'all', label: 'All', count: meta ? meta.counts.timekeeping + meta.counts.system : 0 },
+                        { key: 'all', label: 'All', count: meta ? meta.counts.timekeeping + meta.counts.system + (meta.counts.device ?? 0) : 0 },
                         { key: 'timekeeping', label: 'Timekeeping', count: meta?.counts.timekeeping ?? 0 },
                         { key: 'system', label: 'System', count: meta?.counts.system ?? 0 },
+                        { key: 'device', label: 'Device', count: meta?.counts.device ?? 0 },
                     ] as const).map(tab => (
                         <button
                             key={tab.key}
@@ -326,8 +332,8 @@ export default function SystemLogsPage() {
 
                                         {/* Type */}
                                         <div>
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit ${log.type === 'timekeeping' ? 'bg-violet-50 text-violet-700 border-violet-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                                                {log.type === 'timekeeping' ? 'Timekeeping' : 'System'}
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit ${log.type === 'timekeeping' ? 'bg-violet-50 text-violet-700 border-violet-200' : log.type === 'device' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                                                {log.type === 'timekeeping' ? 'Timekeeping' : log.type === 'device' ? 'Device' : 'System'}
                                             </span>
                                         </div>
 
@@ -357,8 +363,8 @@ export default function SystemLogsPage() {
                                                 </div>
                                             </div>
                                             <div className="flex flex-col gap-1 items-end">
-                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${log.type === 'timekeeping' ? 'bg-violet-50 text-violet-700 border-violet-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                                                    {log.type === 'timekeeping' ? 'Time' : 'Sys'}
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${log.type === 'timekeeping' ? 'bg-violet-50 text-violet-700 border-violet-200' : log.type === 'device' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                                                    {log.type === 'timekeeping' ? 'Time' : log.type === 'device' ? 'Dev' : 'Sys'}
                                                 </span>
                                                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${getLevelBadge(log.level)}`}>
                                                     {log.level || 'INFO'}

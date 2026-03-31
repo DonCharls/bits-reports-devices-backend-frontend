@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Clock, FileText, LayoutDashboard, UserCog, UserX, ChevronDown, Building2, Menu, X, Fingerprint, RadioTower, ScrollText } from 'lucide-react'
+import { Users, Clock, FileText, LayoutDashboard, UserCog, UserX, ChevronDown, Building2, Menu, X, Fingerprint, RadioTower, ScrollText, Server } from 'lucide-react'
 import { useRef, useState, useEffect, useCallback } from 'react'
 
 interface AdminSidebarProps {
@@ -43,6 +43,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
     { label: 'Devices', href: '/devices', icon: RadioTower },
     { label: 'Reports', href: '/admin/reports', icon: FileText },
     { label: 'System Logs', href: '/admin/logs', icon: ScrollText },
+    { label: 'System Settings', href: '/admin/system', icon: Server },
     { label: 'User Accounts', href: '/admin/user-accounts', icon: UserCog },
   ]
 
@@ -56,6 +57,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
     { href: '/devices' },
     { href: '/admin/reports' },
     { href: '/admin/logs' },
+    { href: '/admin/system' },
     { href: '/admin/user-accounts' },
   ]
 

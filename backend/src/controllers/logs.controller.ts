@@ -73,14 +73,17 @@ export const getLogs = async (req: Request, res: Response) => {
         if (type === 'timekeeping') {
             listWhere.entityType = 'Attendance';
         } else if (type === 'system') {
-            listWhere.entityType = { not: 'Attendance' };
+            listWhere.entityType = 'System';
+        } else if (type === 'device') {
+            listWhere.entityType = 'Device';
         }
 
         // 2. Fetch the paginated logs and counts concurrently
-        const [total, timekeepingCount, systemCount, rawLogs] = await Promise.all([
+        const [total, timekeepingCount, systemCount, deviceCount, rawLogs] = await Promise.all([
             prisma.auditLog.count({ where: listWhere }),
             prisma.auditLog.count({ where: { ...baseWhere, entityType: 'Attendance' } }),
-            prisma.auditLog.count({ where: { ...baseWhere, entityType: { not: 'Attendance' } } }),
+            prisma.auditLog.count({ where: { ...baseWhere, entityType: 'System' } }),
+            prisma.auditLog.count({ where: { ...baseWhere, entityType: 'Device' } }),
             prisma.auditLog.findMany({
                 where: listWhere,
                 include: {
@@ -107,9 +110,13 @@ export const getLogs = async (req: Request, res: Response) => {
             const empName = log.performer ? `${log.performer.firstName} ${log.performer.lastName}`.trim() : 'System';
             const deptName = log.performer?.department || 'System';
 
+            let mappedType = 'system';
+            if (log.entityType === 'Attendance') mappedType = 'timekeeping';
+            else if (log.entityType === 'Device') mappedType = 'device';
+
             return {
                 id: log.id.toString(),
-                type: log.entityType === 'Attendance' ? 'timekeeping' : 'system',
+                type: mappedType,
                 timestamp: log.timestamp.toISOString(),
                 employeeName: empName,
                 employeeId: log.performedBy || 0,
@@ -132,7 +139,8 @@ export const getLogs = async (req: Request, res: Response) => {
                 totalPages: Math.ceil(total / limitNum),
                 counts: {
                     timekeeping: timekeepingCount,
-                    system: systemCount
+                    system: systemCount,
+                    device: deviceCount
                 }
             },
         });

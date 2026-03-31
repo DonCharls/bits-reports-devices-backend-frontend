@@ -24,3 +24,10 @@ export const enrollFingerprintValidator = [
         .isInt({ min: 1 })
         .withMessage('Device ID must be a positive integer'),
 ];
+
+export const enrollCardValidator = [
+    body('cardNumber')
+        .notEmpty().withMessage('Card number is required')
+        .isInt({ min: 1, max: 4294967295 })
+        .withMessage('Card number must be a valid uint32 (1–4294967295)'),
+];

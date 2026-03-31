@@ -87,6 +87,9 @@ model Device {
   isActive      Boolean         @default(true)
   syncEnabled   Boolean         @default(true)
   lastSyncedAt  DateTime?                              // UTC timestamp of last processed log; null = never synced
+  lastSyncStatus String?                               // "SUCCESS", "FAILED"
+  lastSyncError  String?                               // Error message if FAILED
+  lastPolledAt   DateTime?                             // UTC timestamp of last successful heartbeat/check
   lastReconciledAt DateTime?                           // UTC timestamp of last auto-reconcile; null = never reconciled
   createdAt     DateTime        @default(now())
   updatedAt     DateTime
@@ -100,6 +103,7 @@ model Device {
 model Employee {
   id               Int              @id @default(autoincrement())
   zkId             Int?             @unique
+  cardNumber       Int?             @unique    // RFID badge card number (uint32 from device offset 35)
   firstName        String
   lastName         String
   middleName       String?
@@ -226,3 +230,17 @@ enum Role {
   ADMIN
   HR
 }
+
+model SyncConfig {
+  id                    Int      @id @default(1)    // Singleton — always row id=1
+  globalSyncEnabled     Boolean  @default(true)
+  defaultIntervalSec    Int      @default(30)       // Default sync interval in seconds
+  highFreqIntervalSec   Int      @default(30)       // Near-shift interval
+  lowFreqIntervalSec    Int      @default(600)      // Off-peak interval (10 min)
+  shiftAwareSyncEnabled Boolean  @default(false)    // Feature 5 toggle
+  shiftBufferMinutes    Int      @default(120)      // ±2 hour window around shift start/end
+  autoTimeSyncEnabled   Boolean  @default(true)     // Enable background clock sync
+  timeSyncIntervalSec   Int      @default(3600)     // How often to sync device clocks (1 hour)
+  updatedAt             DateTime @updatedAt
+}
+

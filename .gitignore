@@ -26,3 +26,5 @@ Thumbs.db
 .idea/
 
 .agent/
+.thingsToDo/
+.prettierrc

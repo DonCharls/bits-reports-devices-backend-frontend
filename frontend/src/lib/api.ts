@@ -24,6 +24,7 @@ export interface Department {
 export interface Employee {
   id: number
   zkId: number | null
+  cardNumber: number | null
   employeeNumber: string | null
   firstName: string
   lastName: string
@@ -239,6 +240,13 @@ export const employeesApi = {
     return apiFetch<{ success: boolean; message: string }>(
       `/api/employees/${id}/enroll-fingerprint`,
       { method: 'POST', body: JSON.stringify({ fingerIndex: fingerIndex ?? 0 }) }
+    )
+  },
+
+  enrollCard(id: number, cardNumber: number) {
+    return apiFetch<{ success: boolean; message: string }>(
+      `/api/employees/${id}/enroll-card`,
+      { method: 'POST', body: JSON.stringify({ cardNumber }) }
     )
   },
 }

@@ -4,7 +4,7 @@ import { validate } from '../middleware/validation.middleware';
 import { registerValidator, loginValidator } from '../validators/auth.validator';
 import { authenticate } from '../middleware/auth.middleware';
 import { adminOnly } from '../middleware/role.middleware';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 // ── Rate Limiters ─────────────────────────────────────────────────────────────
 
@@ -25,9 +25,9 @@ export const loginLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     skipSuccessfulRequests: true,
-    keyGenerator: (req) => {
+    keyGenerator: (req, res) => {
         const email = req.body?.email?.toLowerCase?.() || 'unknown';
-        return `${req.ip}:${email}`;
+        return `${ipKeyGenerator(req as any, res as any)}:${email}`;
     },
     message: { success: false, message: 'Too many login attempts. Please try again in 15 minutes.', error: 'rate_limited' }
 });

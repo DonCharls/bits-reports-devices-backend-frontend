@@ -128,6 +128,25 @@ async function main() {
     console.log('📡 Seeded device')
 
     // ──────────────────────────────────────────────
+    // 4.5. SyncConfig
+    // ──────────────────────────────────────────────
+    await prisma.syncConfig.upsert({
+        where: { id: 1 },
+        update: {},
+        create: {
+            id: 1,
+            globalSyncEnabled: true,
+            defaultIntervalSec: 30,
+            highFreqIntervalSec: 30,
+            lowFreqIntervalSec: 600,
+            shiftAwareSyncEnabled: false,
+            shiftBufferMinutes: 120,
+            updatedAt: new Date()
+        }
+    })
+    console.log('⚙️ Seeded sync config')
+
+    // ──────────────────────────────────────────────
     // 5. Employees
     // NOTE: zkId 1 is RESERVED for the ZKTeco device SUPER ADMIN — never use it.
     //       Employee zkIds start from 2.
