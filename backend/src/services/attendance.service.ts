@@ -570,7 +570,7 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
  * All times are stored as UTC where PHT midnight = UTC midnight offset by -8h
  * i.e. a stored timestamp of 2026-02-10T00:00:00Z represents 2026-02-10T08:00:00+08:00 PHT midnight workaround
  */
-function calculateAttendanceMetrics(record: any, shift: any) {
+export function calculateAttendanceMetrics(record: any, shift: any) {
     const shiftCode = shift?.shiftCode ?? null;
 
     if (!shift || !record.checkInTime) {
@@ -785,7 +785,7 @@ function calculateAttendanceMetrics(record: any, shift: any) {
 /**
  * Helper: Convert UTC date to Philippine Time string
  */
-function formatToPhilippineTime(utcDate: Date): string {
+export function formatToPhilippineTime(utcDate: Date): string {
     // Just use toLocaleString with timeZone option. 
     // The input utcDate is already a valid Date object (UTC).
     return utcDate.toLocaleString('en-US', {

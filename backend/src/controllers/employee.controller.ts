@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
-import { syncEmployeesToDevice, enrollEmployeeFingerprint, enrollEmployeeCard, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex } from '../services/zkServices';
+import { syncEmployeesToDevice, enrollEmployeeFingerprint, enrollEmployeeCard, removeEmployeeCard, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex } from '../services/zkServices';
 import { audit } from '../lib/auditLogger';
 import bcrypt from 'bcryptjs';
 import { generateRandomPassword } from '../utils/password.utils';
@@ -645,6 +645,82 @@ export const enrollEmployeeCardController = async (req: Request, res: Response) 
         return res.status(500).json({
             success: false,
             message: 'Failed to enroll RFID badge',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+        });
+    }
+};
+
+// DELETE /api/employees/:id/remove-card - Remove RFID badge card from employee
+export const removeEmployeeCardController = async (req: Request, res: Response) => {
+    try {
+        const id = req.params.id as string;
+        const employeeId = parseInt(id);
+
+        if (isNaN(employeeId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid employee ID',
+            });
+        }
+
+        console.log(`[API] Starting RFID card removal for employee ${employeeId}...`);
+
+        const result = await removeEmployeeCard(employeeId);
+
+        if (result.success) {
+            const emp = await prisma.employee.findUnique({
+                where: { id: employeeId },
+                select: { firstName: true, lastName: true, zkId: true }
+            });
+
+            await audit({
+                action: 'UPDATE',
+                entityType: 'Employee',
+                entityId: employeeId,
+                performedBy: req.user?.employeeId,
+                details: `Removed RFID badge for ${emp?.firstName} ${emp?.lastName}`,
+                metadata: { zkId: emp?.zkId }
+            });
+
+            return res.status(200).json({
+                success: true,
+                message: result.message,
+            });
+        } else {
+            await audit({
+                action: 'UPDATE',
+                level: 'ERROR',
+                entityType: 'Employee',
+                entityId: employeeId,
+                performedBy: req.user?.employeeId,
+                details: `Failed to remove RFID badge: ${result.message}`,
+                metadata: { error: result.error || result.message }
+            });
+
+            return res.status(500).json({
+                success: false,
+                message: result.message || 'Card removal failed',
+                error: result.error,
+            });
+        }
+
+    } catch (error: any) {
+        console.error('[API] Card removal error:', error);
+
+        const empId = req.params.id ? parseInt(req.params.id as string) : undefined;
+        await audit({
+            action: 'UPDATE',
+            level: 'ERROR',
+            entityType: 'Employee',
+            entityId: isNaN(empId as number) ? undefined : empId,
+            performedBy: req.user?.employeeId,
+            details: `Exception while removing RFID badge: ${error.message}`,
+            metadata: { error: error.message }
+        });
+
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to remove RFID badge',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined,
         });
     }

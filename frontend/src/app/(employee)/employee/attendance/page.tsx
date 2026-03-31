@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { CalendarDays, Filter, ChevronLeft, ChevronRight } from 'lucide-react'
+import { CalendarDays, Filter } from 'lucide-react'
 
 import { employeeSelfApi } from '@/lib/api'
 
@@ -12,6 +12,13 @@ interface AttendanceRecord {
   checkOutTime: string | null
   status: string
   notes: string | null
+  totalHours: number
+  lateMinutes: number
+  overtimeMinutes: number
+  undertimeMinutes: number
+  shiftCode: string | null
+  isShiftActive: boolean
+  gracePeriodApplied: boolean
 }
 
 const phtStr = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
@@ -61,6 +68,15 @@ export default function MyAttendancePage() {
     const hrs = Math.floor(diffMs / (1000 * 60 * 60))
     const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
     return `${hrs}h ${mins}m`
+  }
+
+  const fmtMins = (mins: number | null | undefined): string => {
+    if (!mins || mins <= 0) return '—'
+    const h = Math.floor(mins / 60)
+    const m = Math.round(mins % 60)
+    if (h === 0) return `${m}m`
+    if (m === 0) return `${h}h`
+    return `${h}h ${m}m`
   }
 
   return (
@@ -122,6 +138,8 @@ export default function MyAttendancePage() {
                   <th className="px-6 py-4 font-black">Check In</th>
                   <th className="px-6 py-4 font-black">Check Out</th>
                   <th className="px-6 py-4 font-black">Total Time</th>
+                  <th className="px-6 py-4 font-black text-emerald-600">OT</th>
+                  <th className="px-6 py-4 font-black text-red-500">UT</th>
                   <th className="px-6 py-4 font-black">Status</th>
                 </tr>
               </thead>
@@ -142,14 +160,26 @@ export default function MyAttendancePage() {
                       {calculateHours(r.checkInTime, r.checkOutTime)}
                     </td>
                     <td className="px-6 py-4">
+                      <span className={`text-sm font-bold ${r.overtimeMinutes > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
+                        {r.overtimeMinutes > 0 ? `+${fmtMins(r.overtimeMinutes)}` : '—'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`text-sm font-bold ${r.undertimeMinutes > 0 ? 'text-red-500' : 'text-slate-300'}`}>
+                        {r.undertimeMinutes > 0 ? `-${fmtMins(r.undertimeMinutes)}` : '—'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
                         r.status.toLowerCase() === 'late' 
                           ? 'bg-amber-100 text-amber-700' 
                           : r.status.toLowerCase() === 'absent'
                             ? 'bg-rose-100 text-rose-700'
-                            : 'bg-emerald-100 text-emerald-700'
+                            : r.status.toLowerCase() === 'in_progress'
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-emerald-100 text-emerald-700'
                       }`}>
-                        {r.status}
+                        {r.status === 'IN_PROGRESS' ? 'In Progress' : r.status}
                       </span>
                     </td>
                   </tr>
