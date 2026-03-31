@@ -224,10 +224,12 @@ export default function BiometricPage() {
 
         const presentIds = new Set(mapped.map((r: any) => r.employeeId))
         const branchName = activeBranchId !== 'all' ? branches.find(b => b.id === activeBranchId)?.name : null
+        const deptName = selectedDeptId !== 'all' ? departments.find(d => String(d.id) === selectedDeptId)?.name : null
         const absentRows = allEmployees
           .filter((e: any) => {
             if (presentIds.has(e.id)) return false
             if (branchName && e.branch !== branchName) return false
+            if (deptName && (e.Department?.name || e.department || 'General') !== deptName) return false
             return true
           })
           .map((e: any) => ({
@@ -251,7 +253,9 @@ export default function BiometricPage() {
             gracePeriodApplied: false,
           }))
 
-        const full = [...mapped, ...absentRows]
+        const full = (selectedStatus === 'all' || selectedStatus === 'absent')
+          ? [...mapped, ...absentRows]
+          : [...mapped]
         const filtered = debouncedSearch
           ? full.filter((r: any) => r.employeeName.toLowerCase().includes(debouncedSearch.toLowerCase()))
           : full
@@ -298,25 +302,27 @@ export default function BiometricPage() {
     const date = new Date(selectedDate + 'T00:00:00')
     const formattedDate = `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
     const branchLabel = activeBranchId === 'all' ? 'All Branches' : (branches.find(b => b.id === activeBranchId)?.name || 'Branch')
+    const deptLabel = selectedDeptId === 'all' ? 'All Departments' : (departments.find(d => String(d.id) === selectedDeptId)?.name || 'Department')
 
-    const presentCount = records.filter(r => r.status === 'present').length
-    const lateCount = records.filter(r => r.status === 'late').length
-    const anomalyCount = records.filter((r: any) => r.isAnomaly).length
-    const absentCount = records.filter(r => r.status === 'absent').length
-    const avgHoursNum = parseFloat(stats.avgHours)
+    const dataToExport = sortedRecords
+    const presentCount = dataToExport.filter(r => r.status === 'present').length
+    const lateCount = dataToExport.filter(r => r.status === 'late').length
+    const anomalyCount = dataToExport.filter((r: any) => r.isAnomaly).length
+    const absentCount = dataToExport.filter(r => r.status === 'absent').length
 
     const allRows: (string | number)[][] = []
 
     // ── Header block ──
     allRows.push(['BITS Attendance Report'])
     allRows.push(['Branch', branchLabel])
+    allRows.push(['Department', deptLabel])
     allRows.push(['Date', formattedDate])
     allRows.push(['Generated', new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })])
     allRows.push([])
 
     // ── Summary stats ──
     allRows.push(['SUMMARY'])
-    allRows.push(['Total Employees', records.length, '', 'Avg Hours', `${stats.avgHours}h`])
+    allRows.push(['Total Employees', dataToExport.length, '', 'Avg Hours', `${stats.avgHours}h`])
     allRows.push(['Present', presentCount, '', 'Overtime Total', `${stats.totalOvertime}h`])
     allRows.push(['Late', lateCount, '', 'Undertime Total', `${stats.totalUndertime}h`])
     allRows.push(['Anomaly', anomalyCount])
@@ -331,7 +337,7 @@ export default function BiometricPage() {
     ])
 
     // ── Data rows ──
-    records.forEach((r, i) => {
+    dataToExport.forEach((r, i) => {
       const statusLabel = r.isAnomaly
         ? 'Anomaly'
         : r.status === 'IN_PROGRESS' ? 'In Progress'

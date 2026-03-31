@@ -40,7 +40,7 @@ export default function MyAttendancePage() {
     try {
       const res = await employeeSelfApi.getAttendance(startDate, endDate)
       if (res.success) {
-        setRecords(res.data || [])
+        setRecords((res.data as unknown as AttendanceRecord[]) || [])
       }
     } catch (err) {
       console.error(err)

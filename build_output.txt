@@ -1,0 +1,21 @@
+▲ Next.js 16.1.6 (Turbopack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 26.5s
+  Running TypeScript ...
+Failed to compile.
+
+./src/app/(employee)/employee/attendance/page.tsx:43:20
+Type error: Argument of type 'AttendanceRecord[]' is not assignable to parameter of type 'SetStateAction<AttendanceRecord[]>'.
+  Type 'import("C:/bits/frontend/src/lib/api").AttendanceRecord[]' is not assignable to type 'AttendanceRecord[]'.
+    Type 'AttendanceRecord' is missing the following properties from type 'AttendanceRecord': totalHours, lateMinutes, overtimeMinutes, undertimeMinutes, and 3 more.
+
+[0m [90m 41 |[39m       [36mconst[39m res [33m=[39m [36mawait[39m employeeSelfApi[33m.[39mgetAttendance(startDate[33m,[39m endDate)
+ [90m 42 |[39m       [36mif[39m (res[33m.[39msuccess) {
+[31m[1m>[22m[39m[90m 43 |[39m         setRecords(res[33m.[39mdata [33m||[39m [])
+ [90m    |[39m                    [31m[1m^[22m[39m
+ [90m 44 |[39m       }
+ [90m 45 |[39m     } [36mcatch[39m (err) {
+ [90m 46 |[39m       console[33m.[39merror(err)[0m
+Next.js build worker exited with code: 1 and signal: null
