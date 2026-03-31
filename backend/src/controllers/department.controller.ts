@@ -43,7 +43,8 @@ export const createDepartment = async (req: Request, res: Response) => {
             entityId: department.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Created new department "${department.name}"`
+            details: `Created new department "${department.name}"`,
+            metadata: { category: 'config' }
         });
 
         res.status(201).json({ success: true, department });
@@ -91,7 +92,7 @@ export const renameDepartment = async (req: Request, res: Response) => {
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Renamed department to "${department.name}"`,
-            metadata: changes.length > 0 ? { updates: changes } : undefined
+            metadata: changes.length > 0 ? { category: 'config', updates: changes } : { category: 'config' }
         });
 
         res.json({ success: true, department });
@@ -138,7 +139,8 @@ export const deleteDepartment = async (req: Request, res: Response) => {
             entityId: id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Deleted department "${existing.name}"`
+            details: `Deleted department "${existing.name}"`,
+            metadata: { category: 'config' }
         });
 
         res.json({ success: true, message: `Department "${existing.name}" deleted` });

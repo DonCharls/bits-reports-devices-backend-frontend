@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Clock, FileText, LayoutDashboard, UserCog, UserX, ChevronDown, Building2, Menu, X, Fingerprint, RadioTower, ScrollText, Server } from 'lucide-react'
+import { Users, Clock, FileText, LayoutDashboard, UserCog, UserX, ChevronDown, Building2, Menu, X, Fingerprint, RadioTower, ScrollText, Server, ClipboardCheck } from 'lucide-react'
 import { useRef, useState, useEffect, useCallback } from 'react'
 
 interface AdminSidebarProps {
@@ -40,6 +40,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
     { label: 'Organization', href: '/departments', icon: Building2 },
     { label: 'Shifts', href: '/shifts', icon: Clock },
     { label: 'Attendance', href: '/attendance', icon: Fingerprint },
+    { label: 'Approvals', href: '/admin/adjustments', icon: ClipboardCheck },
     { label: 'Devices', href: '/devices', icon: RadioTower },
     { label: 'Reports', href: '/admin/reports', icon: FileText },
     { label: 'System Logs', href: '/admin/logs', icon: ScrollText },
@@ -54,6 +55,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
     { href: '/departments' },
     { href: '/shifts' },
     { href: '/attendance' },
+    { href: '/admin/adjustments' },
     { href: '/devices' },
     { href: '/admin/reports' },
     { href: '/admin/logs' },

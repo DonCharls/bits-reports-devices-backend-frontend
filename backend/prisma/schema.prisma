@@ -26,6 +26,7 @@ model Attendance {
   @@index([employeeId])
   @@index([status])
   AttendanceAuditLog  AttendanceAuditLog[]
+  AttendanceAdjustment AttendanceAdjustment[]
 }
 
 model AttendanceAuditLog {
@@ -44,6 +45,40 @@ model AttendanceAuditLog {
   @@index([attendanceId])
   @@index([adjustedById])
   @@index([createdAt])
+}
+
+model AttendanceAdjustment {
+  id                Int       @id @default(autoincrement())
+  attendanceId      Int
+  submittedById     Int
+
+  // Snapshot of original values at time of request
+  originalCheckIn   DateTime?
+  originalCheckOut  DateTime?
+
+  // Requested new values
+  requestedCheckIn  DateTime?
+  requestedCheckOut DateTime?
+
+  reason            String    // Required — why the adjustment is needed
+
+  // Approval workflow
+  status            String    @default("pending") // pending, approved, rejected
+  reviewedById      Int?
+  rejectionReason   String?
+
+  submittedAt       DateTime  @default(now())
+  reviewedAt        DateTime?
+
+  // Relations
+  attendance        Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  submittedBy       Employee   @relation("AdjustmentSubmittedBy", fields: [submittedById], references: [id])
+  reviewedBy        Employee?  @relation("AdjustmentReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([attendanceId])
+  @@index([submittedById])
+  @@index([status])
+  @@index([submittedAt])
 }
 
 model AttendanceLog {
@@ -139,6 +174,8 @@ model Employee {
   Shift          Shift?          @relation(fields: [shiftId], references: [id])
   AttendanceAuditLogAdjusted AttendanceAuditLog[]  @relation("AdjustedBy")
   AuditLogs                  AuditLog[]
+  AdjustmentsSubmitted       AttendanceAdjustment[] @relation("AdjustmentSubmittedBy")
+  AdjustmentsReviewed        AttendanceAdjustment[] @relation("AdjustmentReviewedBy")
   
   @@index([departmentId])
   @@index([branchId])

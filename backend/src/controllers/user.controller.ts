@@ -64,7 +64,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
                 performedBy: req.user?.employeeId,
                 source: 'admin-panel',
                 details: `Failed to create admin/HR account: Email already exists`,
-                metadata: { email, role }
+                metadata: { category: 'auth', email, role }
             });
             
             res.status(400).json({ success: false, message: 'A user with this email already exists' });
@@ -99,7 +99,8 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
             entityId: newUser.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Created new ${role} account for ${firstName} ${lastName}`
+            details: `Created new ${role} account for ${firstName} ${lastName}`,
+            metadata: { category: 'auth' }
         });
 
         res.status(201).json({
@@ -120,7 +121,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Failed to create admin/HR account due to server error: ${error.message}`,
-            metadata: { error: error.message }
+            metadata: { category: 'auth', error: error.message }
         });
 
         res.status(500).json({ success: false, message: 'Failed to create user' });
@@ -201,7 +202,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Updated account details for user ID ${updated.id}`,
-            metadata: changes.length > 0 ? { updates: changes } : undefined
+            metadata: changes.length > 0 ? { category: 'auth', updates: changes } : { category: 'auth' }
         });
 
         res.json({
@@ -248,7 +249,8 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
             entityId: id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Deactivated (soft-deleted) user account ID ${id}`
+            details: `Deactivated (soft-deleted) user account ID ${id}`,
+            metadata: { category: 'auth' }
         });
 
         res.json({ success: true, message: 'User deleted successfully' });
@@ -298,7 +300,8 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
             entityId: updated.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Changed user account status to ${newStatus}`
+            details: `Changed user account status to ${newStatus}`,
+            metadata: { category: 'auth' }
         });
 
         const selfDeactivated = newStatus === 'INACTIVE' && req.user?.employeeId === id;
@@ -349,7 +352,8 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
             entityId: updated.id,
             performedBy: employeeId,
             source: 'admin-panel',
-            details: `User updated their own profile`
+            details: `User updated their own profile`,
+            metadata: { category: 'auth' }
         });
 
         res.json({
@@ -405,7 +409,8 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
             entityId: employeeId,
             performedBy: employeeId,
             source: 'admin-panel',
-            details: `User changed their own password`
+            details: `User changed their own password`,
+            metadata: { category: 'auth' }
         });
 
         res.json({ success: true, message: 'Password changed successfully' });

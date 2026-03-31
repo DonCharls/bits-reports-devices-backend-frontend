@@ -3,15 +3,18 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-    ScrollText, Filter, ChevronLeft, ChevronRight,
+    ScrollText, ChevronLeft, ChevronRight,
     LogIn, LogOut, Fingerprint, Clock, CalendarDays,
-    Search, RefreshCw, UserPlus, Trash2, Edit, Shield, Bot, AlertTriangle, Info, XCircle
+    Search, RefreshCw, UserPlus, Trash2, Edit, Shield, Bot,
+    Info, Wifi, WifiOff, Copy, ClipboardCheck, ClipboardX, FileText,
+    Settings, Users, Radio, KeyRound, ChevronDown
 } from 'lucide-react'
 
 /* ── Types ── */
 interface LogEntry {
     id: string
-    type: 'timekeeping' | 'system' | 'device'
+    type: 'timekeeping' | 'system'
+    category: string
     timestamp: string
     employeeName: string
     employeeId: number
@@ -28,14 +31,37 @@ interface LogMeta {
     page: number
     limit: number
     totalPages: number
-    counts: { timekeeping: number; system: number; device?: number }
+    counts: {
+        all: number
+        auth: number
+        attendance: number
+        device: number
+        employee: number
+        config: number
+        system: number
+        timekeeping: number
+    }
 }
+
+type CategoryKey = 'all' | 'attendance' | 'auth' | 'device' | 'employee' | 'config' | 'system'
+type LevelKey = 'all' | 'INFO' | 'WARN' | 'ERROR'
 
 /* ── Helpers ── */
 const phtStr = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
 function Skeleton({ className }: { className?: string }) {
     return <div className={`animate-pulse bg-slate-200 rounded-lg ${className ?? ''}`} />
 }
+
+/* ── Category Tab Config ── */
+const CATEGORY_TABS: { key: CategoryKey; label: string; icon: React.ElementType; color: string }[] = [
+    { key: 'all', label: 'All', icon: ScrollText, color: 'text-slate-600' },
+    { key: 'attendance', label: 'Attendance', icon: Fingerprint, color: 'text-violet-600' },
+    { key: 'auth', label: 'Auth', icon: KeyRound, color: 'text-emerald-600' },
+    { key: 'device', label: 'Device', icon: Radio, color: 'text-sky-600' },
+    { key: 'employee', label: 'Employee', icon: Users, color: 'text-amber-600' },
+    { key: 'config', label: 'Config', icon: Settings, color: 'text-indigo-600' },
+    { key: 'system', label: 'System', icon: Bot, color: 'text-slate-500' },
+]
 
 /* ── Page ── */
 export default function SystemLogsPage() {
@@ -47,7 +73,8 @@ export default function SystemLogsPage() {
     const [expandedLogId, setExpandedLogId] = useState<string | null>(null)
 
     // Filters
-    const [activeTab, setActiveTab] = useState<'all' | 'timekeeping' | 'system' | 'device'>('all')
+    const [activeCategory, setActiveCategory] = useState<CategoryKey>('all')
+    const [activeLevel, setActiveLevel] = useState<LevelKey>('all')
     const [startDate, setStartDate] = useState(() => {
         const d = new Date()
         d.setDate(d.getDate() - 7)
@@ -56,6 +83,7 @@ export default function SystemLogsPage() {
     const [endDate, setEndDate] = useState(() => phtStr(new Date()))
     const [searchQuery, setSearchQuery] = useState('')
     const [page, setPage] = useState(1)
+    const [levelDropdownOpen, setLevelDropdownOpen] = useState(false)
     const limit = 30
 
     const fetchLogs = useCallback(async () => {
@@ -63,7 +91,8 @@ export default function SystemLogsPage() {
             const params = new URLSearchParams({
                 startDate,
                 endDate,
-                type: activeTab,
+                category: activeCategory,
+                level: activeLevel,
                 page: String(page),
                 limit: String(limit),
             })
@@ -86,14 +115,26 @@ export default function SystemLogsPage() {
             setLoading(false)
             setRefreshing(false)
         }
-    }, [router, startDate, endDate, activeTab, page])
+    }, [router, startDate, endDate, activeCategory, activeLevel, page])
 
     useEffect(() => { fetchLogs() }, [fetchLogs])
 
+    // Close dropdown on outside click
+    useEffect(() => {
+        const handler = () => setLevelDropdownOpen(false)
+        if (levelDropdownOpen) document.addEventListener('click', handler)
+        return () => document.removeEventListener('click', handler)
+    }, [levelDropdownOpen])
+
     const handleRefresh = () => { setRefreshing(true); fetchLogs() }
-    const handleTabChange = (tab: 'all' | 'timekeeping' | 'system' | 'device') => {
-        setActiveTab(tab)
+    const handleCategoryChange = (cat: CategoryKey) => {
+        setActiveCategory(cat)
         setPage(1)
+    }
+    const handleLevelChange = (level: LevelKey) => {
+        setActiveLevel(level)
+        setPage(1)
+        setLevelDropdownOpen(false)
     }
 
     // Filter logs by search query (client-side)
@@ -101,7 +142,8 @@ export default function SystemLogsPage() {
         ? logs.filter(l =>
             l.employeeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
             l.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            l.source.toLowerCase().includes(searchQuery.toLowerCase())
+            l.details?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            l.source?.toLowerCase().includes(searchQuery.toLowerCase())
         )
         : logs
 
@@ -117,29 +159,34 @@ export default function SystemLogsPage() {
         const a = action.toUpperCase()
         if (a.includes('CHECK_IN') || a === 'CHECK IN') return <LogIn className="w-4 h-4 text-emerald-600" />
         if (a.includes('CHECK_OUT') || a === 'CHECK OUT') return <LogOut className="w-4 h-4 text-blue-600" />
-        if (a.includes('LOGIN')) return <LogIn className="w-4 h-4 text-emerald-600" />
-        if (a.includes('LOGOUT')) return <LogOut className="w-4 h-4 text-slate-500" />
+        if (a === 'LOGIN') return <LogIn className="w-4 h-4 text-emerald-600" />
+        if (a === 'FAILED_LOGIN') return <LogIn className="w-4 h-4 text-red-500" />
+        if (a === 'LOGOUT') return <LogOut className="w-4 h-4 text-slate-500" />
         if (a === 'DEVICE SCAN') return <Fingerprint className="w-4 h-4 text-slate-500" />
+        if (a === 'DEVICE_CONNECT') return <Wifi className="w-4 h-4 text-emerald-500" />
+        if (a === 'DEVICE_DISCONNECT') return <WifiOff className="w-4 h-4 text-red-500" />
+        if (a === 'DUPLICATE_PUNCH') return <Copy className="w-4 h-4 text-amber-500" />
+        if (a === 'ADJUSTMENT_SUBMIT') return <FileText className="w-4 h-4 text-blue-500" />
+        if (a === 'ADJUSTMENT_APPROVE') return <ClipboardCheck className="w-4 h-4 text-emerald-500" />
+        if (a === 'ADJUSTMENT_REJECT') return <ClipboardX className="w-4 h-4 text-red-500" />
         if (a === 'CREATE') return <UserPlus className="w-4 h-4 text-emerald-600" />
         if (a === 'UPDATE') return <Edit className="w-4 h-4 text-blue-600" />
         if (a === 'DELETE') return <Trash2 className="w-4 h-4 text-red-600" />
         if (a === 'STATUS_CHANGE') return <Shield className="w-4 h-4 text-amber-600" />
         if (a === 'AUTO_CHECKOUT') return <Bot className="w-4 h-4 text-violet-600" />
-        if (a === 'MANUAL_SYNC' || a === 'DEVICE_SYNC') return <RefreshCw className="w-4 h-4 text-blue-600" />
-        if (a === 'CONFIG_UPDATE') return <Edit className="w-4 h-4 text-indigo-600" />
+        if (a === 'FLAG_MISSING_CHECKOUT') return <Bot className="w-4 h-4 text-orange-500" />
+        if (a === 'SYNC') return <RefreshCw className="w-4 h-4 text-sky-500" />
         return <Clock className="w-4 h-4 text-slate-400" />
     }
 
     const getActionBadge = (action: string) => {
         const a = action.toUpperCase()
-        if (a.includes('CHECK_IN') || a === 'CHECK IN' || a === 'CREATE' || a.includes('LOGIN')) return 'bg-emerald-50 text-emerald-700 border-emerald-200'
-        if (a.includes('CHECK_OUT') || a === 'CHECK OUT' || a === 'UPDATE') return 'bg-blue-50 text-blue-700 border-blue-200'
-        if (a === 'DELETE') return 'bg-red-50 text-red-700 border-red-200'
-        if (a === 'STATUS_CHANGE') return 'bg-amber-50 text-amber-700 border-amber-200'
-        if (a === 'AUTO_CHECKOUT') return 'bg-violet-50 text-violet-700 border-violet-200'
-        if (a === 'MANUAL_SYNC') return 'bg-blue-50 text-blue-700 border-blue-200'
-        if (a === 'DEVICE_SYNC') return 'bg-indigo-50 text-indigo-700 border-indigo-200'
-        if (a === 'CONFIG_UPDATE') return 'bg-indigo-50 text-indigo-700 border-indigo-200'
+        if (a.includes('CHECK_IN') || a === 'CHECK IN' || a === 'CREATE' || a === 'LOGIN' || a === 'DEVICE_CONNECT' || a === 'ADJUSTMENT_APPROVE') return 'bg-emerald-50 text-emerald-700 border-emerald-200'
+        if (a.includes('CHECK_OUT') || a === 'CHECK OUT' || a === 'UPDATE' || a === 'SYNC' || a === 'ADJUSTMENT_SUBMIT') return 'bg-blue-50 text-blue-700 border-blue-200'
+        if (a === 'DELETE' || a === 'FAILED_LOGIN' || a === 'DEVICE_DISCONNECT' || a === 'ADJUSTMENT_REJECT') return 'bg-red-50 text-red-700 border-red-200'
+        if (a === 'STATUS_CHANGE' || a === 'DUPLICATE_PUNCH') return 'bg-amber-50 text-amber-700 border-amber-200'
+        if (a === 'AUTO_CHECKOUT' || a === 'FLAG_MISSING_CHECKOUT') return 'bg-violet-50 text-violet-700 border-violet-200'
+        if (a === 'LOGOUT') return 'bg-slate-50 text-slate-600 border-slate-200'
         return 'bg-slate-50 text-slate-600 border-slate-200'
     }
 
@@ -149,14 +196,28 @@ export default function SystemLogsPage() {
         return 'bg-slate-50 text-slate-600 border-slate-200'
     }
 
+    const getCategoryBadge = (category?: string) => {
+        const c = category?.toLowerCase()
+        if (c === 'attendance') return 'bg-violet-50 text-violet-700 border-violet-200'
+        if (c === 'auth') return 'bg-emerald-50 text-emerald-700 border-emerald-200'
+        if (c === 'device') return 'bg-sky-50 text-sky-700 border-sky-200'
+        if (c === 'employee') return 'bg-amber-50 text-amber-700 border-amber-200'
+        if (c === 'config') return 'bg-indigo-50 text-indigo-700 border-indigo-200'
+        if (c === 'system') return 'bg-slate-50 text-slate-600 border-slate-200'
+        return 'bg-slate-50 text-slate-600 border-slate-200'
+    }
+
     const getAvatarBg = (role?: string) => {
         const r = role?.toUpperCase();
-        // Theme Colors: Admin (Blue), HR (Emerald), User/Employee (Amber), System (Slate)
         if (!r || r === 'SYSTEM') return 'bg-gradient-to-br from-slate-400 to-slate-500'
         if (r === 'ADMIN') return 'bg-gradient-to-br from-blue-500 to-indigo-600'
-        if (r === 'HR') return 'bg-gradient-to-br from-emerald-500 to-teal-600' // Aligned with user-accounts HR color
-        if (r === 'USER' || r === 'EMPLOYEE') return 'bg-gradient-to-br from-amber-500 to-orange-600' // Distinctive but thematic
+        if (r === 'HR') return 'bg-gradient-to-br from-emerald-500 to-teal-600'
+        if (r === 'USER' || r === 'EMPLOYEE') return 'bg-gradient-to-br from-amber-500 to-orange-600'
         return 'bg-gradient-to-br from-slate-400 to-slate-500'
+    }
+
+    const formatActionLabel = (action: string) => {
+        return action.replace(/_/g, ' ')
     }
 
     /* ── Loading skeleton ── */
@@ -166,8 +227,8 @@ export default function SystemLogsPage() {
                 <Skeleton className="h-8 w-48" />
                 <Skeleton className="h-9 w-28 rounded-lg" />
             </div>
-            <div className="flex gap-2">
-                {[1, 2, 3].map(i => <Skeleton key={i} className="h-9 w-28 rounded-lg" />)}
+            <div className="flex gap-2 overflow-x-auto">
+                {[1, 2, 3, 4, 5, 6, 7].map(i => <Skeleton key={i} className="h-9 w-24 rounded-lg shrink-0" />)}
             </div>
             <div className="space-y-2">
                 {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)}
@@ -185,7 +246,7 @@ export default function SystemLogsPage() {
                         <ScrollText className="w-5 h-5 text-red-500" /> System Logs
                     </h1>
                     <p className="text-slate-500 text-xs font-semibold mt-0.5">
-                        Timekeeping activities & system events
+                        Audit trail for all system activities
                     </p>
                 </div>
                 <button
@@ -199,61 +260,101 @@ export default function SystemLogsPage() {
             </div>
 
             {/* ── Filters Bar ── */}
-            <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-2 shrink-0">
-                {/* Type Tabs */}
-                <div className="flex bg-slate-100 rounded-lg p-0.5 w-full sm:w-auto">
-                    {([
-                        { key: 'all', label: 'All', count: meta ? meta.counts.timekeeping + meta.counts.system + (meta.counts.device ?? 0) : 0 },
-                        { key: 'timekeeping', label: 'Timekeeping', count: meta?.counts.timekeeping ?? 0 },
-                        { key: 'system', label: 'System', count: meta?.counts.system ?? 0 },
-                        { key: 'device', label: 'Device', count: meta?.counts.device ?? 0 },
-                    ] as const).map(tab => (
-                        <button
-                            key={tab.key}
-                            onClick={() => handleTabChange(tab.key)}
-                            className={`flex-1 sm:flex-none px-3 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === tab.key
+            <div className="flex flex-col gap-2 shrink-0">
+                {/* Category Tabs */}
+                <div className="flex bg-slate-100 rounded-lg p-0.5 overflow-x-auto scrollbar-hide">
+                    {CATEGORY_TABS.map(tab => {
+                        const Icon = tab.icon
+                        const count = meta?.counts[tab.key] ?? 0
+                        const active = activeCategory === tab.key
+                        return (
+                            <button
+                                key={tab.key}
+                                onClick={() => handleCategoryChange(tab.key)}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all whitespace-nowrap shrink-0 ${active
                                     ? 'bg-white text-slate-900 shadow-sm'
                                     : 'text-slate-500 hover:text-slate-700'
+                                    }`}
+                            >
+                                <Icon className={`w-3.5 h-3.5 ${active ? tab.color : 'text-slate-400'}`} />
+                                {tab.label}
+                                <span className={`text-[10px] ${active ? 'text-red-500' : 'text-slate-400'}`}>
+                                    {count}
+                                </span>
+                            </button>
+                        )
+                    })}
+                </div>
+
+                {/* Second row: Level filter + Date filters + Search */}
+                <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-2">
+                    {/* Level Filter Dropdown */}
+                    <div className="relative">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setLevelDropdownOpen(!levelDropdownOpen) }}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${activeLevel !== 'all'
+                                ? activeLevel === 'ERROR'
+                                    ? 'bg-red-50 text-red-700 border-red-200'
+                                    : activeLevel === 'WARN'
+                                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                                 }`}
                         >
-                            {tab.label}
-                            <span className={`ml-1.5 text-[10px] ${activeTab === tab.key ? 'text-red-500' : 'text-slate-400'}`}>
-                                {tab.count}
-                            </span>
+                            {activeLevel === 'all' ? 'All Levels' : activeLevel}
+                            <ChevronDown className="w-3 h-3" />
                         </button>
-                    ))}
-                </div>
+                        {levelDropdownOpen && (
+                            <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 min-w-[120px] py-1">
+                                {(['all', 'INFO', 'WARN', 'ERROR'] as LevelKey[]).map(level => (
+                                    <button
+                                        key={level}
+                                        onClick={(e) => { e.stopPropagation(); handleLevelChange(level) }}
+                                        className={`w-full text-left px-3 py-1.5 text-xs font-bold transition-colors ${activeLevel === level ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}
+                                    >
+                                        {level === 'all' ? 'All Levels' : (
+                                            <span className="flex items-center gap-2">
+                                                <span className={`w-1.5 h-1.5 rounded-full ${level === 'ERROR' ? 'bg-red-500' : level === 'WARN' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                                                {level}
+                                            </span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
 
-                <div className="h-6 w-px bg-slate-200 hidden sm:block" />
+                    <div className="h-6 w-px bg-slate-200 hidden sm:block" />
 
-                {/* Date Filters */}
-                <div className="flex items-center gap-1.5 w-full sm:w-auto">
-                    <CalendarDays className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <input
-                        type="date"
-                        value={startDate}
-                        onChange={e => { setStartDate(e.target.value); setPage(1) }}
-                        className="px-2 py-1 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-red-300 focus:ring-1 focus:ring-red-100 flex-1 sm:flex-none min-w-0"
-                    />
-                    <span className="text-slate-400 text-xs">to</span>
-                    <input
-                        type="date"
-                        value={endDate}
-                        onChange={e => { setEndDate(e.target.value); setPage(1) }}
-                        className="px-2 py-1 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-red-300 focus:ring-1 focus:ring-red-100 flex-1 sm:flex-none min-w-0"
-                    />
-                </div>
+                    {/* Date Filters */}
+                    <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                        <CalendarDays className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <input
+                            type="date"
+                            value={startDate}
+                            onChange={e => { setStartDate(e.target.value); setPage(1) }}
+                            className="px-2 py-1 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-red-300 focus:ring-1 focus:ring-red-100 flex-1 sm:flex-none min-w-0"
+                        />
+                        <span className="text-slate-400 text-xs">to</span>
+                        <input
+                            type="date"
+                            value={endDate}
+                            onChange={e => { setEndDate(e.target.value); setPage(1) }}
+                            className="px-2 py-1 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-red-300 focus:ring-1 focus:ring-red-100 flex-1 sm:flex-none min-w-0"
+                        />
+                    </div>
 
-                {/* Search */}
-                <div className="relative w-full sm:w-auto sm:ml-auto">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                    <input
-                        type="text"
-                        placeholder="Search logs..."
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-red-300 focus:ring-1 focus:ring-red-100 w-full sm:w-44"
-                    />
+                    {/* Search */}
+                    <div className="relative w-full sm:w-auto sm:ml-auto">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                        <input
+                            type="text"
+                            placeholder="Search logs..."
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-red-300 focus:ring-1 focus:ring-red-100 w-full sm:w-44"
+                        />
+                    </div>
                 </div>
             </div>
 
@@ -261,13 +362,13 @@ export default function SystemLogsPage() {
             <div className="flex-1 bg-white rounded-xl border border-slate-100 shadow-sm flex flex-col min-h-0 overflow-hidden">
 
                 {/* Desktop Table Header (hidden on mobile) */}
-                <div className="hidden lg:grid grid-cols-[140px_1fr_130px_1fr_110px_90px_70px] gap-3 px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest shrink-0">
+                <div className="hidden lg:grid grid-cols-[140px_1fr_150px_1fr_100px_90px_70px] gap-3 px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest shrink-0">
                     <span>Timestamp</span>
                     <span>Employee</span>
                     <span>Action</span>
                     <span>Details</span>
                     <span>Source</span>
-                    <span>Type</span>
+                    <span>Category</span>
                     <span>Level</span>
                 </div>
 
@@ -298,7 +399,7 @@ export default function SystemLogsPage() {
                                     {/* Desktop row (lg+) */}
                                     <div 
                                         onClick={() => setExpandedLogId(expandedLogId === log.id ? null : log.id)}
-                                        className={`hidden lg:grid grid-cols-[140px_1fr_130px_1fr_110px_90px_70px] gap-3 px-4 py-2.5 border-b border-slate-50 transition-colors cursor-pointer items-center ${expandedLogId === log.id ? 'bg-slate-50' : 'hover:bg-slate-50/50'}`}
+                                        className={`hidden lg:grid grid-cols-[140px_1fr_150px_1fr_100px_90px_70px] gap-3 px-4 py-2.5 border-b border-slate-50 transition-colors cursor-pointer items-center ${expandedLogId === log.id ? 'bg-slate-50' : 'hover:bg-slate-50/50'}`}
                                     >
                                         {/* Timestamp */}
                                         <div>
@@ -320,7 +421,7 @@ export default function SystemLogsPage() {
                                         <div className="flex items-center gap-1.5">
                                             {getActionIcon(log.action)}
                                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getActionBadge(log.action)}`}>
-                                                {log.action.replace('_', ' ')}
+                                                {formatActionLabel(log.action)}
                                             </span>
                                         </div>
 
@@ -330,10 +431,10 @@ export default function SystemLogsPage() {
                                         {/* Source */}
                                         <p className="text-xs font-semibold text-slate-600 truncate">{log.source}</p>
 
-                                        {/* Type */}
+                                        {/* Category */}
                                         <div>
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit ${log.type === 'timekeeping' ? 'bg-violet-50 text-violet-700 border-violet-200' : log.type === 'device' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                                                {log.type === 'timekeeping' ? 'Timekeeping' : log.type === 'device' ? 'Device' : 'System'}
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit capitalize ${getCategoryBadge(log.category)}`}>
+                                                {log.category || 'system'}
                                             </span>
                                         </div>
 
@@ -363,8 +464,8 @@ export default function SystemLogsPage() {
                                                 </div>
                                             </div>
                                             <div className="flex flex-col gap-1 items-end">
-                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${log.type === 'timekeeping' ? 'bg-violet-50 text-violet-700 border-violet-200' : log.type === 'device' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                                                    {log.type === 'timekeeping' ? 'Time' : log.type === 'device' ? 'Dev' : 'Sys'}
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 capitalize ${getCategoryBadge(log.category)}`}>
+                                                    {log.category || 'system'}
                                                 </span>
                                                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${getLevelBadge(log.level)}`}>
                                                     {log.level || 'INFO'}
@@ -375,7 +476,7 @@ export default function SystemLogsPage() {
                                             <div className="flex items-center gap-1">
                                                 {getActionIcon(log.action)}
                                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getActionBadge(log.action)}`}>
-                                                    {log.action.replace('_', ' ')}
+                                                    {formatActionLabel(log.action)}
                                                 </span>
                                             </div>
                                             {log.source && (
@@ -421,7 +522,7 @@ export default function SystemLogsPage() {
                                                         </div>
                                                     )}
 
-                                                    {/* Render other primitive info fields, stripping objects/arrays and sensitive terms */}
+                                                    {/* Render other primitive info fields, stripping objects/arrays and internal fields */}
                                                     {Object.entries(log.metadata).filter(([key, val]) => 
                                                         key !== 'updates' && 
                                                         key !== 'error' && 
@@ -429,7 +530,8 @@ export default function SystemLogsPage() {
                                                         key !== 'body' && 
                                                         key !== 'password' &&
                                                         key !== 'changedFields' &&
-                                                        typeof val !== 'object' // Strip out raw arrays/objects
+                                                        key !== 'category' &&  // Don't show category in metadata details
+                                                        typeof val !== 'object'
                                                     ).length > 0 && (
                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                                                             {Object.entries(log.metadata).filter(([key, val]) => 
@@ -439,6 +541,7 @@ export default function SystemLogsPage() {
                                                                 key !== 'body' && 
                                                                 key !== 'password' &&
                                                                 key !== 'changedFields' &&
+                                                                key !== 'category' &&
                                                                 typeof val !== 'object'
                                                             ).map(([key, value]) => (
                                                                 <div key={key} className="flex flex-col gap-1 bg-slate-50 p-3 rounded-lg border border-slate-100">

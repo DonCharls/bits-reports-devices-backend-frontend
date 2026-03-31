@@ -37,14 +37,13 @@ function SidebarInner({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollaps
 
   const currentStatus = searchParams.get('status') || 'Active';
   const isInactivePage = pathname === '/hr/employees' && currentStatus === 'Inactive';
-  const isAuditPage = pathname === '/hr/adjust';
   const isOnEmployees = pathname === '/hr/employees';
-  const isOnReports = pathname === '/hr/reports' || isAuditPage;
+  const isOnReports = pathname.startsWith('/hr/reports');
+  const isOnAdjust = pathname === '/hr/adjust';
   const isOnOrganization = pathname.startsWith('/hr/departments') || pathname.startsWith('/hr/branches');
   const isOnShifts = pathname.startsWith('/hr/shifts');
 
   const [employeesOpen, setEmployeesOpen] = useState(isOnEmployees || isInactivePage);
-  const [reportsOpen, setReportsOpen] = useState(isOnReports);
 
   // All rendered <li> items in order for indicator measurement
   const allItems = [
@@ -53,7 +52,8 @@ function SidebarInner({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollaps
     { href: '/hr/employees', matchPrefix: '/hr/employees' },
     { href: '/hr/shifts', matchPrefix: '/hr/shifts' },
     { href: '/hr/departments', matchFn: (p: string) => p.startsWith('/hr/departments') || p.startsWith('/hr/branches') },
-    { href: '/hr/reports', matchFn: (p: string) => p.startsWith('/hr/reports') || p === '/hr/adjust' },
+    { href: '/hr/reports', matchFn: (p: string) => p.startsWith('/hr/reports') },
+    { href: '/hr/adjust' },
   ];
 
   const activeIndex = allItems.findIndex(item =>
@@ -78,7 +78,7 @@ function SidebarInner({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollaps
   useEffect(() => {
     const timer = setTimeout(updateIndicator, 320);
     return () => clearTimeout(timer);
-  }, [employeesOpen, reportsOpen, collapsed, updateIndicator]);
+  }, [employeesOpen, collapsed, updateIndicator]);
 
   const labelStyle = {
     opacity: collapsed ? 0 : 1,
@@ -253,59 +253,32 @@ function SidebarInner({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollaps
             </Link>
           </li>
 
-          {/* Reports (with submenu) */}
+          {/* Reports (simple link — no submenu) */}
           <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
-            <div className="flex items-center relative z-10">
-              <Link
-                href="/hr/reports"
-                onClick={() => setIsMobileOpen(false)}
-                className={`flex items-center gap-4 py-3 flex-1 ${isOnReports ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
-                style={{ paddingLeft: '12px' }}
-                title={collapsed ? 'Reports' : undefined}
-              >
-                <FileText size={22} className={`shrink-0 ${isOnReports ? 'text-[#E60000]' : 'text-white'}`} />
-                <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Reports</span>
-              </Link>
-              {!collapsed && (
-                <button
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setReportsOpen(o => !o); }}
-                  className={`p-2 mr-2 rounded-lg transition-colors shrink-0 ${isOnReports ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
-                  title="Toggle submenu"
-                >
-                  <ChevronDown
-                    size={16}
-                    style={{ transition: 'transform 300ms cubic-bezier(0.4, 0, 0.2, 1)', transform: reportsOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                  />
-                </button>
-              )}
-            </div>
+            <Link
+              href="/hr/reports"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-4 py-3 relative z-10 ${isOnReports ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
+              title={collapsed ? 'Reports' : undefined}
+            >
+              <FileText size={22} className={`shrink-0 ${isOnReports ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Reports</span>
+            </Link>
+          </li>
 
-            {/* Adjustment Logs sub-item */}
-            {!collapsed && (
-              <div
-                style={{
-                  maxHeight: reportsOpen ? '56px' : '0px',
-                  overflow: 'hidden',
-                  transition: 'max-height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-                }}
-              >
-                <div className="pl-4 pr-3 pb-2 relative z-10">
-                  <Link
-                    href="/hr/adjust"
-                    onClick={() => setIsMobileOpen(false)}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${isAuditPage
-                      ? 'text-[#E60000]'
-                      : isOnReports
-                        ? 'text-[#E60000]/60 hover:text-[#E60000]'
-                        : 'text-white/60 hover:text-white'
-                      }`}
-                  >
-                    <History size={15} className="shrink-0" />
-                    Adjustment Logs
-                  </Link>
-                </div>
-              </div>
-            )}
+          {/* Adjustment Logs (top-level tab) */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <Link
+              href="/hr/adjust"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-4 py-3 relative z-10 ${isOnAdjust ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
+              title={collapsed ? 'Adjustment Logs' : undefined}
+            >
+              <History size={22} className={`shrink-0 ${isOnAdjust ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Adjustments</span>
+            </Link>
           </li>
 
         </ul>

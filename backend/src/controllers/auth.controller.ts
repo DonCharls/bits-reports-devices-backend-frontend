@@ -100,12 +100,34 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
         if (!employee || !employee.password) {
             res.status(401).json({ success: false, message: 'Invalid credentials' });
+
+            // Log failed login — unknown user
+            await audit({
+                action: 'FAILED_LOGIN',
+                level: 'WARN',
+                entityType: 'Account',
+                source: 'admin-panel',
+                details: `Failed login attempt for email "${email}" — account not found`,
+                metadata: { category: 'auth', email, reason: 'account_not_found', ip: req.ip }
+            });
             return;
         }
 
         const isPasswordValid = await bcrypt.compare(password, employee.password);
         if (!isPasswordValid) {
             res.status(401).json({ success: false, message: 'Invalid credentials' });
+
+            // Log failed login — wrong password
+            await audit({
+                action: 'FAILED_LOGIN',
+                level: 'WARN',
+                entityType: 'Account',
+                entityId: employee.id,
+                performedBy: employee.id,
+                source: 'admin-panel',
+                details: `Failed login attempt for ${employee.email} — invalid password`,
+                metadata: { category: 'auth', email: employee.email, reason: 'invalid_password', ip: req.ip }
+            });
             return;
         }
 
@@ -114,6 +136,18 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             res.status(403).json({
                 success: false,
                 message: 'Your account has been deactivated. Please contact your administrator.'
+            });
+
+            // Log blocked login — inactive account
+            await audit({
+                action: 'FAILED_LOGIN',
+                level: 'WARN',
+                entityType: 'Account',
+                entityId: employee.id,
+                performedBy: employee.id,
+                source: 'admin-panel',
+                details: `Blocked login for deactivated account ${employee.email}`,
+                metadata: { category: 'auth', email: employee.email, reason: 'account_inactive', status: employee.employmentStatus, ip: req.ip }
             });
             return;
         }
@@ -193,7 +227,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             performedBy: employee.id,
             source: 'admin-panel',
             details: `User ${employee.email} logged in successfully`,
-            metadata: { role: employee.role, email: employee.email }
+            metadata: { category: 'auth', role: employee.role, email: employee.email }
         });
 
 
@@ -321,6 +355,7 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
                 performedBy: req.user.employeeId,
                 source: 'admin-panel',
                 details: `User logged out`,
+                metadata: { category: 'auth' }
             });
         }
 

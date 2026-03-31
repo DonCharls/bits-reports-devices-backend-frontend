@@ -63,7 +63,8 @@ export const createDevice = async (req: Request, res: Response) => {
             entityId: device.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Added new device "${device.name}" (${device.ip})`
+            details: `Added new device "${device.name}" (${device.ip})`,
+            metadata: { category: 'device' }
         });
 
         res.status(201).json({ success: true, message: `Device "${device.name}" added successfully`, device });
@@ -119,7 +120,7 @@ export const updateDevice = async (req: Request, res: Response) => {
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Updated device "${device.name}" (${device.ip})`,
-            metadata: changes.length > 0 ? { updates: changes } : undefined
+            metadata: changes.length > 0 ? { category: 'device', updates: changes } : { category: 'device' }
         });
 
         res.json({ success: true, message: `Device "${device.name}" updated. Please test the connection.`, device });
@@ -147,7 +148,8 @@ export const deleteDevice = async (req: Request, res: Response) => {
             entityId: id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Removed device "${existing.name}"`
+            details: `Removed device "${existing.name}"`,
+            metadata: { category: 'device' }
         });
 
         console.log(`[Devices] Deleted device ID ${id}: "${existing.name}"`);
@@ -315,7 +317,8 @@ export const reconcileDevice = async (req: Request, res: Response) => {
                 entityId: id,
                 performedBy: req.user?.employeeId,
                 source: 'admin-panel',
-                details: `Reconciled device: pushed ${report.pushed.length}, removed ${report.deleted.length}`
+                details: `Reconciled device: pushed ${report.pushed.length}, removed ${report.deleted.length}`,
+                metadata: { category: 'device' }
             });
         }
 
@@ -359,7 +362,8 @@ export const toggleDevice = async (req: Request, res: Response) => {
             entityId: updated.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Device sync was ${state}`
+            details: `Device sync was ${state}`,
+            metadata: { category: 'device' }
         });
 
         return res.json({ success: true, message: `Sync ${state} for "${updated.name}"`, device: updated });

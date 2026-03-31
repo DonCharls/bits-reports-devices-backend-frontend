@@ -8,9 +8,11 @@ import {
     updateAttendance,
     streamAttendance,
     getAttendanceAuditLogs,
+    getAdjustments,
+    reviewAdjustment,
 } from '../controllers/attendance.controller';
 import { authenticate } from '../middleware/auth.middleware';
-import { adminOrHR } from '../middleware/role.middleware';
+import { adminOrHR, adminOnly } from '../middleware/role.middleware';
 
 const router = Router();
 
@@ -189,6 +191,72 @@ router.get('/employee/:id', getEmployeeHistory);
  *         description: List of audit log entries
  */
 router.get('/audit-logs', getAttendanceAuditLogs);
+
+/**
+ * @swagger
+ * /api/attendance/adjustments:
+ *   get:
+ *     summary: Get attendance adjustment requests
+ *     tags: [Attendance]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, approved, rejected]
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of adjustment requests
+ */
+router.get('/adjustments', getAdjustments);
+
+/**
+ * @swagger
+ * /api/attendance/adjustments/{id}/review:
+ *   put:
+ *     summary: Approve or reject an attendance adjustment (Admin only)
+ *     tags: [Attendance]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - action
+ *             properties:
+ *               action:
+ *                 type: string
+ *                 enum: [approve, reject]
+ *               rejectionReason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Adjustment reviewed
+ */
+router.put('/adjustments/:id/review', adminOnly, reviewAdjustment);
 
 /**
  * @swagger

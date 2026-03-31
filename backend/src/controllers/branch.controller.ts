@@ -47,7 +47,8 @@ export const createBranch = async (req: Request, res: Response) => {
             entityId: branch.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Created new branch "${branch.name}"`
+            details: `Created new branch "${branch.name}"`,
+            metadata: { category: 'config' }
         });
 
         res.status(201).json({ success: true, branch });
@@ -95,7 +96,7 @@ export const renameBranch = async (req: Request, res: Response) => {
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Renamed branch to "${branch.name}"`,
-            metadata: changes.length > 0 ? { updates: changes } : undefined
+            metadata: changes.length > 0 ? { category: 'config', updates: changes } : { category: 'config' }
         });
 
         res.json({ success: true, branch });
@@ -143,7 +144,8 @@ export const deleteBranch = async (req: Request, res: Response) => {
             entityId: id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Deleted branch "${existing.name}"`
+            details: `Deleted branch "${existing.name}"`,
+            metadata: { category: 'config' }
         });
 
         res.json({ success: true, message: `Branch "${existing.name}" deleted` });

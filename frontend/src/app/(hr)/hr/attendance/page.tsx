@@ -67,7 +67,7 @@ function AttendanceContent() {
   const [actionLoading, setActionLoading] = useState(false);
   const [editCheckIn, setEditCheckIn] = useState('');
   const [editCheckOut, setEditCheckOut] = useState('');
-  const [editStatus, setEditStatus] = useState('present');
+
   const [editReason, setEditReason] = useState('');
   const [stats, setStats] = useState({ onTime: 0, late: 0, absent: 0, total: 0, avgHours: '0', totalOT: '0', totalUT: '0' });
 
@@ -280,7 +280,7 @@ function AttendanceContent() {
     setEditingLog(row);
     setEditCheckIn(toTimeInput(row.checkIn));
     setEditCheckOut(toTimeInput(row.checkOut));
-    setEditStatus(row.status === 'late' ? 'late' : row.status === 'absent' ? 'absent' : 'present');
+
     setEditReason('');
   };
 
@@ -295,7 +295,6 @@ function AttendanceContent() {
       const body: any = { reason: editReason };
       if (editCheckIn) body.checkInTime = `${editingLog.date}T${editCheckIn}:00+08:00`;
       if (editCheckOut) body.checkOutTime = `${editingLog.date}T${editCheckOut}:00+08:00`;
-      if (!editCheckIn && !editCheckOut) body.status = editStatus;
 
       const res = await fetch(`/api/attendance/${editingLog.id}`, {
         method: 'PUT',
@@ -677,14 +676,12 @@ function AttendanceContent() {
                   <p className="text-xs font-medium text-amber-800">This employee has no existing clock-in record for this day. Changes cannot be saved.</p>
                 </div>
               )}
-              <div className="space-y-1">
-                <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Attendance Status</label>
-                <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20">
-                  <option value="present">Present</option>
-                  <option value="late">Late</option>
-                  <option value="absent">Absent</option>
-                </select>
+              <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl flex gap-3">
+                <Clock size={16} className="text-blue-500 shrink-0 mt-0.5" />
+                <p className="text-[10px] text-blue-800 leading-relaxed font-medium">
+                  <strong className="block mb-0.5 tracking-tight uppercase">Auto-Computed Status</strong>
+                  Status will be automatically determined based on the employee&apos;s assigned shift schedule and the recorded time-in / time-out.
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -699,16 +696,22 @@ function AttendanceContent() {
                 </div>
               </div>
               <div className="space-y-1">
-                <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Reason for Adjustment</label>
+                <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Reason for Adjustment <span className="text-red-500">*</span></label>
                 <textarea value={editReason} onChange={(e) => setEditReason(e.target.value)}
                   placeholder="e.g., Biometric error, Official business..."
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl h-16 text-xs outline-none focus:ring-2 focus:ring-red-500/20 resize-none" />
+                  className={`w-full p-3 bg-slate-50 border rounded-xl h-16 text-xs outline-none focus:ring-2 focus:ring-red-500/20 resize-none ${!editReason.trim() ? 'border-red-300' : 'border-slate-200'}`} />
+                {!editReason.trim() && (
+                  <p className="text-[10px] text-red-500 font-medium flex items-center gap-1">
+                    <AlertCircle size={10} />
+                    Reason is required. Please provide a reason before submitting.
+                  </p>
+                )}
               </div>
               <div className="bg-amber-50 border border-amber-100 p-3 rounded-xl flex gap-3 shadow-sm">
                 <AlertCircle size={18} className="text-amber-600 shrink-0" />
                 <p className="text-[10px] text-amber-800 leading-relaxed font-medium">
-                  <strong className="block mb-0.5 tracking-tight uppercase">Audit Log Notice</strong>
-                  These changes will be logged under your account for audit purposes.
+                  <strong className="block mb-0.5 tracking-tight uppercase">Approval Required</strong>
+                  Your adjustment will be submitted for admin approval and logged under your account.
                 </p>
               </div>
             </div>
@@ -716,7 +719,7 @@ function AttendanceContent() {
               <button onClick={() => setShowCancelModal(true)} className="flex-1 px-4 py-3.5 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">Cancel</button>
               <button
                 onClick={handleApplyChanges}
-                disabled={actionLoading || String(editingLog.id).startsWith('absent-')}
+                disabled={actionLoading || String(editingLog.id).startsWith('absent-') || !editReason.trim()}
                 className="flex-1 px-4 py-3.5 bg-red-600 text-white rounded-xl text-sm font-black shadow-lg shadow-red-600/30 hover:bg-red-700 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {actionLoading && <Loader2 size={15} className="animate-spin" />}
@@ -746,7 +749,7 @@ function AttendanceContent() {
       {/* Success toast */}
       {showSuccessToast && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 z-[110]">
-          <span className="text-sm font-bold tracking-tight">Record corrected and logged successfully!</span>
+          <span className="text-sm font-bold tracking-tight">Adjustment submitted for admin approval!</span>
         </div>
       )}
     </div>

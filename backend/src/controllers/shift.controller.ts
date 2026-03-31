@@ -117,7 +117,8 @@ export const createShift = async (req: Request, res: Response) => {
             entityId: shift.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Created new shift "${shift.name}" (${shift.shiftCode})`
+            details: `Created new shift "${shift.name}" (${shift.shiftCode})`,
+            metadata: { category: 'config' }
         });
 
         res.status(201).json({ success: true, shift });
@@ -225,7 +226,7 @@ export const updateShift = async (req: Request, res: Response) => {
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Updated shift "${shift.name}" (${shift.shiftCode})`,
-            metadata: changes.length > 0 ? { updates: changes } : undefined
+            metadata: changes.length > 0 ? { category: 'config', updates: changes } : { category: 'config' }
         });
 
         res.json({ success: true, shift });
@@ -255,7 +256,8 @@ export const toggleShift = async (req: Request, res: Response) => {
             entityId: shift.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Shift "${shift.name}" was ${shift.isActive ? 'activated' : 'deactivated'}`
+            details: `Shift "${shift.name}" was ${shift.isActive ? 'activated' : 'deactivated'}`,
+            metadata: { category: 'config' }
         });
 
         res.json({ success: true, shift, message: `Shift ${shift.isActive ? 'activated' : 'deactivated'}` });
@@ -292,7 +294,8 @@ export const deleteShift = async (req: Request, res: Response) => {
             entityId: id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Deleted shift "${existing.name}"`
+            details: `Deleted shift "${existing.name}"`,
+            metadata: { category: 'config' }
         });
 
         res.json({ success: true, message: `Shift "${existing.name}" deleted` });

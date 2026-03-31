@@ -532,6 +532,16 @@ async function syncSingleDevice(dbDevice: {
                 ip: dbDevice.ip,
                 isActive: true,
             });
+
+            // Persist device connect event to audit log
+            void audit({
+                action: 'DEVICE_CONNECT',
+                entityType: 'Device',
+                entityId: dbDevice.id,
+                source: 'device-sync',
+                details: `Device "${dbDevice.name}" (${dbDevice.ip}) came online`,
+                metadata: { category: 'device', deviceName: dbDevice.name, ip: dbDevice.ip }
+            });
         }
 
                 // ENFORCE SOURCE OF TRUTH: Force the device's clock to match the Backend Server Time
@@ -597,14 +607,27 @@ async function syncSingleDevice(dbDevice: {
 
                 // Logic: Prevent duplicates within 1 minute (accidental double-scans)
                 if (lastLog) {
-                    const diffMs = utcTime.getTime() - lastLog.timestamp.getTime();
+                    const diffMs = Math.abs(utcTime.getTime() - lastLog.timestamp.getTime());
                     const diffMinutes = diffMs / (1000 * 60);
 
                     // Only skip if it's within 1 minute (likely accidental double-scan)
-                    if (diffMinutes < 1) continue;
+                    if (diffMinutes < 1) {
+                        // Log duplicate punch detection
+                        void audit({
+                            action: 'DUPLICATE_PUNCH',
+                            level: 'WARN',
+                            entityType: 'Attendance',
+                            entityId: employee.id,
+                            performedBy: employee.id,
+                            source: 'device-sync',
+                            details: `Duplicate punch detected for ${employee.firstName} ${employee.lastName} (${Math.round(diffMs / 1000)}s apart)`,
+                            metadata: { category: 'attendance', employeeId: employee.id, zkId: zkUserId, diffSeconds: Math.round(diffMs / 1000), deviceId: dbDevice.id }
+                        });
+                        continue;
+                    }
                 }
 
-                // 3. Check for exact duplicate in DB
+                // 3. Check for exact duplicate in DB (same timestamp + same employee)
                 const exists = await prisma.attendanceLog.findUnique({
                     where: {
                         timestamp_employeeId: {
@@ -614,25 +637,38 @@ async function syncSingleDevice(dbDevice: {
                     }
                 });
 
-                if (!exists) {
-                    await prisma.attendanceLog.create({
-                        data: {
-                            timestamp: utcTime,  // Store UTC time
-                            employeeId: employee.id,
-                            status: log.status,
-                        },
+                if (exists) {
+                    // Exact-timestamp duplicate — log it and skip
+                    void audit({
+                        action: 'DUPLICATE_PUNCH',
+                        level: 'WARN',
+                        entityType: 'Attendance',
+                        entityId: employee.id,
+                        performedBy: employee.id,
+                        source: 'device-sync',
+                        details: `Duplicate punch detected for ${employee.firstName} ${employee.lastName} (exact timestamp match)`,
+                        metadata: { category: 'attendance', employeeId: employee.id, zkId: zkUserId, diffSeconds: 0, deviceId: dbDevice.id }
                     });
-                    newCount++;
+                    continue;
+                }
 
-                    // ── Advance the in-memory watermark tracker ───────────
-                    // We track the maximum UTC timestamp across all successfully
-                    // inserted logs so that after the loop we can persist the new
-                    // high-water mark. Using a null-check + comparison ensures we
-                    // always end up with the latest timestamp even if logs arrive
-                    // out of order.
-                    if (latestInsertedTimestamp === null || utcTime > latestInsertedTimestamp) {
-                        latestInsertedTimestamp = utcTime;
-                    }
+                await prisma.attendanceLog.create({
+                    data: {
+                        timestamp: utcTime,  // Store UTC time
+                        employeeId: employee.id,
+                        status: log.status,
+                    },
+                });
+                newCount++;
+
+                // ── Advance the in-memory watermark tracker ───────────
+                // We track the maximum UTC timestamp across all successfully
+                // inserted logs so that after the loop we can persist the new
+                // high-water mark. Using a null-check + comparison ensures we
+                // always end up with the latest timestamp even if logs arrive
+                // out of order.
+                if (latestInsertedTimestamp === null || utcTime > latestInsertedTimestamp) {
+                    latestInsertedTimestamp = utcTime;
                 }
             } catch (logErr) {
                 console.error(`[ZK] Error processing log:`, logErr);
@@ -720,6 +756,17 @@ async function syncSingleDevice(dbDevice: {
                 name: dbDevice.name,
                 ip: dbDevice.ip,
                 isActive: false,
+            });
+
+            // Persist device disconnect event to audit log
+            void audit({
+                action: 'DEVICE_DISCONNECT',
+                level: 'WARN',
+                entityType: 'Device',
+                entityId: dbDevice.id,
+                source: 'device-sync',
+                details: `Device "${dbDevice.name}" (${dbDevice.ip}) went offline`,
+                metadata: { category: 'device', deviceName: dbDevice.name, ip: dbDevice.ip, error: zkErrMsg(deviceErr) }
             });
         }
 

@@ -1,176 +1,125 @@
 "use client"
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { History, Search, CalendarSearch, X, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { History, Search, CalendarSearch, X, ChevronLeft, ChevronRight, Loader2, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/ui/SortableHeader';
 
-interface AuditLog {
+interface Adjustment {
   id: number;
-  field: string;
-  oldValue: string | null;
-  newValue: string | null;
-  reason: string | null;
-  createdAt: string;
+  attendanceId: number;
+  originalCheckIn: string | null;
+  originalCheckOut: string | null;
+  requestedCheckIn: string | null;
+  requestedCheckOut: string | null;
+  reason: string;
+  status: string;
+  rejectionReason: string | null;
+  submittedAt: string;
+  reviewedAt: string | null;
   attendance: {
+    date: string;
     employee: {
       firstName: string;
       lastName: string;
+      middleName?: string | null;
+      suffix?: string | null;
       branch: string | null;
-      role: string;
+      Department?: { name: string } | null;
     };
   };
-  adjustedBy: {
-    firstName: string;
-    lastName: string;
-    role: string;
-  };
+  submittedBy: { firstName: string; lastName: string };
+  reviewedBy: { firstName: string; lastName: string } | null;
 }
 
-const fieldLabels: Record<string, string> = {
-  checkInTime: 'Time-In',
-  checkOutTime: 'Time-Out',
-  status: 'Status',
-};
-
-function formatValue(field: string, value: string | null): string {
-  if (!value) return 'None';
-  if (field === 'status') {
-    const lower = value.toLowerCase();
-    if (lower === 'present') return 'On Time';
-    return value.charAt(0).toUpperCase() + value.slice(1);
-  }
-  // ISO date string → formatted 12-hour time
+function formatTime(iso: string | null): string {
+  if (!iso) return '—';
   try {
-    const d = new Date(value);
-    if (isNaN(d.getTime())) return value;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '—';
     return d.toLocaleTimeString('en-US', {
-      timeZone: 'Asia/Manila',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
+      timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true,
     });
-  } catch {
-    return value;
-  }
+  } catch { return '—'; }
 }
 
 function formatTimestamp(iso: string): string {
   try {
     const d = new Date(iso);
     return d.toLocaleString('en-US', {
-      timeZone: 'Asia/Manila',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
+      timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: true,
     });
-  } catch {
-    return iso;
-  }
+  } catch { return iso; }
 }
 
-function getChangeColor(field: string, newValue: string | null): string {
-  if (!newValue) return 'text-emerald-600';
-  if (field === 'status') {
-    const lower = newValue.toLowerCase();
-    return lower === 'late' ? 'text-yellow-500' : 'text-emerald-600';
-  }
-  if (field === 'checkInTime') {
-    try {
-      const d = new Date(newValue);
-      if (!isNaN(d.getTime())) {
-        // Convert to PHT and check if after 8:30 AM
-        const pht = new Date(d.getTime() + 8 * 60 * 60 * 1000);
-        const mins = pht.getUTCHours() * 60 + pht.getUTCMinutes();
-        return mins > 8 * 60 + 30 ? 'text-yellow-500' : 'text-emerald-600';
-      }
-    } catch { }
-  }
-  return 'text-emerald-600';
+function formatDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-US', {
+      timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric',
+    });
+  } catch { return iso; }
 }
+
+function empName(emp: any): string {
+  if (!emp) return 'Unknown';
+  return `${emp.firstName}${emp.middleName ? ` ${emp.middleName[0]}.` : ''} ${emp.lastName}${emp.suffix ? ` ${emp.suffix}` : ''}`;
+}
+
+const statusConfig: Record<string, { label: string; bg: string; text: string; border: string; icon: any }> = {
+  pending: { label: 'Pending', bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200', icon: Clock },
+  approved: { label: 'Approved', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', icon: CheckCircle2 },
+  rejected: { label: 'Rejected', bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', icon: XCircle },
+};
 
 export default function AdjustmentsPage() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [branchFilter, setBranchFilter] = useState("All Branches");
+  const [statusFilter, setStatusFilter] = useState("");
   const [logDate, setLogDate] = useState("");
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const logDateRef = useRef<HTMLInputElement>(null);
+  const dragScrollRef = useHorizontalDragScroll();
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [branches, setBranches] = useState<string[]>(["All Branches"]);
-  const dragScrollRef = useHorizontalDragScroll();
+  const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
-  const fetchLogs = useCallback(async () => {
+  const fetchAdjustments = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       params.set('page', String(currentPage));
       params.set('limit', String(itemsPerPage));
       if (searchQuery) params.set('search', searchQuery);
-      if (branchFilter && branchFilter !== 'All Branches') params.set('branch', branchFilter);
-      if (logDate) params.set('date', logDate);
+      if (statusFilter) params.set('status', statusFilter);
 
-      const res = await fetch(`/api/attendance/audit-logs?${params.toString()}`, { credentials: 'include' });
+      const res = await fetch(`/api/attendance/adjustments?${params.toString()}`, { credentials: 'include' });
       if (res.status === 401) { window.location.href = '/login'; return; }
-      if (!res.ok) {
-        const errData = await res.json().catch(() => null);
-        throw new Error(errData?.message || `Server error ${res.status}`);
-      }
       const data = await res.json();
 
       if (data.success) {
-        setAuditLogs(data.data);
+        setAdjustments(data.data);
         setTotalCount(data.meta.total);
         setTotalPages(data.meta.totalPages);
-
-        // Extract unique branches for the filter
-        const branchSet = new Set<string>();
-        data.data.forEach((log: AuditLog) => {
-          if (log.attendance?.employee?.branch) {
-            branchSet.add(log.attendance.employee.branch);
-          }
-        });
-        setBranches(prev => {
-          const merged = new Set([...prev, ...branchSet]);
-          return Array.from(merged).sort();
-        });
       }
     } catch (err) {
-      console.error('Failed to fetch audit logs:', err);
+      console.error('Failed to fetch adjustments:', err);
     } finally {
       setLoading(false);
     }
-  }, [currentPage, searchQuery, branchFilter, logDate]);
+  }, [currentPage, searchQuery, statusFilter]);
 
-  // Also fetch all branches on mount
-  useEffect(() => {
-    fetch('/api/branches', { credentials: 'include' })
-      .then(r => r.json())
-      .then(d => {
-        if (d.success) {
-          const names = (d.branches || d.data || []).map((b: any) => b.name);
-          setBranches(names);
-        }
-      })
-      .catch(() => { });
-  }, []);
+  useEffect(() => { fetchAdjustments(); }, [fetchAdjustments]);
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, statusFilter, logDate]);
 
-  useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, branchFilter, logDate]);
+  const { sortedData: sortedAdjustments, sortKey, sortOrder, handleSort } = useTableSort<Adjustment>({
+    initialData: adjustments
+  });
+  const sortKeyStr = sortKey as string | null;
 
   const formatDateLabel = (dateStr: string) => {
     if (!dateStr) return "Select Date";
@@ -178,202 +127,143 @@ export default function AdjustmentsPage() {
     return `${day}/${month}/${year}`;
   };
 
-  const groupedLogs = useMemo(() => {
-    const groups: { key: string; logs: AuditLog[] }[] = [];
-    const groupMap = new Map<string, AuditLog[]>();
-    auditLogs.forEach((log) => {
-      const emp = log.attendance?.employee;
-      const adj = log.adjustedBy;
-      const key = `${adj?.firstName}_${adj?.lastName}_${emp?.firstName}_${emp?.lastName}_${log.createdAt.slice(0, 16)}`;
-      if (!groupMap.has(key)) {
-        const arr: AuditLog[] = [];
-        groupMap.set(key, arr);
-        groups.push({ key, logs: arr });
-      }
-      if (log.oldValue !== log.newValue) {
-        groupMap.get(key)!.push(log);
-      }
-    });
-
-    return groups.filter(g => g.logs.length > 0).map(group => {
-      const first = group.logs[0];
-      const emp = first.attendance?.employee;
-      const adjuster = first.adjustedBy;
-      const employeeName = emp ? `${emp.firstName}${(emp as any).middleName ? ` ${(emp as any).middleName[0]}.` : ''} ${emp.lastName}${(emp as any).suffix ? ` ${(emp as any).suffix}` : ''}` : 'Unknown';
-      const adjusterName = adjuster ? `${adjuster.firstName} ${adjuster.lastName}` : 'System';
-      const branch = emp?.branch || '—';
-      const reason = group.logs.find(l => l.reason)?.reason || '—';
-
-      return {
-        ...group,
-        createdAt: first.createdAt,
-        adjusterName,
-        employeeName,
-        branch,
-        reason,
-        first
-      };
-    });
-  }, [auditLogs]);
-
-  const { sortedData: sortedGroupedLogs, sortKey, sortOrder, handleSort } = useTableSort({
-    initialData: groupedLogs
-  });
-  const sortKeyStr = sortKey as string | null;
-
-  const CustomSelect = ({ value, options, onChange, id }: any) => {
-    const isOpen = openDropdown === id;
-    return (
-      <div className="relative min-w-[180px]">
-        <button
-          onClick={(e) => { e.stopPropagation(); setOpenDropdown(isOpen ? null : id); }}
-          className={`w-full flex items-center justify-between px-5 py-3 bg-[#df0808] text-white rounded-lg text-xs font-bold transition-all ${isOpen ? 'rounded-b-none' : 'shadow-md'}`}
-        >
-          <span>{value}</span>
-          {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
-        {isOpen && (
-          <div className="absolute top-full left-0 right-0 z-50 flex flex-col pt-1">
-            <button
-              className="w-full text-left px-5 py-3 bg-[#c21414] text-white hover:bg-red-500 transition-colors text-xs font-bold first:mt-0 mt-px rounded-sm shadow-sm"
-              onClick={() => {
-                onChange("All Branches");
-                setOpenDropdown(null);
-              }}
-            >
-              All Branches
-            </button>
-            {options.map((opt: string) => (
-              <button
-                key={opt}
-                className="w-full text-left px-5 py-3 bg-[#c21414] text-white hover:bg-red-500 transition-colors text-xs font-bold first:mt-0 mt-px rounded-sm last:rounded-b-lg shadow-sm"
-                onClick={() => {
-                  onChange(opt);
-                  setOpenDropdown(null);
-                }}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
-    <div className="space-y-6 relative" onClick={() => setOpenDropdown(null)}>
+    <div className="space-y-6">
       <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-800 tracking-tight leading-none">Adjustment Logs</h1>
-          <p className="text-slate-500 text-sm font-medium mt-1">Full audit trail of manual biometric data modifications</p>
+          <p className="text-slate-500 text-sm font-medium mt-1">Track attendance adjustment requests and their approval status</p>
         </div>
       </div>
 
-      <div className="flex flex-col md:flex-row items-center bg-white p-2 rounded-2xl border border-slate-200 shadow-sm gap-4" onClick={(e) => e.stopPropagation()}>
+      {/* Filters */}
+      <div className="flex flex-col md:flex-row items-center bg-white p-2 rounded-2xl border border-slate-200 shadow-sm gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search employee or admin..."
+            type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search employee or HR..."
             className="w-full md:w-64 pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-red-400/20 outline-none transition-all"
           />
         </div>
-
         <div className="flex flex-wrap items-center gap-2 ml-auto">
           <div className="relative">
-            <input
-              type="date"
-              ref={logDateRef}
-              value={logDate}
-              onChange={(e) => setLogDate(e.target.value)}
-              className="absolute opacity-0 pointer-events-none"
-            />
-            <button
-              onClick={() => logDateRef.current?.showPicker()}
-              className="min-w-[180px] flex items-center justify-between px-5 py-3 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 outline-none shadow-sm hover:border-red-200 transition-all"
-            >
+            <input type="date" ref={logDateRef} value={logDate} onChange={(e) => setLogDate(e.target.value)}
+              className="absolute opacity-0 pointer-events-none" />
+            <button onClick={() => logDateRef.current?.showPicker()}
+              className="min-w-[180px] flex items-center justify-between px-5 py-3 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 outline-none shadow-sm hover:border-red-200 transition-all">
               <div className="flex items-center gap-3">
                 <CalendarSearch size={14} className="text-slate-400" />
                 <span>{formatDateLabel(logDate)}</span>
               </div>
               {logDate && (
-                <X
-                  size={14}
-                  className="text-slate-400 hover:text-red-500 transition-colors"
-                  onClick={(e) => { e.stopPropagation(); setLogDate(""); }}
-                />
+                <X size={14} className="text-slate-400 hover:text-red-500 transition-colors"
+                  onClick={(e) => { e.stopPropagation(); setLogDate(""); }} />
               )}
             </button>
           </div>
-          <CustomSelect id="branch" value={branchFilter} options={branches} onChange={setBranchFilter} />
+
+          {/* Status filter buttons */}
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            {[
+              { value: '', label: 'All' },
+              { value: 'pending', label: 'Pending' },
+              { value: 'approved', label: 'Approved' },
+              { value: 'rejected', label: 'Rejected' },
+            ].map(s => (
+              <button key={s.value} onClick={() => setStatusFilter(s.value)}
+                className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider transition-all ${statusFilter === s.value
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+                }`}>
+                {s.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
+      {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div ref={dragScrollRef} className="overflow-x-auto scrollbar-hide">
-          <table className="w-full text-left text-sm border-collapse table-auto min-w-[900px]">
+          <table className="w-full text-left text-sm border-collapse table-auto min-w-[1100px]">
             <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
               <tr>
-                <SortableHeader label="Timestamp" sortKey="createdAt" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-3.5" />
-                <SortableHeader label="Adjusted By" sortKey="adjusterName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-3.5" />
-                <SortableHeader label="Branch" sortKey="branch" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-3.5" />
-                <SortableHeader label="Target Employee" sortKey="employeeName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-3.5" />
-                <th className="px-4 py-3.5">Modified Field</th>
-                <th className="px-4 py-3.5">Changes Made</th>
-                <th className="px-4 py-3.5 text-right pr-10">Reason</th>
+                <SortableHeader label="Submitted" sortKey="submittedAt" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-3.5" />
+                <SortableHeader label="Employee" sortKey="attendance.employee.lastName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-3.5" />
+                <th className="px-4 py-3.5">Original Time</th>
+                <th className="px-4 py-3.5">Requested Time</th>
+                <th className="px-4 py-3.5">Reason</th>
+                <SortableHeader label="Submitted By" sortKey="submittedBy.lastName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-3.5" />
+                <SortableHeader label="Status" sortKey="status" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-3.5 text-center" />
+                <th className="px-4 py-3.5">Reviewed By</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-24 text-center">
+                  <td colSpan={8} className="px-6 py-24 text-center">
                     <div className="flex items-center justify-center gap-2 text-slate-400">
                       <Loader2 className="w-5 h-5 animate-spin" />
-                      <span className="font-bold uppercase text-[10px] tracking-widest">Loading audit logs...</span>
+                      <span className="font-bold uppercase text-[10px] tracking-widest">Loading adjustments...</span>
                     </div>
                   </td>
                 </tr>
-              ) : sortedGroupedLogs.length > 0 ? sortedGroupedLogs.map((group) => (
-                <tr key={group.key} className="hover:bg-red-50 transition-colors duration-200 group cursor-default">
-                  <td className="px-4 py-2.5 font-mono text-[10px] text-slate-500 whitespace-nowrap align-top">{formatTimestamp(group.createdAt)}</td>
-                  <td className="px-4 py-2.5 font-bold text-slate-700 underline decoration-red-100 underline-offset-4 decoration-2 align-top">{group.adjusterName}</td>
-                  <td className="px-4 py-2.5 font-medium text-slate-500 text-xs align-top">{group.branch}</td>
-                  <td className="px-4 py-2.5 font-bold text-slate-700 align-top">{group.employeeName}</td>
-                  <td className="px-4 py-2.5 align-top">
-                    <div className="flex flex-col gap-1.5">
-                      {group.logs.map((log: any) => (
-                        <span key={log.id} className="text-[10px] font-black uppercase tracking-tight text-slate-600">
-                          {fieldLabels[log.field] || log.field}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5 align-top">
-                    <div className="flex flex-col gap-1.5">
-                      {group.logs.map((log: any) => (
-                        <div key={log.id} className="flex items-center gap-2 whitespace-nowrap">
-                          <span className="text-[10px] text-slate-400 line-through decoration-slate-300">
-                            {formatValue(log.field, log.oldValue)}
-                          </span>
-                          <span className={`text-xs font-black ${getChangeColor(log.field, log.newValue)}`}>
-                            → {formatValue(log.field, log.newValue)}
-                          </span>
+              ) : sortedAdjustments.length > 0 ? sortedAdjustments.map((adj) => {
+                const sc = statusConfig[adj.status] || statusConfig.pending;
+                const StatusIcon = sc.icon;
+                return (
+                  <tr key={adj.id} className="hover:bg-red-50/40 transition-colors duration-200 cursor-default">
+                    <td className="px-4 py-3 font-mono text-[10px] text-slate-500 whitespace-nowrap">
+                      {formatTimestamp(adj.submittedAt)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="font-bold text-slate-700 text-sm">{empName(adj.attendance?.employee)}</p>
+                      <p className="text-[10px] text-slate-400 font-medium">{adj.attendance?.employee?.branch || '—'} • {adj.attendance?.employee?.Department?.name || '—'}</p>
+                      <p className="text-[10px] text-slate-400 font-medium mt-0.5">{formatDate(adj.attendance?.date)}</p>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="text-[10px] text-slate-500">
+                        <div>In: <span className="font-mono font-bold">{formatTime(adj.originalCheckIn)}</span></div>
+                        <div>Out: <span className="font-mono font-bold">{formatTime(adj.originalCheckOut)}</span></div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="text-[10px] text-emerald-600 font-bold">
+                        <div>In: <span className="font-mono">{formatTime(adj.requestedCheckIn)}</span></div>
+                        <div>Out: <span className="font-mono">{formatTime(adj.requestedCheckOut)}</span></div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 max-w-[200px]">
+                      <p className="text-[11px] font-medium text-slate-600 leading-relaxed truncate" title={adj.reason}>{adj.reason}</p>
+                      {adj.rejectionReason && (
+                        <p className="text-[10px] text-red-500 font-medium mt-1 truncate" title={adj.rejectionReason}>
+                          ❌ {adj.rejectionReason}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-bold text-slate-700 text-sm whitespace-nowrap">
+                      {adj.submittedBy ? `${adj.submittedBy.firstName} ${adj.submittedBy.lastName}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex items-center gap-1 font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${sc.bg} ${sc.text} ${sc.border}`}>
+                        <StatusIcon size={10} />
+                        {sc.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-500 whitespace-nowrap">
+                      {adj.reviewedBy ? (
+                        <div>
+                          <p className="font-bold text-slate-700">{adj.reviewedBy.firstName} {adj.reviewedBy.lastName}</p>
+                          {adj.reviewedAt && <p className="text-[10px] text-slate-400">{formatTimestamp(adj.reviewedAt)}</p>}
                         </div>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5 text-right pr-10 align-top">
-                    <p className="text-[11px] font-medium text-slate-500 leading-relaxed max-w-[200px] ml-auto">
-                      {group.reason}
-                    </p>
-                  </td>
-                </tr>
-              )) : (
+                      ) : '—'}
+                    </td>
+                  </tr>
+                );
+              }) : (
                 <tr>
-                  <td colSpan={7} className="px-6 py-24 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">
+                  <td colSpan={8} className="px-6 py-24 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">
                     No adjustment logs found
                   </td>
                 </tr>
@@ -388,32 +278,23 @@ export default function AdjustmentsPage() {
               Showing <span className="text-slate-700">{((currentPage - 1) * itemsPerPage) + 1}</span> to <span className="text-slate-700">{Math.min(currentPage * itemsPerPage, totalCount)}</span> of <span className="text-slate-700">{totalCount}</span> records
             </p>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-red-600 disabled:opacity-50 disabled:hover:text-slate-400 transition-all shadow-sm"
-              >
+              <button onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1}
+                className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-red-600 disabled:opacity-50 transition-all shadow-sm">
                 <ChevronLeft size={16} />
               </button>
               <div className="flex items-center gap-1">
                 {[...Array(Math.min(totalPages, 5))].map((_, i) => {
                   const pageNum = totalPages <= 5 ? i + 1 : Math.max(1, Math.min(currentPage - 2, totalPages - 4)) + i;
                   return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className={`w-8 h-8 rounded-lg text-xs font-black transition-all ${currentPage === pageNum ? 'bg-red-600 text-white shadow-md shadow-red-200' : 'bg-white border border-slate-200 text-slate-400 hover:bg-slate-50'}`}
-                    >
+                    <button key={pageNum} onClick={() => setCurrentPage(pageNum)}
+                      className={`w-8 h-8 rounded-lg text-xs font-black transition-all ${currentPage === pageNum ? 'bg-red-600 text-white shadow-md shadow-red-200' : 'bg-white border border-slate-200 text-slate-400 hover:bg-slate-50'}`}>
                       {pageNum}
                     </button>
                   );
                 })}
               </div>
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                disabled={currentPage === totalPages || totalPages === 0}
-                className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-red-600 disabled:opacity-50 disabled:hover:text-slate-400 transition-all shadow-sm"
-              >
+              <button onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages || totalPages === 0}
+                className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-red-600 disabled:opacity-50 transition-all shadow-sm">
                 <ChevronRight size={16} />
               </button>
             </div>

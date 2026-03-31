@@ -7,6 +7,7 @@ import {
 } from '../services/attendance.service';
 import { prisma } from '../lib/prisma';
 import attendanceEmitter from '../lib/attendanceEmitter';
+import { audit } from '../lib/auditLogger';
 
 
 export const syncAttendance = async (req: Request, res: Response) => {
@@ -203,11 +204,18 @@ export const updateAttendance = async (req: Request, res: Response) => {
             return;
         }
 
-        const { checkInTime, checkOutTime, status, reason } = req.body;
+        const { checkInTime, checkOutTime, reason } = req.body;
         const adjustedById = req.user?.employeeId;
+        const userRole = req.user?.role;
 
         if (!adjustedById) {
             res.status(401).json({ success: false, message: 'Not authenticated' });
+            return;
+        }
+
+        // Reason is always required
+        if (!reason || !String(reason).trim()) {
+            res.status(400).json({ success: false, message: 'Reason is required. Please provide a reason for this adjustment.' });
             return;
         }
 
@@ -220,27 +228,56 @@ export const updateAttendance = async (req: Request, res: Response) => {
             return;
         }
 
+        // ── HR users: create a pending adjustment (do NOT apply immediately) ──
+        if (userRole === 'HR') {
+            const adjustment = await prisma.attendanceAdjustment.create({
+                data: {
+                    attendanceId: recordId,
+                    submittedById: adjustedById,
+                    originalCheckIn: existing.checkInTime,
+                    originalCheckOut: existing.checkOutTime,
+                    requestedCheckIn: checkInTime ? new Date(checkInTime) : null,
+                    requestedCheckOut: checkOutTime ? new Date(checkOutTime) : null,
+                    reason: String(reason).trim(),
+                    status: 'pending',
+                }
+            });
+
+            res.json({
+                success: true,
+                message: 'Adjustment submitted for admin approval.',
+                data: adjustment,
+                pending: true,
+            });
+
+            // Log adjustment submission
+            void audit({
+                action: 'ADJUSTMENT_SUBMIT',
+                entityType: 'Attendance',
+                entityId: recordId,
+                performedBy: adjustedById,
+                source: 'admin-panel',
+                details: `Attendance adjustment submitted for record #${recordId}`,
+                metadata: { category: 'attendance', adjustmentId: adjustment.id, reason: String(reason).trim(), requestedCheckIn: checkInTime || null, requestedCheckOut: checkOutTime || null }
+            });
+            return;
+        }
+
+        // ── ADMIN users: apply changes immediately (existing behavior) ──
         const updateData: any = {};
         const auditEntries: { field: string; oldValue: string | null; newValue: string | null }[] = [];
 
-        // Track checkInTime changes
         if (checkInTime) {
             const oldVal = existing.checkInTime ? existing.checkInTime.toISOString() : null;
             const newDate = new Date(checkInTime);
             updateData.checkInTime = newDate;
             updateData.checkin_updated = new Date();
-            auditEntries.push({
-                field: 'checkInTime',
-                oldValue: oldVal,
-                newValue: newDate.toISOString(),
-            });
+            auditEntries.push({ field: 'checkInTime', oldValue: oldVal, newValue: newDate.toISOString() });
 
-            // Auto-recalculate status based on new checkInTime vs shift
             const shift = existing.employee?.Shift;
             if (shift) {
                 const [startH, startM] = shift.startTime.split(':').map(Number);
                 const grace = shift.graceMinutes || 0;
-                // Convert checkIn to PHT for comparison
                 const checkInPHT = new Date(newDate.getTime() + 8 * 60 * 60 * 1000);
                 const checkInMinutes = checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes();
                 const shiftStartMinutes = startH * 60 + startM + grace;
@@ -251,47 +288,32 @@ export const updateAttendance = async (req: Request, res: Response) => {
                     updateData.status = 'late';
                 }
 
-                // If status changed, log it
                 if (updateData.status !== existing.status) {
-                    auditEntries.push({
-                        field: 'status',
-                        oldValue: existing.status,
-                        newValue: updateData.status,
-                    });
+                    auditEntries.push({ field: 'status', oldValue: existing.status, newValue: updateData.status });
                 }
             }
         }
 
-        // Track checkOutTime changes
         if (checkOutTime !== undefined) {
             const oldVal = existing.checkOutTime ? existing.checkOutTime.toISOString() : null;
             const newVal = checkOutTime ? new Date(checkOutTime) : null;
             updateData.checkOutTime = newVal;
             updateData.checkout_updated = new Date();
-            auditEntries.push({
-                field: 'checkOutTime',
-                oldValue: oldVal,
-                newValue: newVal ? newVal.toISOString() : null,
-            });
+            auditEntries.push({ field: 'checkOutTime', oldValue: oldVal, newValue: newVal ? newVal.toISOString() : null });
         }
 
-        // Track manual status override
-        if (status && !updateData.status) {
-            auditEntries.push({
-                field: 'status',
-                oldValue: existing.status,
-                newValue: status.toLowerCase(),
-            });
-            updateData.status = status.toLowerCase();
+
+
+        // Clear missing-checkout flag if a checkout time is being set
+        if (updateData.checkOutTime && existing.notes?.includes('No checkout recorded')) {
+            updateData.notes = existing.notes.replace(/\s*\|?\s*No checkout recorded.*$/i, '') || null;
         }
 
-        // Apply the update
         const updated = await prisma.attendance.update({
             where: { id: recordId },
             data: updateData
         });
 
-        // Create audit log entries
         if (auditEntries.length > 0) {
             await prisma.attendanceAuditLog.createMany({
                 data: auditEntries.map(entry => ({
@@ -305,11 +327,7 @@ export const updateAttendance = async (req: Request, res: Response) => {
             });
         }
 
-        // Emit SSE event so dashboards update in real-time
-        attendanceEmitter.emit('new-record', {
-            type: 'update',
-            record: updated,
-        });
+        attendanceEmitter.emit('new-record', { type: 'update', record: updated });
 
         res.json({
             success: true,
@@ -319,10 +337,7 @@ export const updateAttendance = async (req: Request, res: Response) => {
         });
     } catch (error: any) {
         console.error('Update Attendance Failed:', error);
-        res.status(500).json({
-            success: false,
-            message: 'An unexpected error occurred. Please try again.'
-        });
+        res.status(500).json({ success: false, message: 'An unexpected error occurred. Please try again.' });
     }
 };
 
@@ -432,6 +447,219 @@ export const getAttendanceAuditLogs = async (req: Request, res: Response) => {
       success: false,
       message: 'Failed to fetch audit logs',
     });
+  }
+};
+
+/**
+ * GET /api/attendance/adjustments
+ * Returns adjustment requests with filters: status, search, date
+ */
+export const getAdjustments = async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 15;
+    const statusFilter = (req.query.status as string) || '';
+    const search = (req.query.search as string) || '';
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (statusFilter) where.status = statusFilter;
+
+    if (search) {
+      where.OR = [
+        { attendance: { employee: { OR: [
+          { firstName: { contains: search, mode: 'insensitive' } },
+          { lastName: { contains: search, mode: 'insensitive' } },
+        ] } } },
+        { submittedBy: { OR: [
+          { firstName: { contains: search, mode: 'insensitive' } },
+          { lastName: { contains: search, mode: 'insensitive' } },
+        ] } },
+      ];
+    }
+
+    const [total, adjustments] = await Promise.all([
+      prisma.attendanceAdjustment.count({ where }),
+      prisma.attendanceAdjustment.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { submittedAt: 'desc' },
+        include: {
+          attendance: {
+            include: {
+              employee: {
+                select: { firstName: true, lastName: true, middleName: true, suffix: true, branch: true, Department: { select: { name: true } } }
+              }
+            }
+          },
+          submittedBy: { select: { firstName: true, lastName: true } },
+          reviewedBy: { select: { firstName: true, lastName: true } },
+        }
+      })
+    ]);
+
+    return res.json({
+      success: true,
+      data: adjustments,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) }
+    });
+  } catch (error: any) {
+    console.error('Error fetching adjustments:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch adjustments' });
+  }
+};
+
+/**
+ * PUT /api/attendance/adjustments/:id/review
+ * Admin-only: approve or reject a pending adjustment
+ * Body: { action: "approve" | "reject", rejectionReason?: string }
+ */
+export const reviewAdjustment = async (req: Request, res: Response) => {
+  try {
+    const adjustmentId = parseInt(req.params.id);
+    if (isNaN(adjustmentId)) {
+      return res.status(400).json({ success: false, message: 'Invalid adjustment ID' });
+    }
+
+    const { action, rejectionReason } = req.body;
+    const reviewerId = req.user?.employeeId;
+
+    if (!reviewerId) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+
+    if (!['approve', 'reject'].includes(action)) {
+      return res.status(400).json({ success: false, message: 'Action must be "approve" or "reject"' });
+    }
+
+    const adjustment = await prisma.attendanceAdjustment.findUnique({
+      where: { id: adjustmentId },
+      include: { attendance: { include: { employee: { include: { Shift: true } } } } }
+    });
+
+    if (!adjustment) {
+      return res.status(404).json({ success: false, message: 'Adjustment not found' });
+    }
+    if (adjustment.status !== 'pending') {
+      return res.status(400).json({ success: false, message: `Adjustment has already been ${adjustment.status}` });
+    }
+
+    if (action === 'reject') {
+      if (!rejectionReason || !String(rejectionReason).trim()) {
+        return res.status(400).json({ success: false, message: 'Rejection reason is required' });
+      }
+
+      await prisma.attendanceAdjustment.update({
+        where: { id: adjustmentId },
+        data: {
+          status: 'rejected',
+          reviewedById: reviewerId,
+          rejectionReason: String(rejectionReason).trim(),
+          reviewedAt: new Date(),
+        }
+      });
+
+      // Log rejection
+      void audit({
+          action: 'ADJUSTMENT_REJECT',
+          entityType: 'Attendance',
+          entityId: adjustment.attendanceId,
+          performedBy: reviewerId,
+          source: 'admin-panel',
+          details: `Adjustment #${adjustmentId} rejected`,
+          metadata: { category: 'attendance', adjustmentId, rejectionReason: String(rejectionReason).trim() }
+      });
+
+      return res.json({ success: true, message: 'Adjustment rejected' });
+    }
+
+    // ── APPROVE: apply the changes to the attendance record ──
+    const updateData: any = {};
+    const auditEntries: { field: string; oldValue: string | null; newValue: string | null }[] = [];
+    const existing = adjustment.attendance;
+
+    if (adjustment.requestedCheckIn) {
+      const oldVal = existing.checkInTime ? existing.checkInTime.toISOString() : null;
+      updateData.checkInTime = adjustment.requestedCheckIn;
+      updateData.checkin_updated = new Date();
+      auditEntries.push({ field: 'checkInTime', oldValue: oldVal, newValue: adjustment.requestedCheckIn.toISOString() });
+
+      // Recalculate status
+      const shift = existing.employee?.Shift;
+      if (shift) {
+        const [startH, startM] = shift.startTime.split(':').map(Number);
+        const grace = shift.graceMinutes || 0;
+        const checkInPHT = new Date(adjustment.requestedCheckIn.getTime() + 8 * 60 * 60 * 1000);
+        const checkInMinutes = checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes();
+        const shiftStartMinutes = startH * 60 + startM + grace;
+        updateData.status = checkInMinutes <= shiftStartMinutes ? 'present' : 'late';
+        if (updateData.status !== existing.status) {
+          auditEntries.push({ field: 'status', oldValue: existing.status, newValue: updateData.status });
+        }
+      }
+    }
+
+    if (adjustment.requestedCheckOut) {
+      const oldVal = existing.checkOutTime ? existing.checkOutTime.toISOString() : null;
+      updateData.checkOutTime = adjustment.requestedCheckOut;
+      updateData.checkout_updated = new Date();
+      auditEntries.push({ field: 'checkOutTime', oldValue: oldVal, newValue: adjustment.requestedCheckOut.toISOString() });
+    }
+
+    // Clear missing-checkout flag if a checkout is being set
+    if (updateData.checkOutTime && existing.notes?.includes('No checkout recorded')) {
+      updateData.notes = existing.notes.replace(/\s*\|?\s*No checkout recorded.*$/i, '') || null;
+    }
+
+    // Apply to attendance record
+    const updated = await prisma.attendance.update({
+      where: { id: adjustment.attendanceId },
+      data: updateData
+    });
+
+    // Create audit log entries
+    if (auditEntries.length > 0) {
+      await prisma.attendanceAuditLog.createMany({
+        data: auditEntries.map(entry => ({
+          attendanceId: adjustment.attendanceId,
+          adjustedById: adjustment.submittedById,
+          field: entry.field,
+          oldValue: entry.oldValue,
+          newValue: entry.newValue,
+          reason: adjustment.reason,
+        })),
+      });
+    }
+
+    // Update adjustment status
+    await prisma.attendanceAdjustment.update({
+      where: { id: adjustmentId },
+      data: {
+        status: 'approved',
+        reviewedById: reviewerId,
+        reviewedAt: new Date(),
+      }
+    });
+
+    // Emit SSE for real-time dashboard updates
+    attendanceEmitter.emit('new-record', { type: 'update', record: updated });
+
+    // Log approval
+    void audit({
+        action: 'ADJUSTMENT_APPROVE',
+        entityType: 'Attendance',
+        entityId: adjustment.attendanceId,
+        performedBy: reviewerId,
+        source: 'admin-panel',
+        details: `Adjustment #${adjustmentId} approved and applied`,
+        metadata: { category: 'attendance', adjustmentId, changesApplied: auditEntries.length }
+    });
+
+    return res.json({ success: true, message: 'Adjustment approved and applied' });
+  } catch (error: any) {
+    console.error('Error reviewing adjustment:', error);
+    return res.status(500).json({ success: false, message: 'Failed to review adjustment' });
   }
 };
 

@@ -125,7 +125,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         entityId: createdRecord.id,
                         performedBy: createdRecord.employeeId,
                         source: 'device-sync',
-                        details: `Employee checked in (${isLate ? 'Late' : 'On-time'})`
+                        details: `Employee checked in (${isLate ? 'Late' : 'On-time'})`,
+                        metadata: { category: 'attendance' }
                     });
 
                     const shift = createdRecord.employee?.Shift ?? null;
@@ -195,7 +196,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             entityId: updatedRecord.id,
                             performedBy: updatedRecord.employeeId,
                             source: 'device-sync',
-                            details: `Employee checked out (updated)`
+                            details: `Employee checked out (updated)`,
+                            metadata: { category: 'attendance' }
                         });
 
                         const shift = updatedRecord.employee?.Shift ?? null;
@@ -241,7 +243,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         entityId: updatedRecord2.id,
                         performedBy: updatedRecord2.employeeId,
                         source: 'device-sync',
-                        details: `Employee checked out`
+                        details: `Employee checked out`,
+                        metadata: { category: 'attendance' }
                     });
 
                     const shift2 = updatedRecord2.employee?.Shift ?? null;
@@ -410,7 +413,8 @@ export const autoCheckoutEmployees = async (): Promise<number> => {
                 action: 'AUTO_CHECKOUT',
                 entityType: 'System',
                 source: 'cron',
-                details: `Auto-checkout applied to ${count} records`
+                details: `Auto-checkout applied to ${count} records`,
+                metadata: { category: 'system', recordCount: count }
             });
         }
 
@@ -474,7 +478,8 @@ export const repairMissingCheckouts = async (): Promise<number> => {
                 action: 'FLAG_MISSING_CHECKOUT',
                 entityType: 'System',
                 source: 'startup-repair',
-                details: `Startup: Flagged ${flaggedCount} records with missing checkouts for manual review`
+                details: `Startup: Flagged ${flaggedCount} records with missing checkouts for manual review`,
+                metadata: { category: 'system', flaggedCount }
             });
         }
 

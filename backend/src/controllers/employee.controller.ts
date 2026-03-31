@@ -154,7 +154,7 @@ export const deleteEmployee = async (req: Request, res: Response) => {
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             details: `Employee ${employee.firstName} ${employee.lastName} deactivated`,
-            metadata: { previousStatus: employee.employmentStatus, newStatus: 'INACTIVE' }
+            metadata: { category: 'employee', previousStatus: employee.employmentStatus, newStatus: 'INACTIVE' }
         });
 
         res.json({
@@ -223,7 +223,7 @@ export const reactivateEmployee = async (req: Request, res: Response) => {
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             details: `Employee ${updatedEmployee.firstName} ${updatedEmployee.lastName} reactivated`,
-            metadata: { previousStatus: existingEmployee.employmentStatus, newStatus: 'ACTIVE' }
+            metadata: { category: 'employee', previousStatus: existingEmployee.employmentStatus, newStatus: 'ACTIVE' }
         });
 
         res.json({
@@ -322,7 +322,7 @@ export const createEmployee = async (req: Request, res: Response) => {
                 entityType: 'Employee',
                 performedBy: req.user?.employeeId,
                 details: `Failed to create employee: duplicate ${duplicateField}`,
-                metadata: { email, employeeNumber }
+                metadata: { category: 'employee', email, employeeNumber }
             });
 
             return res.status(400).json({
@@ -410,7 +410,7 @@ export const createEmployee = async (req: Request, res: Response) => {
             entityId: newEmployee.id,
             performedBy: req.user?.employeeId,
             details: `Created employee ${newEmployee.firstName} ${newEmployee.lastName}`,
-            metadata: { email, role: newEmployee.role, department, employeeNumber }
+            metadata: { category: 'employee', email, role: newEmployee.role, department, employeeNumber }
         });
 
         // ── Respond immediately — device sync happens in the background ──────
@@ -459,7 +459,7 @@ export const createEmployee = async (req: Request, res: Response) => {
             entityType: 'Employee',
             performedBy: req.user?.employeeId,
             details: `Failed to create employee due to server error: ${error.message}`,
-            metadata: { error: error.message }
+            metadata: { category: 'employee', error: error.message }
         });
 
         res.status(500).json({
@@ -513,7 +513,7 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
                 entityId: employeeId,
                 performedBy: req.user?.employeeId,
                 details: `Triggered fingerprint enrollment on device for ${emp?.firstName} ${emp?.lastName} (Finger ${finger})`,
-                metadata: { deviceId: device, fingerIndex: finger, zkId: emp?.zkId }
+                metadata: { category: 'employee', deviceId: device, fingerIndex: finger, zkId: emp?.zkId }
             });
 
             return res.status(200).json({
@@ -530,7 +530,7 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
                 entityId: employeeId,
                 performedBy: req.user?.employeeId,
                 details: `Failed to enroll fingerprint for ${emp?.firstName} ${emp?.lastName} (Finger ${finger}): ${result.message}`,
-                metadata: { deviceId: device, fingerIndex: finger, error: result.error || result.message }
+                metadata: { category: 'employee', deviceId: device, fingerIndex: finger, error: result.error || result.message }
             });
 
             return res.status(500).json({
@@ -551,7 +551,7 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
             entityId: isNaN(empId as number) ? undefined : empId,
             performedBy: req.user?.employeeId,
             details: `Exception while starting fingerprint enrollment: ${error.message}`,
-            metadata: { error: error.message, body: req.body }
+            metadata: { category: 'employee', error: error.message, body: req.body }
         });
 
         return res.status(500).json({
@@ -802,7 +802,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             details: `Updated employee ${updatedEmployee.firstName} ${updatedEmployee.lastName}`,
-            metadata: changes.length > 0 ? { updates: changes } : undefined
+            metadata: changes.length > 0 ? { category: 'employee', updates: changes } : { category: 'employee' }
         });
 
         res.json({
@@ -880,7 +880,7 @@ export const permanentDeleteEmployee = async (req: Request, res: Response) => {
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             details: `Permanently deleted employee ${employee.firstName} ${employee.lastName}`,
-            metadata: { email: employee.email, role: employee.role }
+            metadata: { category: 'employee', email: employee.email, role: employee.role }
         });
 
         res.json({
