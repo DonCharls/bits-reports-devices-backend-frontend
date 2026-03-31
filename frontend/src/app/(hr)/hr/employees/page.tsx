@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, Suspense, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Edit2, UserPlus, Search, Download, ChevronLeft, ChevronRight, Loader2, X, Fingerprint, CheckCircle2, WifiOff, Timer, AlertCircle, Key } from 'lucide-react';
+import { Edit2, UserPlus, Search, Download, ChevronLeft, ChevronRight, Loader2, X, Fingerprint, CheckCircle2, WifiOff, Timer, AlertCircle, Key, CreditCard } from 'lucide-react';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
 import { validateEmployeeId } from '@/lib/employeeValidation';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/ui/SortableHeader';
+import RFIDCardEnrollmentModal from './components/RFIDCardEnrollmentModal';
 
 type Toast = {
   id: number;
@@ -29,6 +30,7 @@ interface Employee {
   status: string;
   employeeNumber?: string;
   zkId?: number | null;
+  cardNumber?: number | null;
   Shift?: { id: number; name: string; startTime: string; endTime: string } | null;
   EmployeeDeviceEnrollment?: {
     enrolledAt: string;
@@ -113,6 +115,9 @@ function EmployeeDirectoryContent() {
     open: boolean; employeeId: number | null; employeeName: string;
   }>({ open: false, employeeId: null, employeeName: '' });
 
+  // ── RFID Card Enrollment state ──
+  const [cardEnrollOpen, setCardEnrollOpen] = useState<{ open: boolean, employeeId: number | null, employeeName: string }>({ open: false, employeeId: null, employeeName: '' });
+
   const [devices, setDevices] = useState<{ id: number; name: string; location: string | null; isActive: boolean }[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
   const [loadingDevices, setLoadingDevices] = useState(false);
@@ -185,6 +190,8 @@ function EmployeeDirectoryContent() {
     }
   };
 
+
+
   const [regForm, setRegForm] = useState({
     employeeNumber: "", firstName: "", lastName: "", email: "", phone: "", dept: "", branch: "", hireDate: "", shiftId: ""
   });
@@ -221,6 +228,7 @@ function EmployeeDirectoryContent() {
           status: e.employmentStatus === 'ACTIVE' ? 'Active' : 'Inactive',
           employeeNumber: e.employeeNumber,
           zkId: e.zkId ?? null,
+          cardNumber: e.cardNumber ?? null,
           Shift: e.Shift ?? null,
           EmployeeDeviceEnrollment: e.EmployeeDeviceEnrollment ?? [],
         })));
@@ -481,6 +489,7 @@ function EmployeeDirectoryContent() {
                 <SortableHeader label="ZK ID" sortKey="zkId" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 w-20" />
                 <SortableHeader label="Employee" sortKey="firstName" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
                 <SortableHeader label="Employee ID" sortKey="employeeNumber" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4" />
+                <th className="px-4 py-4">Badge</th>
                 <th className="px-4 py-4">Enrolled On</th>
                 <SortableHeader label="Department" sortKey="dept" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
                 <th className="px-6 py-4">Shift</th>
@@ -492,7 +501,7 @@ function EmployeeDirectoryContent() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-slate-400 font-bold text-xs">
+                  <td colSpan={10} className="px-6 py-12 text-center text-slate-400 font-bold text-xs">
                     Loading employees...
                   </td>
                 </tr>
@@ -511,6 +520,17 @@ function EmployeeDirectoryContent() {
                     {/* Employee ID */}
                     <td className="px-4 py-3 text-xs text-muted-foreground font-mono">
                       {emp.employeeNumber ?? '—'}
+                    </td>
+                    {/* Badge (RFID Card Number) */}
+                    <td className="px-4 py-3">
+                      {emp.cardNumber ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-100">
+                          <CreditCard className="w-3 h-3" />
+                          {emp.cardNumber}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground italic">—</span>
+                      )}
                     </td>
                     {/* Enrolled On (Device badges) */}
                     <td className="px-4 py-3">
@@ -615,6 +635,22 @@ function EmployeeDirectoryContent() {
                           );
                         })()}
 
+                        {/* RFID Badge Enrollment */}
+                        <button
+                          onClick={() => {
+                            const name = `${emp.firstName} ${emp.lastName}`;
+                            setCardEnrollOpen({ open: true, employeeId: emp.id!, employeeName: name });
+                          }}
+                          className={`p-2.5 rounded-xl transition-all active:scale-90 ${
+                            emp.cardNumber
+                              ? 'text-blue-500 hover:text-blue-700 hover:bg-blue-50'
+                              : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                          }`}
+                          title={emp.cardNumber ? `Badge #${emp.cardNumber}` : 'Enroll RFID Badge'}
+                        >
+                          <CreditCard className="w-4 h-4" />
+                        </button>
+
                         {/* Reset Password */}
                         <button
                           onClick={() => setConfirmResetPassword(emp)}
@@ -628,7 +664,7 @@ function EmployeeDirectoryContent() {
                   </tr>
                 ))
               ) : (
-                <tr><td colSpan={9} className="px-6 py-24 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">No matching employees found</td></tr>
+                <tr><td colSpan={10} className="px-6 py-24 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">No matching employees found</td></tr>
               )}
             </tbody>
           </table>
@@ -1161,6 +1197,19 @@ function EmployeeDirectoryContent() {
           </div>
         </div>
       )}
+
+      {/* ── RFID Card Enrollment Modal ── */}
+      <RFIDCardEnrollmentModal
+        isOpen={cardEnrollOpen.open}
+        employeeId={cardEnrollOpen.employeeId}
+        employeeName={cardEnrollOpen.employeeName}
+        onClose={() => setCardEnrollOpen({ open: false, employeeId: null, employeeName: '' })}
+        onSuccess={(msg) => {
+          showToast('success', 'Badge Enrolled', msg);
+          fetchData();
+        }}
+        onError={(msg) => showToast('error', 'Enrollment Failed', msg)}
+      />
 
       {/* ── Enrollment Loading Full-Screen Modal ── */}
       {(() => {

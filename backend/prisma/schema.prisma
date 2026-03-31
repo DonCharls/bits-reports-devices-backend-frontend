@@ -103,6 +103,7 @@ model Device {
 model Employee {
   id               Int              @id @default(autoincrement())
   zkId             Int?             @unique
+  cardNumber       Int?             @unique    // RFID badge card number (uint32 from device offset 35)
   firstName        String
   lastName         String
   role             Role             @default(USER)

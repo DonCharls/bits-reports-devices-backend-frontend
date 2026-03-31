@@ -812,7 +812,7 @@ export const syncZkData = async (): Promise<SyncZkDataResult> => {
     // NOTE: No top-level releaseDeviceLock() here — each device releases its own lock
 };
 
-export const addUserToDevice = async (zkId: number, name: string, role: string = 'USER', badgeNumber: string = ""): Promise<SyncResult> => {
+export const addUserToDevice = async (zkId: number, name: string, role: string = 'USER', cardNumber: number = 0): Promise<SyncResult> => {
     // addUserToDevice is triggered from the UI after employee creation.
     // Each device gets its own interactive lock inside the loop so that
     // writing to Device 1 does not block access to Device 2.
@@ -871,7 +871,7 @@ export const addUserToDevice = async (zkId: number, name: string, role: string =
                     if (String(occupant.userId).trim() === visibleId.trim()) {
                         // Same employee already in this slot — skip delete, just update name/role
                         console.log(`[ZK] Slot UID=${deviceUid} already belongs to "${name}" — updating in place.`);
-                        await zk.setUser(deviceUid, name, "", deviceRole, 0, visibleId);
+                        await zk.setUser(deviceUid, name, "", deviceRole, cardNumber, visibleId);
                     } else {
                         // A DIFFERENT user occupies this slot — refuse to overwrite
                         console.warn(`[ZK] ⚠ UID conflict on "${dbDevice.name}": slot UID=${deviceUid} is occupied by userId="${occupant.userId}" ("${occupant.name}") — refusing to overwrite with "${name}".`);
@@ -891,7 +891,7 @@ export const addUserToDevice = async (zkId: number, name: string, role: string =
                     console.log(`[ZK] Force-clearing UID=${deviceUid} on "${dbDevice.name}" before write...`);
                     try { await zk.deleteUser(deviceUid); } catch { /* slot already empty — ok */ }
                     await zk.clearUserFingerprints(deviceUid);
-                    await zk.setUser(deviceUid, name, "", deviceRole, 0, visibleId);
+                    await zk.setUser(deviceUid, name, "", deviceRole, cardNumber, visibleId);
                 }
 
                 await zk.refreshData();
@@ -974,7 +974,7 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
                 zkId: { not: null, gt: 1 }, // Skip Admin (zkId = 1)
                 employmentStatus: 'ACTIVE',
             },
-            select: { zkId: true, firstName: true, lastName: true, role: true }
+            select: { zkId: true, firstName: true, lastName: true, role: true, cardNumber: true }
         });
 
         if (employees.length === 0) {
@@ -1029,7 +1029,7 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
                         if (occupant) {
                             if (String(occupant.userId).trim() === visibleId.trim()) {
                                 // Same employee — update name/role in place, skip delete
-                                await zk.setUser(deviceUid, fullName, "", deviceRole, 0, visibleId);
+                                await zk.setUser(deviceUid, fullName, "", deviceRole, employee.cardNumber ?? 0, visibleId);
                                 console.log(`[ZK]   ✓ Updated: "${fullName}" → UID=${deviceUid} (slot already owned, skipped delete)`);
                                 successCount++;
                             } else {
@@ -1041,7 +1041,7 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
                             // Slot is empty — safe to clear and write
                             try { await zk.deleteUser(deviceUid); } catch { /* empty slot — ok */ }
                             await zk.clearUserFingerprints(deviceUid);
-                            await zk.setUser(deviceUid, fullName, "", deviceRole, 0, visibleId);
+                            await zk.setUser(deviceUid, fullName, "", deviceRole, employee.cardNumber ?? 0, visibleId);
                             console.log(`[ZK]   ✓ Written: "${fullName}" → UID=${deviceUid} on "${dbDevice.name}"`);
                             successCount++;
                         }
@@ -1102,7 +1102,7 @@ export const enrollEmployeeFingerprint = async (
     // 1. Load employee from DB
     const employee = await prisma.employee.findUnique({
         where: { id: employeeId },
-        select: { id: true, zkId: true, firstName: true, lastName: true },
+        select: { id: true, zkId: true, firstName: true, lastName: true, cardNumber: true },
     });
 
     if (!employee) {
@@ -1193,7 +1193,7 @@ export const enrollEmployeeFingerprint = async (
             console.log(`[Enrollment] User not found on device — force-clearing slot UID=${deviceUid} and adding (visibleId="${visibleId}")...`);
             try { await zk.deleteUser(deviceUid); } catch { /* slot empty — ok */ }
             await zk.clearUserFingerprints(deviceUid);
-            await zk.setUser(deviceUid, fullName, '', 0, 0, visibleId);
+            await zk.setUser(deviceUid, fullName, '', 0, employee.cardNumber ?? 0, visibleId);
             await zk.refreshData();
             console.log(`[Enrollment] User written to UID=${deviceUid}.`);
         } else if (userByVisibleId.uid !== deviceUid) {
@@ -1201,7 +1201,7 @@ export const enrollEmployeeFingerprint = async (
             console.warn(`[Enrollment] ⚠ User found at wrong UID=${userByVisibleId.uid} — re-writing to correct slot UID=${deviceUid}.`);
             try { await zk.deleteUser(deviceUid); } catch { /* slot may be empty */ }
             await zk.clearUserFingerprints(deviceUid);
-            await zk.setUser(deviceUid, fullName, '', 0, 0, visibleId);
+            await zk.setUser(deviceUid, fullName, '', 0, employee.cardNumber ?? 0, visibleId);
             await zk.refreshData();
             console.log(`[Enrollment] User re-written to UID=${deviceUid}.`);
         } else {
@@ -1248,6 +1248,128 @@ export const enrollEmployeeFingerprint = async (
         try { await zk.disconnect(); } catch { /* ignore */ }
         releaseDeviceLock(dbDevice.id);
     }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RFID BADGE CARD ENROLLMENT
+// Writes a card number into the user record on ALL active devices, then
+// persists it to the Employee DB row.
+// ─────────────────────────────────────────────────────────────────────────────
+export const enrollEmployeeCard = async (
+    employeeId: number,
+    cardNumber: number,
+): Promise<SyncResult> => {
+    console.log(`[CardEnroll] Starting for employee ${employeeId}, card ${cardNumber}...`);
+
+    // 1. Load employee from DB
+    const employee = await prisma.employee.findUnique({
+        where: { id: employeeId },
+        select: { id: true, zkId: true, firstName: true, lastName: true, role: true, cardNumber: true },
+    });
+
+    if (!employee) {
+        return { success: false, message: `Employee ${employeeId} not found in database.` };
+    }
+
+    if (!employee.zkId) {
+        return { success: false, message: `Employee ${employeeId} has no zkId assigned. Sync to device first.` };
+    }
+
+    // 2. Validate card number uniqueness
+    const existingHolder = await prisma.employee.findUnique({
+        where: { cardNumber },
+        select: { id: true, firstName: true, lastName: true },
+    });
+
+    if (existingHolder && existingHolder.id !== employeeId) {
+        return {
+            success: false,
+            message: `Card #${cardNumber} is already assigned to ${existingHolder.firstName} ${existingHolder.lastName}.`,
+            error: 'duplicate_card',
+        };
+    }
+
+    // 3. Write to ALL active devices
+    const fullName = `${employee.firstName} ${employee.lastName}`;
+    const visibleId = employee.zkId.toString();
+    const deviceUid = employee.zkId;
+    const deviceRole = employee.role === 'ADMIN' ? 14 : 0;
+
+    const dbDevices = await prisma.device.findMany({
+        where: { isActive: true, syncEnabled: true },
+        orderBy: { id: 'asc' },
+    });
+
+    if (dbDevices.length === 0) {
+        // No devices online — still save to DB so next reconcile pushes it
+        await prisma.employee.update({
+            where: { id: employeeId },
+            data: { cardNumber, updatedAt: new Date() },
+        });
+        return {
+            success: true,
+            message: `Card #${cardNumber} saved for ${fullName}, but no devices are online to sync.`,
+        };
+    }
+
+    let syncedCount = 0;
+    const failedDevices: string[] = [];
+
+    for (const dbDevice of dbDevices) {
+        await acquireInteractiveDeviceLock(dbDevice.id);
+        const zk = getDriver(dbDevice.ip, dbDevice.port);
+        try {
+            await connectWithRetry(zk, 1);
+
+            const deviceUsers = await zk.getUsers();
+            const occupant = deviceUsers.find((u: any) => u.uid === deviceUid);
+
+            if (occupant && String(occupant.userId).trim() !== visibleId.trim()) {
+                // Slot occupied by a different user — skip
+                console.warn(`[CardEnroll] ⚠ UID conflict on "${dbDevice.name}": slot UID=${deviceUid} occupied by "${occupant.name}" — skipping.`);
+                failedDevices.push(`${dbDevice.name} (UID conflict)`);
+                continue;
+            }
+
+            if (!occupant) {
+                // User not on device yet — write fresh
+                try { await zk.deleteUser(deviceUid); } catch { /* empty slot */ }
+                await zk.clearUserFingerprints(deviceUid);
+            }
+
+            // Write user record WITH card number
+            await zk.setUser(deviceUid, fullName, '', deviceRole, cardNumber, visibleId);
+            await zk.refreshData();
+
+            console.log(`[CardEnroll] ✓ Card #${cardNumber} → "${fullName}" on "${dbDevice.name}".`);
+            syncedCount++;
+        } catch (err: any) {
+            console.error(`[CardEnroll] Failed on "${dbDevice.name}": ${zkErrMsg(err)}`);
+            failedDevices.push(`${dbDevice.name} (${zkErrMsg(err)})`);
+        } finally {
+            try { await zk.disconnect(); } catch { /* ignore */ }
+            releaseDeviceLock(dbDevice.id);
+        }
+    }
+
+    // 4. Persist to DB
+    await prisma.employee.update({
+        where: { id: employeeId },
+        data: { cardNumber, updatedAt: new Date() },
+    });
+
+    const msg = syncedCount > 0
+        ? `Card #${cardNumber} enrolled for ${fullName}. Synced to ${syncedCount} device(s).`
+        : `Card #${cardNumber} saved for ${fullName}, but all devices failed to sync.`;
+
+    if (failedDevices.length > 0) {
+        console.warn(`[CardEnroll] Failed devices: ${failedDevices.join(', ')}`);
+    }
+
+    return {
+        success: true,
+        message: msg + (failedDevices.length > 0 ? ` Failed: ${failedDevices.join(', ')}` : ''),
+    };
 };
 
 

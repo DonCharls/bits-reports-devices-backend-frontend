@@ -6,6 +6,7 @@ import {
     reactivateEmployee,
     createEmployee,
     enrollEmployeeFingerprintController,
+    enrollEmployeeCardController,
     updateEmployee,
     permanentDeleteEmployee,
     resetEmployeePassword
@@ -13,7 +14,7 @@ import {
 import { authenticate } from '../middleware/auth.middleware';
 import { adminOrHR } from '../middleware/role.middleware';
 import { validate } from '../middleware/validation.middleware';
-import { createEmployeeValidator, employeeQueryValidator, enrollFingerprintValidator } from '../validators/employee.validator';
+import { createEmployeeValidator, employeeQueryValidator, enrollFingerprintValidator, enrollCardValidator } from '../validators/employee.validator';
 
 const router = Router();
 
@@ -149,6 +150,42 @@ router.post('/sync-to-device', syncEmployeesToDeviceController);
  *         description: Employee not found
  */
 router.post('/:id/enroll-fingerprint', validate(enrollFingerprintValidator), enrollEmployeeFingerprintController);
+
+/**
+ * @swagger
+ * /api/employees/{id}/enroll-card:
+ *   post:
+ *     summary: Enroll RFID badge card for employee
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Employee ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - cardNumber
+ *             properties:
+ *               cardNumber:
+ *                 type: integer
+ *                 description: RFID card number (uint32)
+ *                 example: 12345678
+ *     responses:
+ *       200:
+ *         description: Card enrolled successfully
+ *       409:
+ *         description: Card number already assigned to another employee
+ */
+router.post('/:id/enroll-card', validate(enrollCardValidator), enrollEmployeeCardController);
 
 // DELETE /api/employees/:id/permanent - Permanently delete an inactive employee
 router.delete('/:id/permanent', permanentDeleteEmployee);

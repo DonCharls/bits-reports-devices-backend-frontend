@@ -174,20 +174,6 @@ export default function AdminShiftsPage() {
             return
         }
 
-        const totalBreakMins = form.breaks.reduce((acc, b) => {
-            if (!b.start || !b.end) return acc;
-            const [startH, startM] = b.start.split(':').map(Number);
-            const [endH, endM] = b.end.split(':').map(Number);
-            let diff = (endH * 60 + endM) - (startH * 60 + startM);
-            if (diff < 0) diff += 24 * 60;
-            return acc + diff;
-        }, 0);
-
-        if (totalBreakMins > 120) {
-            setFormError('Total scheduled breaks cannot exceed 120 minutes (2 hours).')
-            return
-        }
-
         setFormLoading(true)
         setFormError('')
         try {

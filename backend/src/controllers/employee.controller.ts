@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
-import { syncEmployeesToDevice, enrollEmployeeFingerprint, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex } from '../services/zkServices';
+import { syncEmployeesToDevice, enrollEmployeeFingerprint, enrollEmployeeCard, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex } from '../services/zkServices';
 import { audit } from '../lib/auditLogger';
 import bcrypt from 'bcryptjs';
 import { generateRandomPassword } from '../utils/password.utils';
@@ -14,6 +14,7 @@ export const getAllEmployees = async (req: Request, res: Response) => {
             select: {
                 id: true,
                 zkId: true,
+                cardNumber: true,
                 employeeNumber: true,
                 firstName: true,
                 lastName: true,
@@ -539,6 +540,94 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
         return res.status(500).json({
             success: false,
             message: 'Failed to start enrollment',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+        });
+    }
+};
+
+// POST /api/employees/:id/enroll-card - Enroll RFID badge card for employee
+export const enrollEmployeeCardController = async (req: Request, res: Response) => {
+    try {
+        const id = req.params.id as string;
+        const employeeId = parseInt(id);
+
+        if (isNaN(employeeId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid employee ID',
+            });
+        }
+
+        const body = req.body || {};
+        const cardNumber = parseInt(body.cardNumber);
+
+        if (isNaN(cardNumber) || cardNumber < 1 || cardNumber > 4294967295) {
+            return res.status(400).json({
+                success: false,
+                message: 'Card number must be a valid uint32 (1–4294967295)',
+            });
+        }
+
+        console.log(`[API] Starting RFID card enrollment for employee ${employeeId}, card ${cardNumber}...`);
+
+        const result = await enrollEmployeeCard(employeeId, cardNumber);
+
+        if (result.success) {
+            const emp = await prisma.employee.findUnique({
+                where: { id: employeeId },
+                select: { firstName: true, lastName: true, zkId: true }
+            });
+
+            await audit({
+                action: 'UPDATE',
+                entityType: 'Employee',
+                entityId: employeeId,
+                performedBy: req.user?.employeeId,
+                details: `Enrolled RFID badge #${cardNumber} for ${emp?.firstName} ${emp?.lastName}`,
+                metadata: { cardNumber, zkId: emp?.zkId }
+            });
+
+            return res.status(200).json({
+                success: true,
+                message: result.message,
+            });
+        } else {
+            const statusCode = result.error === 'duplicate_card' ? 409 : 500;
+
+            await audit({
+                action: 'UPDATE',
+                level: 'ERROR',
+                entityType: 'Employee',
+                entityId: employeeId,
+                performedBy: req.user?.employeeId,
+                details: `Failed to enroll RFID badge #${cardNumber}: ${result.message}`,
+                metadata: { cardNumber, error: result.error || result.message }
+            });
+
+            return res.status(statusCode).json({
+                success: false,
+                message: result.message || 'Card enrollment failed',
+                error: result.error,
+            });
+        }
+
+    } catch (error: any) {
+        console.error('[API] Card enrollment error:', error);
+
+        const empId = req.params.id ? parseInt(req.params.id as string) : undefined;
+        await audit({
+            action: 'UPDATE',
+            level: 'ERROR',
+            entityType: 'Employee',
+            entityId: isNaN(empId as number) ? undefined : empId,
+            performedBy: req.user?.employeeId,
+            details: `Exception while enrolling RFID badge: ${error.message}`,
+            metadata: { error: error.message, body: req.body }
+        });
+
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to enroll RFID badge',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined,
         });
     }
