@@ -310,6 +310,182 @@ export class ZKDriver {
     }
 
     /**
+     * Internal utility to accurately extract the raw binary footprint of a fingerprint template
+     * from the various ZKTeco payload responses (CMD_DATA vs CMD_PREPARE_DATA).
+     */
+    private extractRawTemplate(execCmdResponse: Buffer): Buffer {
+        const CMD_DATA_ID = 0x05DD;
+        const CMD_PREPARE_DATA_ID = 0x05DC;
+        const TCP_MAGIC = Buffer.from([0x50, 0x50, 0x82, 0x7d]);
+
+        const firstCmdId = execCmdResponse.readUInt16LE(0);
+        let templateStart = 8; // fallback assuming standard 8-byte ZK header
+
+        if (firstCmdId === CMD_DATA_ID) {
+            // Direct CMD_DATA response — template immediately follows 8-byte header
+            templateStart = 8;
+        } else if (firstCmdId === CMD_PREPARE_DATA_ID) {
+            // CMD_PREPARE_DATA pattern — template is nested inside a secondary packet
+            for (let i = 8; i < execCmdResponse.length - 16; i++) {
+                if (execCmdResponse.compare(TCP_MAGIC, 0, 4, i, i + 4) === 0) {
+                    if (i + 16 <= execCmdResponse.length && execCmdResponse.readUInt16LE(i + 8) === CMD_DATA_ID) {
+                        templateStart = i + 16; // Skip inner TCP(8) + ZK_DATA(8)
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Search backward to chop off any trailing TCP ACK packets
+        let templateEnd = execCmdResponse.length;
+        for (let i = execCmdResponse.length - 20; i >= templateStart; i--) {
+            if (i + 4 <= execCmdResponse.length && execCmdResponse.compare(TCP_MAGIC, 0, 4, i, i + 4) === 0) {
+                templateEnd = i;
+                break;
+            }
+        }
+
+        return execCmdResponse.subarray(templateStart, templateEnd);
+    }
+
+    /**
+     * Get a specific fingerprint template for a given UID and finger index.
+     * Returns the raw buffer data if found, otherwise null.
+     */
+    async getFingerTemplate(uid: number, fingerIndex: number): Promise<Buffer | null> {
+        if (!this.zkInstance) throw new Error('Not connected');
+        const { COMMANDS } = require('node-zklib/constants');
+
+        const buf = Buffer.alloc(3);
+        buf.writeUInt16LE(uid, 0);
+        buf.writeUInt8(fingerIndex, 2);
+
+        try {
+            const result = await this.zkInstance.executeCmd(COMMANDS.CMD_USERTEMP_RRQ, buf);
+            
+            // Valid templates are usually large (e.g. 500+ bytes for VX10)
+            // Anything less or equal to ~100 bytes is typically an error framework packet
+            if (result && result.length > 100) {
+                const rawTemplate = this.extractRawTemplate(result as Buffer);
+
+                // ZKTeco template entries often include a 6-byte header inside the DATA packet:
+                // [TotalSize(2)] [UID(2)] [FID(1)] [Flag(1)] [RawTemplate(N)]
+                // We need to strip this before pushing to another device, otherwise
+                // setFingerTemplate() will wrap it again causing a "double-header" corruption.
+                if (rawTemplate.length > 6) {
+                    const reportedSize = rawTemplate.readUInt16LE(0);
+                    const reportedUid = rawTemplate.readUInt16LE(2);
+                    const reportedFinger = rawTemplate.readUInt8(4);
+                    const reportedFlag = rawTemplate.readUInt8(5);
+
+                    if (
+                        reportedSize === rawTemplate.length &&
+                        reportedUid === uid &&
+                        reportedFinger === fingerIndex &&
+                        reportedFlag === 1
+                    ) {
+                        const strippedTemplate = rawTemplate.subarray(6);
+                        console.log(
+                            `[ZKDriver] getFingerTemplate: Stripped 6-byte entry header. ` +
+                            `Raw biometric data size: ${strippedTemplate.length} bytes / ` +
+                            `Original size: ${rawTemplate.length} bytes.`
+                        );
+                        return strippedTemplate;
+                    }
+                }
+
+                return rawTemplate;
+            }
+            return null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    /**
+     * Read all enrolled fingerprint templates for a given UID.
+     * Returns an array of { finger, data } for every occupied slot (0-9).
+     *
+     * Reuses getFingerTemplate() which handles both CMD_DATA and
+     * CMD_PREPARE_DATA response formats via extractRawTemplate().
+     *
+     * SECURITY: Caller MUST zero the returned Buffer data after use
+     * by calling `data.fill(0)` on every returned template.
+     */
+    async readAllFingerprintTemplates(
+        uid: number
+    ): Promise<{ finger: number; data: Buffer }[]> {
+        const templates: { finger: number; data: Buffer }[] = [];
+        for (let finger = 0; finger <= 9; finger++) {
+            const data = await this.getFingerTemplate(uid, finger);
+            if (data && data.length > 0) {
+                templates.push({ finger, data });
+                console.log(`[ZKDriver] readAllFingerprintTemplates — UID=${uid} slot ${finger}: ${data.length} bytes`);
+            }
+        }
+        console.log(`[ZKDriver] readAllFingerprintTemplates — UID=${uid}: ${templates.length} occupied slot(s) found.`);
+        return templates;
+    }
+
+    /**
+     * Set a fingerprint template directly using its raw buffer data.
+     * Implements the ZKTeco multi-step upload protocol (PREPARE -> DATA -> CHECKSUM -> TMP_WRITE).
+     */
+    async setFingerTemplate(uid: number, fingerIndex: number, templateData: Buffer): Promise<void> {
+        if (!this.zkInstance) throw new Error('Not connected');
+        const { COMMANDS } = require('node-zklib/constants');
+
+        console.log(`[ZKDriver] Pushing fingerprint template to UID: ${uid}, Finger: ${fingerIndex} (Size: ${templateData.length} bytes)`);
+
+        try {
+            const templateSize = templateData.length;
+            
+            // The templateData MUST be the pure biometric data (starting with magic bytes like SS21),
+            // WITHOUT a 6-byte template entry header. The metadata (UID, FID, Size) is provided
+            // entirely within the tmpWritePayload envelope.
+            const prepPayload = Buffer.alloc(4);
+            prepPayload.writeUInt16LE(templateSize, 0); // bytes 2-3 are 0x00
+
+            const tmpWritePayload = Buffer.alloc(6);
+            tmpWritePayload.writeUInt16LE(uid, 0);
+            tmpWritePayload.writeUInt8(fingerIndex, 2);
+            tmpWritePayload.writeUInt8(1, 3); // 1 = valid template
+            tmpWritePayload.writeUInt16LE(templateSize, 4);
+
+            const zkInfo = this.zkInstance;
+
+            // Step 1: Lock the machine
+            await zkInfo.executeCmd(COMMANDS.CMD_DISABLEDEVICE, Buffer.from([0x00, 0x00, 0x00, 0x00]));
+
+            // Step 2: Delete existing template on target slot
+            const delBuf = Buffer.alloc(3);
+            delBuf.writeUInt16LE(uid, 0);
+            delBuf.writeUInt8(fingerIndex, 2);
+            await zkInfo.executeCmd(COMMANDS.CMD_DELETE_USERTEMP, delBuf).catch(() => {});
+
+            // Step 3-7: The official upload data exchange handshake
+            await zkInfo.executeCmd(COMMANDS.CMD_PREPARE_DATA, prepPayload);
+            await zkInfo.executeCmd(COMMANDS.CMD_DATA, templateData);
+            await zkInfo.executeCmd(COMMANDS.CMD_CHECKSUM_BUFFER, '');
+            await zkInfo.executeCmd(COMMANDS.CMD_TMP_WRITE, tmpWritePayload);
+            await zkInfo.executeCmd(COMMANDS.CMD_FREE_DATA, '');
+
+            // Step 8: Refresh internal maps
+            await zkInfo.executeCmd(COMMANDS.CMD_REFRESHDATA, '');
+
+            // Step 9: Unlock machine
+            await zkInfo.executeCmd(COMMANDS.CMD_ENABLEDEVICE, '');
+
+            console.log(`[ZKDriver] Successfully synchronized fingerprint for UID: ${uid}`);
+        } catch (error: any) {
+            console.error(`[ZKDriver] Failed to push template UID ${uid}:`, error.message);
+            // Attempt to re-enable device on failure to un-brick user interface
+            await this.zkInstance.executeCmd(COMMANDS.CMD_ENABLEDEVICE, '').catch(() => {});
+            throw new Error(`Failed to set fingerprint template: ${error.message || error}`);
+        }
+    }
+
+    /**
      * Get attendance logs
      */
     async getLogs(): Promise<DeviceLog[]> {

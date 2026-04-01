@@ -4,6 +4,7 @@ import { processAttendanceLogs } from './attendance.service';
 import deviceEmitter from '../lib/deviceEmitter';
 import { audit } from '../lib/auditLogger';
 
+
 interface SyncResult {
     success: boolean;
     message?: string;
@@ -430,6 +431,21 @@ async function triggerAutoReconcile(deviceId: number, deviceName: string): Promi
                     `Deleted: ${report.deleted.length}, ` +
                     `Needs enrollment: ${report.needsEnrollment.length}.`
                 );
+
+                // Emit enrollment-gap event so the device dashboard card can show
+                // a warning badge when employees have no fingerprints on this device.
+                if (report.needsEnrollment.length > 0) {
+                    deviceEmitter.emit('enrollment-gap', {
+                        deviceId,
+                        deviceName,
+                        count: report.needsEnrollment.length,
+                        employees: report.needsEnrollment, // [{ zkId, name }]
+                    });
+                    console.log(
+                        `[ZK] Enrollment gap: ${report.needsEnrollment.length} employee(s)`,
+                        `need fingerprint enrollment on "${deviceName}".`
+                    );
+                }
             } catch (reconcileErr: any) {
                 // Auto-reconcile failure is non-fatal. The admin can run a
                 // manual reconcile from the Devices page if needed.
@@ -1260,6 +1276,11 @@ export const enrollEmployeeFingerprint = async (
         console.log(`[Enrollment] Sending CMD_STARTENROLL for "${fullName}" (${fingerName}) on "${dbDevice.name}"...`);
         await zk.startEnrollment(visibleId, fingerIndex);
 
+        // Fire & Forget background polling for template extraction and distribution
+        extractAndDistributeTemplate(dbDevice.id, employee.id, fingerIndex).catch(err => {
+            console.error('[BiometricSync] Background task error:', err);
+        });
+
         // 5. Record enrollment in DB
         await prisma.employeeDeviceEnrollment.upsert({
             where: {
@@ -1297,6 +1318,259 @@ export const enrollEmployeeFingerprint = async (
     }
 };
 
+/**
+ * Read fingerprint templates from the enrollment device and write them
+ * to every other active, sync-enabled device in the network.
+ *
+ * SECURITY CONTRACT:
+ * - Templates exist in heap memory only for the duration of this function.
+ * - They are never written to any database column, log line, or HTTP body.
+ * - All template buffers are explicitly zeroed before the function returns.
+ * - This honours the no-database-storage rule in BITS_Fingerprint_Propagation_Plan.md §2.
+ *
+ * @param employeeId     DB id of the newly enrolled employee
+ * @param sourceDeviceId DB id of the device on which enrollment was performed
+ * @param fingerIndex    If provided, propagate only this finger slot.
+ *                       If omitted, propagate all occupied slots.
+ */
+export const propagateFingerprintToAllDevices = async (
+    employeeId: number,
+    sourceDeviceId: number,
+    fingerIndex?: number
+): Promise<{ success: boolean; pushed: number; errors: string[] }> => {
+
+    // 1. Validate inputs
+    const employee = await prisma.employee.findUnique({
+        where: { id: employeeId },
+        select: { zkId: true, firstName: true, lastName: true }
+    });
+
+    if (!employee?.zkId) {
+        return { success: false, pushed: 0,
+            errors: ['Employee not found or has no zkId'] };
+    }
+
+    const sourceDevice = await prisma.device.findUnique({
+        where: { id: sourceDeviceId }
+    });
+
+    if (!sourceDevice) {
+        return { success: false, pushed: 0,
+            errors: ['Source device not found'] };
+    }
+
+    // 2. Find all other active, sync-enabled devices
+    const targetDevices = await prisma.device.findMany({
+        where: { isActive: true, syncEnabled: true, id: { not: sourceDeviceId } }
+    });
+
+    if (targetDevices.length === 0) {
+        console.log('[Propagate] No other active devices — nothing to propagate.');
+        return { success: true, pushed: 0, errors: [] };
+    }
+
+    const fullName = `${employee.firstName} ${employee.lastName}`;
+
+    // 3. Read templates from source device
+    await acquireInteractiveDeviceLock(sourceDeviceId);
+    let templates: { finger: number; data: Buffer }[] = [];
+    const srcZk = getDriver(sourceDevice.ip, sourceDevice.port);
+
+    try {
+        await connectWithRetry(srcZk, 2);
+        templates = await srcZk.readAllFingerprintTemplates(employee.zkId);
+
+        if (fingerIndex !== undefined) {
+            templates = templates.filter(t => t.finger === fingerIndex);
+        }
+
+        console.log(
+            `[Propagate] Read ${templates.length} template(s) from`,
+            `"${sourceDevice.name}" for ${fullName} (zkId: ${employee.zkId}).`,
+            templates.map(t => `slot${t.finger}=${t.data.length}B`).join(', ')
+        );
+    } catch (err: any) {
+        return { success: false, pushed: 0,
+            errors: [`Failed to read from source: ${zkErrMsg(err)}`] };
+    } finally {
+        try { await srcZk.disconnect(); } catch { /* ignore */ }
+        releaseDeviceLock(sourceDeviceId);
+    }
+
+    // 4. Guard: no templates means enrollment is not yet complete
+    if (templates.length === 0) {
+        return { success: false, pushed: 0,
+            errors: ['No templates on source device — enrollment may not be complete yet'] };
+    }
+
+    // 5. Write to each target device sequentially
+    let pushed = 0;
+    const errors: string[] = [];
+
+    for (const targetDevice of targetDevices) {
+        await acquireInteractiveDeviceLock(targetDevice.id);
+        const tgtZk = getDriver(targetDevice.ip, targetDevice.port);
+
+        try {
+            await connectWithRetry(tgtZk, 2);
+
+            // Ensure user record exists before writing template
+            const deviceUsers = await tgtZk.getUsers();
+            const exists = deviceUsers.find(
+                (u: any) => String(u.userId).trim() === String(employee.zkId)
+            );
+
+            if (!exists) {
+                await tgtZk.setUser(employee.zkId, fullName, '', 0, 0,
+                    String(employee.zkId));
+                await tgtZk.refreshData();
+                console.log(
+                    `[Propagate] User record written to "${targetDevice.name}"`,
+                    'before template push.'
+                );
+            }
+
+            for (const { finger, data } of templates) {
+                console.log(
+                    `[Propagate] Writing slot ${finger} (${data.length} bytes)`,
+                    `to "${targetDevice.name}" for UID=${employee.zkId}...`
+                );
+                await tgtZk.setFingerTemplate(
+                    employee.zkId, finger, data
+                );
+            }
+
+            await tgtZk.refreshData();
+
+            // Verification: read back finger count to confirm template was committed
+            try {
+                const verifyCount = await tgtZk.getFingerCount(employee.zkId);
+                console.log(
+                    `[Propagate] ✓ ${templates.length} template(s) written`,
+                    `to "${targetDevice.name}".`,
+                    `Verify: device reports ${verifyCount} fingerprint(s) for UID=${employee.zkId}.`
+                );
+            } catch {
+                console.log(
+                    `[Propagate] ✓ ${templates.length} template(s) written`,
+                    `to "${targetDevice.name}" (verification read-back skipped).`
+                );
+            }
+
+            // Record enrollment in DB
+            await prisma.employeeDeviceEnrollment.upsert({
+                where: {
+                    employeeId_deviceId: {
+                        employeeId, deviceId: targetDevice.id
+                    }
+                },
+                update: { enrolledAt: new Date() },
+                create: { employeeId, deviceId: targetDevice.id }
+            });
+
+            pushed++;
+
+        } catch (err: any) {
+            const msg = `"${targetDevice.name}": ${zkErrMsg(err)}`;
+            errors.push(msg);
+            console.error(`[Propagate] ✗ Failed to write to ${msg}`);
+        } finally {
+            try { await tgtZk.disconnect(); } catch { /* ignore */ }
+            releaseDeviceLock(targetDevice.id);
+        }
+    }
+
+    // 6. Zero template buffers — biometric data must not linger in memory
+    for (const tmpl of templates) {
+        tmpl.data.fill(0);
+    }
+    templates.length = 0;
+
+    return { success: errors.length === 0, pushed, errors };
+};
+
+/**
+ * Background worker to detect a newly enrolled fingerprint template on the
+ * source device and propagate it to all other active devices.
+ *
+ * Polls the source device every 4 seconds for up to 60 seconds waiting for
+ * the user to complete the 3-scan enrollment sequence. Once detected, calls
+ * propagateFingerprintToAllDevices() for in-memory cross-device distribution.
+ *
+ * SECURITY: No template data is stored in the database. The previous DB
+ * storage code is commented out below — kept as a reference per the team's
+ * decision to retain the BiometricTemplate table as an untouched fallback.
+ */
+async function extractAndDistributeTemplate(deviceId: number, employeeId: number, fingerIndex: number) {
+    const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
+    const dbDevice = await prisma.device.findUnique({ where: { id: deviceId } });
+    
+    if (!employee || !employee.zkId || !dbDevice) return;
+
+    const deviceUid = employee.zkId;
+    let found = false;
+
+    console.log(`[BiometricSync] Waiting for user to scan finger... started polling device "${dbDevice.name}".`);
+
+    // Poll up to 15 times (60 seconds) waiting for the user to finish the 3 scans
+    for (let attempts = 0; attempts < 15; attempts++) {
+        await new Promise(r => setTimeout(r, 4000)); // wait 4 seconds
+        
+        await acquireDeviceLock(dbDevice.id);
+        const zk = getDriver(dbDevice.ip, dbDevice.port);
+        try {
+            await connectWithRetry(zk, 0);
+            const template = await zk.getFingerTemplate(deviceUid, fingerIndex);
+            if (template && template.length > 8) {
+                found = true;
+                console.log(
+                    `[BiometricSync] ✓ Detected template for ${employee.firstName}`,
+                    `on "${dbDevice.name}" — slot ${fingerIndex}, ${template.length} bytes.`,
+                    `(attempt ${attempts + 1}/15)`
+                );
+            }
+        } catch (e) {
+            // ignore — device may still be processing enrollment
+        } finally {
+            try { await zk.disconnect(); } catch {}
+            releaseDeviceLock(dbDevice.id);
+        }
+
+        if (found) break;
+    }
+
+    if (!found) {
+        console.warn(`[BiometricSync] ⚠ Failed to detect template for ${employee.firstName} from ${dbDevice.name} after 60s. User may have aborted enrollment.`);
+        return;
+    }
+
+
+    // ─── In-memory propagation ───────────────────────────────────────────
+    // Read the template from the source device and write it directly to all
+    // other active devices. No database involvement. Buffer zeroed after.
+    console.log(`[BiometricSync] Starting in-memory propagation for ${employee.firstName}...`);
+
+    const result = await propagateFingerprintToAllDevices(
+        employeeId, dbDevice.id, fingerIndex
+    );
+
+    if (result.success) {
+        console.log(
+            `[BiometricSync] ✓ Propagation complete:`,
+            `${result.pushed} device(s) updated.`
+        );
+    } else {
+        console.warn(
+            `[BiometricSync] ⚠ Propagation partial or failed:`,
+            result.errors.join('; ')
+        );
+        // Offline device gaps will surface via enrollment-gap notification
+        // on next reconcile when the device comes back online.
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEBUG & FORCED SYNC
 // ─────────────────────────────────────────────────────────────────────────────
 // RFID BADGE CARD ENROLLMENT
 // Writes a card number into the user record on ALL active devices, then

@@ -440,20 +440,31 @@ export const streamDeviceStatus = async (req: Request, res: Response): Promise<v
         res.write(`event: config-update\ndata: {}\n\n`);
     };
 
+    const onEnrollmentGap = (payload: {
+        deviceId: number;
+        deviceName: string;
+        count: number;
+        employees: { zkId: number; name: string }[];
+    }) => {
+        res.write(
+            `event: enrollment-gap\ndata: ${JSON.stringify(payload)}\n\n`
+        );
+    };
+
     deviceEmitter.on('status-change', onStatusChange);
     deviceEmitter.on('device-sync-result', onSyncResult);
     deviceEmitter.on('config-update', onConfigUpdate);
+    deviceEmitter.on('enrollment-gap', onEnrollmentGap);
 
     req.on('close', () => {
         clearInterval(heartbeatInterval);
         deviceEmitter.off('status-change', onStatusChange);
         deviceEmitter.off('device-sync-result', onSyncResult);
         deviceEmitter.off('config-update', onConfigUpdate);
+        deviceEmitter.off('enrollment-gap', onEnrollmentGap);
         console.log(`[SSE] Client disconnected from device stream`);
     });
 
     console.log(`[SSE] Client connected to device stream`);
 };
-
-
 

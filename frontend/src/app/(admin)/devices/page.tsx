@@ -156,7 +156,7 @@ export default function DevicesPage() {
     const handleSave = async () => {
         if (!form.name.trim()) { setFormError('Device name is required'); return }
         if (!form.ip.trim()) { setFormError('IP address is required'); return }
-        if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(form.ip.trim())) { setFormError('Invalid IP address format (e.g. 192.168.1.201)'); return }
+        if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(form.ip.trim())) { setFormError('Invalid IP address format (e.g. 192.168.0.201)'); return }
         const port = parseInt(form.port)
         if (isNaN(port) || port < 1 || port > 65535) { setFormError('Port must be between 1 and 65535'); return }
 
@@ -257,6 +257,7 @@ export default function DevicesPage() {
         }
     }
 
+
     return (
         <div className="space-y-6">
 
@@ -272,6 +273,7 @@ export default function DevicesPage() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2 self-end sm:self-center">
+
                     <Button variant="outline" size="sm" onClick={fetchDevices} className="gap-2 border-border">
                         <RefreshCw className="w-4 h-4" />
                         <span className="hidden sm:inline">Refresh</span>
