@@ -1,5 +1,7 @@
 'use client'
 
+import { useSearchParams } from 'next/navigation'
+
 import React, { useState, useEffect, useCallback } from 'react'
 import { useAttendanceStream, AttendanceStreamPayload } from '@/hooks/useAttendanceStream'
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll'
@@ -51,7 +53,14 @@ export default function BiometricPage() {
   // Filters
   const [searchTerm, setSearchTerm] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [selectedStatus, setSelectedStatus] = useState('all')
+  const searchParams = useSearchParams()
+  const [selectedStatus, setSelectedStatus] = useState(() => {
+    const param = searchParams.get('status')?.toLowerCase()
+    if (param === 'late') return 'late'
+    if (param === 'absent') return 'absent'
+    if (param === 'present') return 'present'
+    return 'all'
+  })
   const [selectedDeptId, setSelectedDeptId] = useState('all')
   // Always use PHT (Asia/Manila) date
   const [selectedDate, setSelectedDate] = useState(() =>
