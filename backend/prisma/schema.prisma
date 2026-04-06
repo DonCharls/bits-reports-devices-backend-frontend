@@ -241,6 +241,7 @@ model SyncConfig {
   shiftBufferMinutes    Int      @default(120)      // ±2 hour window around shift start/end
   autoTimeSyncEnabled   Boolean  @default(true)     // Enable background clock sync
   timeSyncIntervalSec   Int      @default(3600)     // How often to sync device clocks (1 hour)
+  globalMinCheckoutMinutes Int   @default(120)      // Ensure checkout is valid only if diff >= minimum 
   updatedAt             DateTime @updatedAt
 }
 

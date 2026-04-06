@@ -14,6 +14,7 @@ const updateSyncConfigSchema = z.object({
     shiftBufferMinutes: z.number().max(240, "Shift buffer cannot exceed 4 hours (240 min)").optional(),
     autoTimeSyncEnabled: z.boolean().optional(),
     timeSyncIntervalSec: z.number().min(300, "Time sync interval must be at least 5 minutes (300s)").optional(),
+    globalMinCheckoutMinutes: z.number().min(15, "Global Minimum Checkout must be at least 15 minutes").optional(),
 });
 
 // ─── GET /api/system/sync-status ──────────────────────────────────────────────
@@ -95,7 +96,8 @@ export const updateSyncConfig = async (req: Request, res: Response) => {
             { key: 'shiftBufferMinutes', label: 'Shift buffer', suffix: ' min' },
             { key: 'shiftAwareSyncEnabled', label: 'Shift-aware sync' },
             { key: 'autoTimeSyncEnabled', label: 'Automated time sync' },
-            { key: 'timeSyncIntervalSec', label: 'Time sync interval', suffix: 's' }
+            { key: 'timeSyncIntervalSec', label: 'Time sync interval', suffix: 's' },
+            { key: 'globalMinCheckoutMinutes', label: 'Global Minimum Checkout', suffix: ' mins'}
         ];
 
         for (const field of trackableFields) {

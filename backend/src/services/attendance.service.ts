@@ -66,6 +66,11 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
             include: { employee: { include: { Shift: true } } }
         });
 
+        // Fetch System settings for dynamic constraints
+        const syncConfig = await prisma.syncConfig.findUnique({ where: { id: 1 } });
+        const minCheckoutMins = syncConfig?.globalMinCheckoutMinutes ?? 120;
+        const minCheckoutHours = minCheckoutMins / 60;
+
         let created = 0;
         let updated = 0;
 
@@ -157,8 +162,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                 const diffMs = logTime.getTime() - checkInTime.getTime();
                 const diffHours = diffMs / (1000 * 60 * 60); //for every 1000 milliseconds, it will be 1 second
 
-                // RULE: User must be checked in for at least 2 hours before checking out
-                if (diffHours < 2) {
+                // RULE: User must be checked in for at least the configured minimum hours before checking out
+                if (diffHours < minCheckoutHours) {
                     // Too soon to check out - ignore this log
                     // This prevents accidental double-scans from closing the attendance
                     continue;
