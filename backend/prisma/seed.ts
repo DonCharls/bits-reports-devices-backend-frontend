@@ -7,149 +7,54 @@ async function main() {
     console.log('🌱 Starting seed...')
 
     // ──────────────────────────────────────────────
-    // 1. Departments (matches frontend DEPARTMENTS constant)
+    // 1. Branches
+    // ──────────────────────────────────────────────
+    const branchNames = ['MAIN OFFICE', 'NRA', 'MAKATI']
+
+    for (const name of branchNames) {
+        await prisma.branch.upsert({
+            where: { name },
+            update: {},
+            create: { name, updatedAt: new Date() },
+        })
+        console.log(`🏢 Branch: ${name}`)
+    }
+
+    // ──────────────────────────────────────────────
+    // 2. Departments
     // ──────────────────────────────────────────────
     const departmentNames = [
-        'ADMIN DEPARTMENT',
-        'ACCOUNTING DEPARTMENT',
-        'ENGINEERING DEPARTMENT',
-        'HUMAN RESOURCES DEPARTMENT',
-        'IT DEPARTMENT',
-        'LOGISTICS DEPARTMENT',
-        'MAINTENANCE DEPARTMENT',
-        'MANAGEMENT DEPARTMENT',
-        'MARKETING DEPARTMENT',
-        'OPERATIONS DEPARTMENT',
-        'PRODUCTION DEPARTMENT',
-        'PURCHASING DEPARTMENT',
-        'QUALITY ASSURANCE DEPARTMENT',
-        'RESEARCH AND DEVELOPMENT DEPARTMENT',
-        'SAFETY DEPARTMENT',
-        'SALES DEPARTMENT',
-        'SUPPLY CHAIN DEPARTMENT',
-        'WAREHOUSE DEPARTMENT',
+        'ACCOUNTING',
+        'ADMIN',
+        'ENGINEERING',
+        'HUMAN RESOURCES',
+        'IT',
+        'LOGISTICS',
+        'MAINTENANCE',
+        'MANAGEMENT',
+        'MARKETING',
+        'OPERATIONS',
+        'PRODUCTION',
+        'PURCHASING',
+        'QUALITY ASSURANCE',
+        'RESEARCH AND DEVELOPMENT',
+        'SAFETY',
+        'SALES',
+        'SUPPLY CHAIN',
+        'WAREHOUSE',
     ]
 
-    const deptMap: Record<string, number> = {}
     for (const name of departmentNames) {
-        const dept = await prisma.department.upsert({
+        await prisma.department.upsert({
             where: { name },
             update: {},
-            create: { name, updatedAt: new Date() }
+            create: { name, updatedAt: new Date() },
         })
-        deptMap[name] = dept.id
+        console.log(`🏷️  Department: ${name}`)
     }
-    console.log(`🏢 Seeded ${departmentNames.length} departments`)
 
     // ──────────────────────────────────────────────
-    // 2. Branches
-    // ──────────────────────────────────────────────
-    const branchNames = ['NRA', 'MAIN OFFICE', 'WAREHOUSE A']
-    const branchMap: Record<string, number> = {}
-    for (const name of branchNames) {
-        const branch = await prisma.branch.upsert({
-            where: { name },
-            update: {},
-            create: { name, updatedAt: new Date() }
-        })
-        branchMap[name] = branch.id
-    }
-    console.log(`🏬 Seeded ${branchNames.length} branches`)
-
-    // ──────────────────────────────────────────────
-    // 3. Shifts
-    // ──────────────────────────────────────────────
-    const shifts = [
-        {
-            shiftCode: 'MS-01',
-            name: 'Morning Shift',
-            startTime: '08:00',
-            endTime: '17:00',
-            graceMinutes: 15,
-            breakMinutes: 60,
-            isNightShift: false,
-            description: 'Standard day shift, 8AM to 5PM',
-        },
-        {
-            shiftCode: 'AS-01',
-            name: 'Afternoon Shift',
-            startTime: '13:00',
-            endTime: '22:00',
-            graceMinutes: 15,
-            breakMinutes: 60,
-            isNightShift: false,
-            description: 'Afternoon shift, 1PM to 10PM',
-        },
-        {
-            shiftCode: 'NS-01',
-            name: 'Night Shift',
-            startTime: '22:00',
-            endTime: '06:00',
-            graceMinutes: 15,
-            breakMinutes: 60,
-            isNightShift: true,
-            description: 'Overnight shift, crosses midnight',
-        },
-    ]
-    const shiftMap: Record<string, number> = {}
-    for (const s of shifts) {
-        const shift = await prisma.shift.upsert({
-            where: { name: s.name },
-            update: {
-                shiftCode: s.shiftCode,
-                startTime: s.startTime,
-                endTime: s.endTime,
-                graceMinutes: s.graceMinutes,
-                breakMinutes: s.breakMinutes,
-                isNightShift: s.isNightShift,
-                description: s.description,
-            },
-            create: { ...s },
-        })
-        shiftMap[s.name] = shift.id
-    }
-    console.log(`⏰ Seeded ${shifts.length} shifts`)
-
-    // ──────────────────────────────────────────────
-    // 4. Device
-    // ──────────────────────────────────────────────
-    await prisma.device.upsert({
-        where: { ip: '192.168.1.201' },
-        update: {},
-        create: {
-            name: 'Main Entrance Biometric',
-            ip: '192.168.1.201',
-            port: 4370,
-            location: 'Main Lobby',
-            isActive: true,
-            updatedAt: new Date()
-        }
-    })
-    console.log('📡 Seeded device')
-
-    // ──────────────────────────────────────────────
-    // 4.5. SyncConfig
-    // ──────────────────────────────────────────────
-    await prisma.syncConfig.upsert({
-        where: { id: 1 },
-        update: {},
-        create: {
-            id: 1,
-            globalSyncEnabled: true,
-            defaultIntervalSec: 30,
-            highFreqIntervalSec: 30,
-            lowFreqIntervalSec: 600,
-            shiftAwareSyncEnabled: false,
-            shiftBufferMinutes: 120,
-            autoTimeSyncEnabled: true,
-            timeSyncIntervalSec: 3600,
-            updatedAt: new Date()
-        }
-    })
-    console.log('⚙️ Seeded sync config')
-
-    // ──────────────────────────────────────────────
-    // 5. Employees
+    // 3. Admin / HR accounts
     // NOTE: zkId 1 is RESERVED for the ZKTeco device SUPER ADMIN — never use it.
     //       Employee zkIds start from 2.
     // ──────────────────────────────────────────────
@@ -161,33 +66,29 @@ async function main() {
             firstName: 'Admin',
             lastName: 'User',
             role: 'ADMIN' as const,
-            department: 'ADMIN DEPARTMENT',
+            department: 'ADMIN',
             position: 'System Administrator',
             branch: 'NRA',
             contactNumber: '09171234567',
             employeeNumber: 'EMP001',
             preferredZkId: 2,
-            shift: 'Morning Shift',
         },
         {
             email: 'hr@avegabros.com',
             firstName: 'Maria',
             lastName: 'Santos',
             role: 'HR' as const,
-            department: 'HUMAN RESOURCES DEPARTMENT',
+            department: 'HUMAN RESOURCES',
             position: 'HR Manager',
             branch: 'NRA',
             contactNumber: '09179876543',
             employeeNumber: 'EMP002',
             preferredZkId: 3,
-            shift: 'Morning Shift',
         },
     ]
 
     for (const u of employees) {
         const existing = await prisma.employee.findUnique({ where: { email: u.email } })
-        let empId = existing?.id
-        let empZkId = existing?.zkId
 
         if (!existing) {
             // Determine safe zkId — never use 1 (device SUPER ADMIN)
@@ -195,10 +96,15 @@ async function main() {
             let finalZkId = u.preferredZkId
             if (zkCheck) {
                 const max = await prisma.employee.findFirst({ orderBy: { zkId: 'desc' } })
-                finalZkId = Math.max((max?.zkId || 1) + 1, 2) // Never assign 1
+                finalZkId = Math.max((max?.zkId || 1) + 1, 2)
             }
 
-            const newEmp = await prisma.employee.create({
+            // Look up the branch and department IDs so we can set both the
+            // FK relation AND the legacy string field at the same time.
+            const branchRow = await prisma.branch.findUnique({ where: { name: u.branch } })
+            const deptRow   = await prisma.department.findUnique({ where: { name: u.department } })
+
+            await prisma.employee.create({
                 data: {
                     firstName: u.firstName,
                     lastName: u.lastName,
@@ -206,93 +112,31 @@ async function main() {
                     password: passwordHash,
                     role: u.role,
                     department: u.department,
-                    departmentId: deptMap[u.department] ?? null,
+                    departmentId: deptRow?.id ?? null,
                     position: u.position,
                     branch: u.branch,
-                    branchId: branchMap[u.branch] ?? null,
-                    shiftId: shiftMap[u.shift] ?? null,
+                    branchId: branchRow?.id ?? null,
+                    shiftId: null,
                     contactNumber: u.contactNumber,
                     employeeNumber: u.employeeNumber,
                     zkId: finalZkId,
                     employmentStatus: 'ACTIVE',
                     hireDate: new Date('2024-01-15'),
                     updatedAt: new Date(),
-                }
+                },
             })
-            empId = newEmp.id
-            empZkId = newEmp.zkId
             console.log(`👤 Created: ${u.firstName} ${u.lastName} (${u.role}, zkId: ${finalZkId})`)
         } else {
             console.log(`👤 Already exists: ${u.email}`)
         }
-
-        // ──────────────────────────────────────────────
-        // 6. Attendance records (last 7 weekdays)
-        // ──────────────────────────────────────────────
-        if (empId && empZkId) {
-            const today = new Date()
-            for (let i = 0; i < 7; i++) {
-                const date = new Date(today)
-                date.setDate(date.getDate() - i)
-
-                // Skip weekends
-                if (date.getDay() === 0 || date.getDay() === 6) continue
-
-                const dateStr = date.toISOString().split('T')[0]
-
-                // Skip if attendance already exists
-                const existingAtt = await prisma.attendance.findUnique({
-                    where: {
-                        employeeId_date: {
-                            employeeId: empId,
-                            date: new Date(dateStr + 'T00:00:00.000Z')
-                        }
-                    }
-                })
-                if (existingAtt) continue
-
-                // Randomised attendance: ~5% absent
-                const rand = Math.random()
-                if (rand > 0.95) continue
-
-                // Check-in time: 7:45–7:59 (on time) or 8:00–8:30 (late)
-                let inHour = 7, inMin = 45 + Math.floor(Math.random() * 15)
-                if (rand > 0.80 && rand <= 0.95) {
-                    inHour = 8
-                    inMin = Math.floor(Math.random() * 30)
-                }
-
-                const checkIn = new Date(dateStr)
-                checkIn.setHours(inHour, inMin, 0, 0)
-
-                // Check-out time: 5:00–5:30 PM (~95% have checkout)
-                let checkOut: Date | null = null
-                if (Math.random() > 0.05) {
-                    checkOut = new Date(dateStr)
-                    checkOut.setHours(17, Math.floor(Math.random() * 30), 0, 0)
-                }
-
-                const status = (inHour === 7 || (inHour === 8 && inMin === 0)) ? 'present' : 'late'
-
-                await prisma.attendance.create({
-                    data: {
-                        employeeId: empId,
-                        date: new Date(dateStr + 'T00:00:00.000Z'),
-                        checkInTime: checkIn,
-                        checkOutTime: checkOut ?? undefined,
-                        status,
-                    }
-                })
-            }
-        }
     }
 
+    console.log('')
     console.log('✅ Seed completed!')
     console.log('')
     console.log('📋 Test accounts:')
     console.log('   Admin:  admin@avegabros.com / password123')
     console.log('   HR:     hr@avegabros.com    / password123')
-    console.log('   Users:  john@avegabros.com  / password123  (+ 7 more)')
 }
 
 main()

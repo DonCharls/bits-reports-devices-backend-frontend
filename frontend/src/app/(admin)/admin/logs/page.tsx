@@ -7,7 +7,7 @@ import {
     LogIn, LogOut, Fingerprint, Clock, CalendarDays,
     Search, RefreshCw, UserPlus, Trash2, Edit, Shield, Bot,
     Info, Wifi, WifiOff, Copy, ClipboardCheck, ClipboardX, FileText,
-    Settings, Users, Radio, KeyRound, ChevronDown
+    Settings, Users, Radio, KeyRound, ChevronDown, AlertTriangle
 } from 'lucide-react'
 
 /* ── Types ── */
@@ -166,6 +166,7 @@ export default function SystemLogsPage() {
         if (a === 'DEVICE_CONNECT') return <Wifi className="w-4 h-4 text-emerald-500" />
         if (a === 'DEVICE_DISCONNECT') return <WifiOff className="w-4 h-4 text-red-500" />
         if (a === 'DUPLICATE_PUNCH') return <Copy className="w-4 h-4 text-amber-500" />
+        if (a === 'SUSPICIOUS_CHECKOUT') return <AlertTriangle className="w-4 h-4 text-orange-500" />
         if (a === 'ADJUSTMENT_SUBMIT') return <FileText className="w-4 h-4 text-blue-500" />
         if (a === 'ADJUSTMENT_APPROVE') return <ClipboardCheck className="w-4 h-4 text-emerald-500" />
         if (a === 'ADJUSTMENT_REJECT') return <ClipboardX className="w-4 h-4 text-red-500" />
@@ -175,6 +176,7 @@ export default function SystemLogsPage() {
         if (a === 'STATUS_CHANGE') return <Shield className="w-4 h-4 text-amber-600" />
         if (a === 'AUTO_CHECKOUT') return <Bot className="w-4 h-4 text-violet-600" />
         if (a === 'FLAG_MISSING_CHECKOUT') return <Bot className="w-4 h-4 text-orange-500" />
+        if (a === 'EXPORT') return <FileText className="w-4 h-4 text-indigo-500" />
         if (a === 'SYNC') return <RefreshCw className="w-4 h-4 text-sky-500" />
         return <Clock className="w-4 h-4 text-slate-400" />
     }
@@ -185,7 +187,9 @@ export default function SystemLogsPage() {
         if (a.includes('CHECK_OUT') || a === 'CHECK OUT' || a === 'UPDATE' || a === 'SYNC' || a === 'ADJUSTMENT_SUBMIT') return 'bg-blue-50 text-blue-700 border-blue-200'
         if (a === 'DELETE' || a === 'FAILED_LOGIN' || a === 'DEVICE_DISCONNECT' || a === 'ADJUSTMENT_REJECT') return 'bg-red-50 text-red-700 border-red-200'
         if (a === 'STATUS_CHANGE' || a === 'DUPLICATE_PUNCH') return 'bg-amber-50 text-amber-700 border-amber-200'
+        if (a === 'SUSPICIOUS_CHECKOUT') return 'bg-orange-50 text-orange-700 border-orange-200'
         if (a === 'AUTO_CHECKOUT' || a === 'FLAG_MISSING_CHECKOUT') return 'bg-violet-50 text-violet-700 border-violet-200'
+        if (a === 'EXPORT') return 'bg-indigo-50 text-indigo-700 border-indigo-200'
         if (a === 'LOGOUT') return 'bg-slate-50 text-slate-600 border-slate-200'
         return 'bg-slate-50 text-slate-600 border-slate-200'
     }

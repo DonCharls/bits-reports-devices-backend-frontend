@@ -153,7 +153,7 @@ export default function BiometricPage() {
         const branchName = branches.find(b => b.id === activeBranchId)?.name
         if (branchName) params.append('branchName', branchName)
       }
-      if (selectedStatus !== 'all') params.append('status', selectedStatus)
+
       if (selectedDeptId !== 'all') {
         params.append('departmentId', selectedDeptId)
         const deptName = departments.find(d => String(d.id) === selectedDeptId)?.name
@@ -212,6 +212,8 @@ export default function BiometricPage() {
             isShiftActive,
             gracePeriodApplied,
             notes: log.notes || null,
+            checkInDevice: log.checkInDeviceName ?? null,
+            checkOutDevice: log.checkOutDeviceName ?? null,
           }
         })
 
@@ -224,10 +226,15 @@ export default function BiometricPage() {
 
         const presentIds = new Set(mapped.map((r: any) => r.employeeId))
         const branchName = activeBranchId !== 'all' ? branches.find(b => b.id === activeBranchId)?.name : null
+        const selectedDeptName = selectedDeptId !== 'all' ? departments.find(d => String(d.id) === selectedDeptId)?.name : null
         const absentRows = allEmployees
           .filter((e: any) => {
             if (presentIds.has(e.id)) return false
             if (branchName && e.branch !== branchName) return false
+            if (selectedDeptName) {
+              const empDept = e.Department?.name || e.department || ''
+              if (empDept !== selectedDeptName) return false
+            }
             return true
           })
           .map((e: any) => ({
@@ -252,9 +259,17 @@ export default function BiometricPage() {
           }))
 
         const full = [...mapped, ...absentRows]
-        const filtered = debouncedSearch
+        let filtered = debouncedSearch
           ? full.filter((r: any) => r.employeeName.toLowerCase().includes(debouncedSearch.toLowerCase()))
           : full
+
+        if (selectedDeptName) {
+          filtered = filtered.filter((r: any) => r.department === selectedDeptName)
+        }
+
+        if (selectedStatus !== 'all') {
+          filtered = filtered.filter((r: any) => r.status === selectedStatus)
+        }
 
         setRecords(filtered)
         setTotalPages(Math.max(1, Math.ceil(filtered.length / rowsPerPage)))
@@ -352,10 +367,28 @@ export default function BiometricPage() {
       ])
     })
 
+    const fileName = `Attendance_${branchLabel.replace(/\s+/g, '_')}_${selectedDate}.xlsx`
     const worksheet = XLSX.utils.aoa_to_sheet(allRows)
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance')
-    XLSX.writeFile(workbook, `Attendance_${branchLabel.replace(/\s+/g, '_')}_${selectedDate}.xlsx`)
+    XLSX.writeFile(workbook, fileName)
+
+    // Log the export event
+    fetch('/api/logs/export-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        exportType: 'attendance',
+        entityType: 'Attendance',
+        source: 'admin-panel',
+        details: `Exported attendance records (${records.length} rows) for ${selectedDate}`,
+        filters: { branch: branchLabel, date: selectedDate, department: selectedDeptId !== 'all' ? selectedDeptId : undefined, status: selectedStatus !== 'all' ? selectedStatus : undefined },
+        recordCount: records.length,
+        fileFormat: 'xlsx',
+        fileName,
+      }),
+    }).catch(() => { })
   }
 
   const activeBranch = activeBranchId !== 'all' ? branches.find(b => b.id === activeBranchId) : null
@@ -486,20 +519,35 @@ export default function BiometricPage() {
                       </div>
                       <div className="shrink-0">
                         <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${row.status === 'present' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
-                            : row.status === 'late' ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
-                              : 'text-red-500 bg-red-500/10 border-red-500/20'
+                          : row.status === 'late' ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
+                            : 'text-red-500 bg-red-500/10 border-red-500/20'
                           }`}>
                           {row.status === 'present' ? 'On Time' : row.status}
                         </span>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <div><p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Clock In</p><p className="font-mono text-emerald-500 font-black text-sm">{row.checkIn}</p></div>
+                      <div>
+                        <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Clock In</p>
+                        <p className="font-mono text-emerald-500 font-black text-sm">{row.checkIn}</p>
+                        {row.checkIn !== '—' && (
+                          <p className="text-xs text-gray-500 mt-0.5 truncate">
+                            📍 {row.checkInDevice ?? 'Manual'}
+                          </p>
+                        )}
+                      </div>
                       <div><p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Clock Out</p>
-                        {row.checkOut === '—' && row.notes?.includes('No checkout recorded') ? (
+                        {row.notes?.includes('Early punch detected') ? (
+                          <span className="text-[10px] font-bold text-orange-500">🔶 Early punch flagged</span>
+                        ) : row.checkOut === '—' && row.notes?.includes('No checkout recorded') ? (
                           <span className="text-[10px] font-bold text-amber-600">⚠️ No checkout</span>
                         ) : (
-                          <p className="font-mono text-muted-foreground font-black text-sm">{row.checkOut}</p>
+                          <>
+                            <p className="font-mono text-muted-foreground font-black text-sm">{row.checkOut}</p>
+                            {row.checkOut !== '—' && (
+                              <p className="text-xs text-gray-500 mt-0.5 truncate">📍 {row.checkOutDevice ?? 'Manual'}</p>
+                            )}
+                          </>
                         )}
                       </div>
                       <div><p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Shift</p>
@@ -553,18 +601,41 @@ export default function BiometricPage() {
                     <td className="px-4 py-4 text-sm font-mono font-bold">
                       <div className="flex flex-col">
                         <span className={`${record.status === 'late' ? 'text-yellow-500' :
-                            record.status === 'present' ? 'text-emerald-500' :
-                              'text-muted-foreground'
+                          record.status === 'present' ? 'text-emerald-500' :
+                            'text-muted-foreground'
                           }`}>{record.checkIn}</span>
                         {record.gracePeriodApplied && (
                           <span className="text-[9px] text-slate-400 mt-0.5" title="Check-in was late but within allowed grace period">
                             Grace Period
                           </span>
                         )}
+                        {record.checkIn !== '—' && (
+                          <span className="text-xs text-gray-500 mt-0.5 truncate max-w-[120px]">
+                            📍 {record.checkInDevice ?? 'Manual'}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-4 text-sm font-mono text-muted-foreground font-bold">
-                      {record.isShiftActive ? (
+                      {record.notes?.includes('Early punch detected') ? (
+                        <div className="flex flex-col">
+                          {record.isShiftActive ? (
+                            <span className="inline-flex items-center gap-2 text-blue-500 font-bold text-[10px] uppercase tracking-wider">
+                              <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                              </span>
+                              Active
+                            </span>
+                          ) : record.checkOut !== '—' ? (
+                            <span>{record.checkOut}</span>
+                          ) : null}
+                          <span className="inline-flex items-center gap-1 text-orange-500 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap mt-0.5" title={record.notes}>
+                            <AlertCircle className="w-3 h-3" />
+                            Early punch flagged
+                          </span>
+                        </div>
+                      ) : record.isShiftActive ? (
                         <span className="inline-flex items-center gap-2 text-blue-500 font-bold text-[10px] uppercase tracking-wider">
                           <span className="relative flex h-2 w-2">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
@@ -578,7 +649,14 @@ export default function BiometricPage() {
                           No checkout
                         </span>
                       ) : (
-                        record.checkOut
+                        <div className="flex flex-col">
+                          <span>{record.checkOut}</span>
+                          {record.checkOut !== '—' && (
+                            <span className="text-[9px] text-gray-500 font-medium mt-0.5 truncate max-w-[120px]">
+                              📍 {record.checkOutDevice ?? 'Manual'}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td className="px-4 py-4 text-center">

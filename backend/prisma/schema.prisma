@@ -17,9 +17,13 @@ model Attendance {
   checkout_updated  DateTime?
   status            String    @default("present")
   notes        String?
+  checkInDeviceId   Int?
+  checkOutDeviceId  Int?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   employee     Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  checkInDevice    Device?  @relation("AttCheckIn",  fields: [checkInDeviceId],  references: [id])
+  checkOutDevice   Device?  @relation("AttCheckOut", fields: [checkOutDeviceId], references: [id])
 
   @@unique([employeeId, date])
   @@index([date])
@@ -130,6 +134,8 @@ model Device {
   updatedAt     DateTime
   AttendanceLog AttendanceLog[]
   EmployeeDeviceEnrollment EmployeeDeviceEnrollment[]
+  AttendanceCheckIns  Attendance[] @relation("AttCheckIn")
+  AttendanceCheckOuts Attendance[] @relation("AttCheckOut")
 
   @@index([isActive])
   @@index([syncEnabled])

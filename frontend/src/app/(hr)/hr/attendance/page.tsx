@@ -366,10 +366,28 @@ function AttendanceContent() {
       ]);
     });
 
+    const fileName = `Attendance_${branchLabel.replace(/\s+/g, '_')}_${selectedDate}.xlsx`;
     const worksheet = XLSX.utils.aoa_to_sheet(allRows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance');
-    XLSX.writeFile(workbook, `Attendance_${branchLabel.replace(/\s+/g, '_')}_${selectedDate}.xlsx`);
+    XLSX.writeFile(workbook, fileName);
+
+    // Log the export event
+    fetch('/api/logs/export-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        exportType: 'attendance',
+        entityType: 'Attendance',
+        source: 'hr-panel',
+        details: `Exported attendance records (${records.length} rows) for ${selectedDate}`,
+        filters: { branch: branchLabel, date: selectedDate, department: deptFilter !== 'All Departments' ? deptFilter : undefined, status: statusFilter !== 'all' ? statusFilter : undefined },
+        recordCount: records.length,
+        fileFormat: 'xlsx',
+        fileName,
+      }),
+    }).catch(() => {});
   };
 
   const branches = ['All Branches', ...branchesList.map(b => b.name)];
@@ -506,7 +524,9 @@ function AttendanceContent() {
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                     <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Clock In</p><p className="font-mono text-emerald-600 font-black text-sm">{row.checkIn}</p></div>
                     <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Clock Out</p>
-                      {row.checkOut === '—' && (row as any).notes?.includes('No checkout recorded') ? (
+                      {(row as any).notes?.includes('Early punch detected') ? (
+                        <span className="text-[10px] font-bold text-orange-500">🔶 Early punch flagged</span>
+                      ) : row.checkOut === '—' && (row as any).notes?.includes('No checkout recorded') ? (
                         <span className="text-[10px] font-bold text-amber-600">⚠️ No checkout</span>
                       ) : (
                         <p className="font-mono text-slate-600 font-black text-sm">{row.checkOut}</p>
@@ -580,7 +600,17 @@ function AttendanceContent() {
                     </td>
                     <td className={`px-4 py-4 text-sm font-mono font-bold ${row.status === 'late' ? 'text-yellow-600' : row.status === 'present' ? 'text-emerald-600' : 'text-slate-400'}`}>{row.checkIn}</td>
                     <td className="px-4 py-4 text-sm font-mono text-slate-600 font-bold">
-                      {row.checkOut === '—' && (row as any).notes?.includes('No checkout recorded') ? (
+                      {(row as any).notes?.includes('Early punch detected') ? (
+                        <div className="flex flex-col">
+                          {row.checkOut !== '—' ? (
+                            <span>{row.checkOut}</span>
+                          ) : null}
+                          <span className="inline-flex items-center gap-1 text-orange-500 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap mt-0.5" title={(row as any).notes}>
+                            <AlertCircle className="w-3 h-3" />
+                            Early punch flagged
+                          </span>
+                        </div>
+                      ) : row.checkOut === '—' && (row as any).notes?.includes('No checkout recorded') ? (
                         <span className="inline-flex items-center gap-1 text-amber-600 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title={(row as any).notes}>
                           <AlertCircle className="w-3 h-3" />
                           No checkout

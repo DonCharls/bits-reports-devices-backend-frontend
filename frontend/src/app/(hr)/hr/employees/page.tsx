@@ -441,7 +441,25 @@ function EmployeeDirectoryContent() {
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Employee List");
-    XLSX.writeFile(workbook, `Employee List.xlsx`);
+    const fileName = `Employee List.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+
+    // Log the export event
+    fetch('/api/logs/export-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        exportType: 'employee',
+        entityType: 'Employee',
+        source: 'hr-panel',
+        details: `Exported employee list (${filteredEmployees.length} employees)`,
+        filters: { department: deptFilter !== 'All Departments' ? deptFilter : undefined, branch: branchFilter !== 'All Branches' ? branchFilter : undefined },
+        recordCount: filteredEmployees.length,
+        fileFormat: 'xlsx',
+        fileName,
+      }),
+    }).catch(() => {});
   };
 
   return (

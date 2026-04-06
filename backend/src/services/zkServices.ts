@@ -657,6 +657,7 @@ async function syncSingleDevice(dbDevice: {
                         timestamp: utcTime,  // Store UTC time
                         employeeId: employee.id,
                         status: log.status,
+                        deviceId: dbDevice.id,
                     },
                 });
                 newCount++;
@@ -680,16 +681,36 @@ async function syncSingleDevice(dbDevice: {
         // This ensures that a sync cycle that finds no new logs does not
         // accidentally reset the watermark to null or move it backwards.
         if (latestInsertedTimestamp !== null) {
+            // Advance by 1ms so the next sync's strict '>' filter excludes this
+            // exact timestamp and never re-processes the same log.
+            const nextWatermark = new Date(latestInsertedTimestamp.getTime() + 1);
             await prisma.device.update({
                 where: { id: dbDevice.id },
-                data: { lastSyncedAt: latestInsertedTimestamp, lastSyncStatus: 'SUCCESS', lastSyncError: null, lastPolledAt: new Date() },
+                data: { lastSyncedAt: nextWatermark, lastSyncStatus: 'SUCCESS', lastSyncError: null, lastPolledAt: new Date() },
             });
-            console.log(`[ZK] "${dbDevice.name}" watermark advanced to ${latestInsertedTimestamp.toISOString()}`);
+            console.log(`[ZK] "${dbDevice.name}" watermark advanced to ${nextWatermark.toISOString()}`);
         } else {
             await prisma.device.update({
                 where: { id: dbDevice.id },
                 data: { lastSyncStatus: 'SUCCESS', lastSyncError: null, lastPolledAt: new Date() }
             }).catch(() => { /* ignore */ });
+        }
+
+        // ── Clear device log buffer after successful sync ─────────────────────
+        // ZKTeco devices have a fixed-size log buffer (typically 100k records but
+        // some entry-level models hold as few as 20). Once full, the device stops
+        // recording new punches (or overwrites oldest ones). We clear ONLY after
+        // at least one log was successfully ingested, so we never lose data that
+        // hasn't been processed yet. The watermark has already been advanced, so
+        // a future sync falling back to the 48-hour window won't re-import cleared
+        // logs (they'll simply return 0 rows newer than the watermark).
+        if (newCount > 0) {
+            try {
+                await zk.clearAttendanceLogs();
+                console.log(`[ZK] Cleared processed logs from "${dbDevice.name}" (freed device buffer)`);
+            } catch (clearErr) {
+                console.warn(`[ZK] Could not clear logs from device "${dbDevice.name}": ${zkErrMsg(clearErr)}`);
+            }
         }
 
         deviceEmitter.emit('device-sync-result', {

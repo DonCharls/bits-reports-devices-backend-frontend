@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { audit } from '../lib/auditLogger';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -198,5 +199,57 @@ export const getLogs = async (req: Request, res: Response) => {
     } catch (error: any) {
         console.error('[Logs] Error fetching logs:', error);
         return res.status(500).json({ success: false, message: 'Failed to fetch logs', error: error.message });
+    }
+};
+
+/**
+ * POST /api/logs/export-event
+ * Called by the frontend after a successful client-side file export.
+ * Logs the export action to the AuditLog table.
+ */
+export const logExportEvent = async (req: Request, res: Response) => {
+    try {
+        const {
+            exportType,
+            entityType,
+            source,
+            details,
+            filters,
+            recordCount,
+            fileFormat,
+            fileName,
+        } = req.body;
+
+        const performedBy = (req as any).user?.employeeId;
+
+        if (!performedBy) {
+            return res.status(401).json({ success: false, message: 'User not authenticated' });
+        }
+
+        if (!exportType || !entityType) {
+            return res.status(400).json({ success: false, message: 'exportType and entityType are required' });
+        }
+
+        await audit({
+            action: 'EXPORT',
+            entityType: entityType || 'System',
+            performedBy,
+            source: source || 'system',
+            level: 'INFO',
+            details: details || `Exported ${exportType} data`,
+            metadata: {
+                category: 'system',
+                exportType,
+                filters: filters || {},
+                recordCount: recordCount ?? null,
+                fileFormat: fileFormat || 'xlsx',
+                fileName: fileName || null,
+            },
+        });
+
+        return res.json({ success: true, message: 'Export event logged' });
+    } catch (error: any) {
+        console.error('[Logs] Error logging export event:', error);
+        return res.status(500).json({ success: false, message: 'Failed to log export event', error: error.message });
     }
 };

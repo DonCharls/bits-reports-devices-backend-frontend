@@ -82,7 +82,25 @@ function InactiveRecordsContent() {
         const worksheet = XLSX.utils.json_to_sheet(exportData);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Inactive List");
-        XLSX.writeFile(workbook, `Inactive_List.xlsx`);
+        const fileName = `Inactive_List.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+
+        // Log the export event
+        fetch('/api/logs/export-event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            exportType: 'employee',
+            entityType: 'Employee',
+            source: 'hr-panel',
+            details: `Exported inactive employee list (${sortedEmployees.length} employees)`,
+            filters: { department: deptFilter !== 'All Departments' ? deptFilter : undefined, branch: branchFilter !== 'All Branches' ? branchFilter : undefined },
+            recordCount: sortedEmployees.length,
+            fileFormat: 'xlsx',
+            fileName,
+          }),
+        }).catch(() => {});
     };
 
     const CustomSelect = ({ value, options, onChange, id }: any) => {

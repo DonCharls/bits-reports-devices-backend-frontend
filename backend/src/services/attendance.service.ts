@@ -101,6 +101,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             employeeId: log.employeeId,
                             date: dateOnly,
                             checkInTime: log.timestamp,
+                            checkInDeviceId: log.deviceId ?? undefined,
                             status: isLate ? 'late' : 'present'
                         },
                         include: {
@@ -160,8 +161,41 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
 
                 // RULE: User must be checked in for at least 2 hours before checking out
                 if (diffHours < 2) {
-                    // Too soon to check out - ignore this log
-                    // This prevents accidental double-scans from closing the attendance
+                    const diffMinutes = Math.round(diffMs / (1000 * 60));
+
+                    // Flag the attendance record with a visible note (avoid duplicating)
+                    const existingNotes = existingAttendance.notes || '';
+                    if (!existingNotes.includes('Early punch detected')) {
+                        const flagNote = `Early punch detected — only ${diffMinutes} min after check-in (minimum: 120 min). Requires HR/Admin review.`;
+                        const newNotes = existingNotes
+                            ? `${existingNotes} | ${flagNote}`
+                            : flagNote;
+
+                        await prisma.attendance.update({
+                            where: { id: existingAttendance.id },
+                            data: { notes: newNotes }
+                        });
+                    }
+
+                    // Log as WARNING in System Logs
+                    void audit({
+                        action: 'SUSPICIOUS_CHECKOUT',
+                        level: 'WARN',
+                        entityType: 'Attendance',
+                        entityId: existingAttendance.id,
+                        performedBy: log.employeeId,
+                        source: 'device-sync',
+                        details: `Early punch ignored for ${log.employee?.firstName} ${log.employee?.lastName} — only ${diffMinutes} min after check-in (minimum: 120 min)`,
+                        metadata: {
+                            category: 'attendance',
+                            employeeId: log.employeeId,
+                            employeeName: `${log.employee?.firstName} ${log.employee?.lastName}`,
+                            checkInTime: existingAttendance.checkInTime,
+                            attemptedCheckOutTime: log.timestamp,
+                            durationMinutes: diffMinutes,
+                            thresholdMinutes: 120
+                        }
+                    });
                     continue;
                 }
 
@@ -172,6 +206,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             where: { id: existingAttendance.id },
                             data: {
                                 checkOutTime: log.timestamp,
+                                checkOutDeviceId: log.deviceId ?? undefined,
                                 updatedAt: new Date()
                             },
                             include: {
@@ -219,6 +254,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         where: { id: existingAttendance.id },
                         data: {
                             checkOutTime: log.timestamp,
+                            checkOutDeviceId: log.deviceId ?? undefined,
                             updatedAt: new Date()
                         },
                         include: {
@@ -547,7 +583,9 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
                         },
                         Shift: true
                     }
-                }
+                },
+                checkInDevice:  { select: { name: true } },
+                checkOutDevice: { select: { name: true } }
             },
             orderBy: [{ date: 'desc' }, { checkInTime: 'desc' }],
             skip,
@@ -563,6 +601,8 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
             ...record,
             checkInTimePH: formatToPhilippineTime(record.checkInTime),
             checkOutTimePH: record.checkOutTime ? formatToPhilippineTime(record.checkOutTime) : null,
+            checkInDeviceName:  record.checkInDevice?.name  ?? null,
+            checkOutDeviceName: record.checkOutDevice?.name ?? null,
             ...metrics,
         };
     });

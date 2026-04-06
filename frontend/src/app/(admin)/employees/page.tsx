@@ -324,10 +324,10 @@ export default function EmployeesPage() {
   const handleAddEmployee = async () => {
     // Validate required fields
     const errors: Record<string, string> = {}
-    
+
     const empIdValidation = validateEmployeeId(newEmployee.employeeNumber);
     if (!empIdValidation.isValid) errors.employeeNumber = empIdValidation.error!;
-    
+
     if (!newEmployee.firstName.trim()) errors.firstName = 'First name is required'
     if (!newEmployee.lastName.trim()) errors.lastName = 'Last name is required'
     if (!newEmployee.contactNumber.trim()) errors.contactNumber = 'Contact number is required'
@@ -682,7 +682,7 @@ export default function EmployeesPage() {
               </div>
             </div>
             <p className="text-sm text-foreground mb-6">
-              Are you sure you want to reset the password for <span className="font-medium">{confirmResetPassword.firstName} {confirmResetPassword.lastName}</span>? 
+              Are you sure you want to reset the password for <span className="font-medium">{confirmResetPassword.firstName} {confirmResetPassword.lastName}</span>?
               A new temporary password will be sent to their email.
             </p>
             <div className="flex gap-3">
@@ -743,7 +743,7 @@ export default function EmployeesPage() {
             <DialogTrigger asChild>
               <Button variant="outline" className="flex-1 sm:flex-none border-border text-foreground hover:bg-red-700 gap-2">
                 <Upload className="w-4 h-4" />
-                <span className="hidden xs:inline">Import</span> Excel
+                <span className="hidden xs:inline">Import</span> Import
               </Button>
             </DialogTrigger>
             <DialogContent showCloseButton={false} className="bg-white border-0 max-w-md p-0 rounded-2xl overflow-hidden shadow-xl">
@@ -1239,11 +1239,10 @@ export default function EmployeesPage() {
                             const name = `${employee.firstName} ${employee.lastName}`
                             setCardEnrollOpen({ open: true, employeeId: employee.id, employeeName: name })
                           }}
-                          className={`p-2.5 rounded-xl transition-all active:scale-90 ${
-                            employee.cardNumber
-                              ? 'text-blue-500 hover:text-blue-700 hover:bg-blue-50'
-                              : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
-                          }`}
+                          className={`p-2.5 rounded-xl transition-all active:scale-90 ${employee.cardNumber
+                            ? 'text-blue-500 hover:text-blue-700 hover:bg-blue-50'
+                            : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                            }`}
                           title={employee.cardNumber ? `Badge #${employee.cardNumber}` : 'Enroll RFID Badge'}
                         >
                           <CreditCard className="w-4 h-4" />
@@ -1581,7 +1580,7 @@ export default function EmployeesPage() {
           </div>
         );
       })()}
-      
+
     </div >
   )
 }

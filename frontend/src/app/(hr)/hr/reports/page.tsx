@@ -244,7 +244,25 @@ export default function ReportsPage() {
     worksheet['!cols'] = [{ wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 20 }];
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Individual Report");
-    XLSX.writeFile(workbook, `Attendance_${emp.name.replace(/\s+/g, '_')}.xlsx`);
+    const fileName = `Attendance_${emp.name.replace(/\s+/g, '_')}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+
+    // Log the export event
+    fetch('/api/logs/export-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        exportType: 'report',
+        entityType: 'Attendance',
+        source: 'hr-panel',
+        details: `Exported individual report for ${emp.name} (${emp.details.length} log entries)`,
+        filters: { dateFrom: fromDate, dateTo: toDate, employeeName: emp.name, department: emp.dept, branch: emp.branch },
+        recordCount: emp.details.length,
+        fileFormat: 'xlsx',
+        fileName,
+      }),
+    }).catch(() => {});
   };
 
   const handleExport = () => {
@@ -278,7 +296,25 @@ export default function ReportsPage() {
     ];
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
-    XLSX.writeFile(workbook, `Attendance Report.xlsx`);
+    const fileName = `Attendance Report.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+
+    // Log the export event
+    fetch('/api/logs/export-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        exportType: 'report',
+        entityType: 'Attendance',
+        source: 'hr-panel',
+        details: `Exported HR attendance report (${sortedFilteredData.length} employees) for ${fromDate} to ${toDate}`,
+        filters: { dateFrom: fromDate, dateTo: toDate, department: deptFilter !== 'all' ? deptFilter : undefined, branch: branchFilter !== 'all' ? branchFilter : undefined },
+        recordCount: sortedFilteredData.length,
+        fileFormat: 'xlsx',
+        fileName,
+      }),
+    }).catch(() => {});
   };
 
   return (

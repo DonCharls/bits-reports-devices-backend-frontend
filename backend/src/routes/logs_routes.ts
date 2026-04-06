@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getLogs } from '../controllers/logs.controller';
+import { getLogs, logExportEvent } from '../controllers/logs.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { adminOrHR } from '../middleware/role.middleware';
 
@@ -45,4 +45,43 @@ router.use(adminOrHR);
  */
 router.get('/', getLogs);
 
+/**
+ * @swagger
+ * /api/logs/export-event:
+ *   post:
+ *     summary: Log an export event (called after client-side file export)
+ *     tags: [Logs]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [exportType, entityType]
+ *             properties:
+ *               exportType:
+ *                 type: string
+ *               entityType:
+ *                 type: string
+ *               source:
+ *                 type: string
+ *               details:
+ *                 type: string
+ *               filters:
+ *                 type: object
+ *               recordCount:
+ *                 type: integer
+ *               fileFormat:
+ *                 type: string
+ *               fileName:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Export event logged successfully
+ */
+router.post('/export-event', logExportEvent);
+
 export default router;
+
