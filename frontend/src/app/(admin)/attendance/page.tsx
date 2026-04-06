@@ -187,8 +187,10 @@ export default function BiometricPage() {
           const isEarlyOut: boolean = log.isEarlyOut ?? false
           const isShiftActive: boolean = log.isShiftActive ?? false
           const gracePeriodApplied: boolean = log.gracePeriodApplied ?? false
-          // If shift is active, enforce IN_PROGRESS status to skip penalty labeling for active shifts
-          const status = isShiftActive ? 'IN_PROGRESS' : isEarlyOut ? 'early-out' : isAnomaly ? 'anomaly' : lateMinutes > 0 ? 'late' : undertimeMinutes > 0 ? 'undertime' : (log.status || 'present')
+          // Data status: reflects attendance accuracy regardless of shift activity (used for filtering & counting)
+          const status = isEarlyOut ? 'early-out' : isAnomaly ? 'anomaly' : lateMinutes > 0 ? 'late' : undertimeMinutes > 0 ? 'undertime' : (log.status || 'present')
+          // Display status: preserves IN_PROGRESS for active shifts (used for UI badge & clock-out indicator)
+          const displayStatus = isShiftActive ? 'IN_PROGRESS' : status
 
           return {
             id: log.id,
@@ -203,6 +205,7 @@ export default function BiometricPage() {
               : '—',
             lateMinutes,
             status,
+            displayStatus,
             shiftCode,
             isNightShift: emp.Shift?.isNightShift ?? false,
             totalHours,
@@ -248,6 +251,7 @@ export default function BiometricPage() {
             checkOut: '—',
             lateMinutes: 0,
             status: 'absent',
+            displayStatus: 'absent',
             shiftCode: e.Shift?.shiftCode ?? null,
             isNightShift: e.Shift?.isNightShift ?? false,
             totalHours: 0,
@@ -267,6 +271,9 @@ export default function BiometricPage() {
           filtered = filtered.filter((r: any) => r.department === selectedDeptName)
         }
 
+        // Snapshot before status filter — stats should always reflect the full view
+        const preFilteredByStatus = filtered
+
         if (selectedStatus !== 'all') {
           filtered = filtered.filter((r: any) => r.status === selectedStatus)
         }
@@ -274,17 +281,16 @@ export default function BiometricPage() {
         setRecords(filtered)
         setTotalPages(Math.max(1, Math.ceil(filtered.length / rowsPerPage)))
         setStats({
-          // Count any recorded presence on site as 'present' for the high level card
-          totalPresent: filtered.filter((r: any) => ['present', 'late', 'IN_PROGRESS', 'anomaly', 'early-out'].includes(r.status)).length,
-          totalLate: filtered.filter((r: any) => r.status === 'late').length,
-          totalAbsent: filtered.filter((r: any) => r.status === 'absent').length,
-          total: filtered.length,
-          avgHours: filtered.length > 0
-            ? (filtered.filter((r: any) => r.totalHours > 0).reduce((s: number, r: any) => s + r.totalHours, 0) /
-              (filtered.filter((r: any) => r.totalHours > 0).length || 1)).toFixed(1)
+          totalPresent: preFilteredByStatus.filter((r: any) => r.status === 'present').length,
+          totalLate: preFilteredByStatus.filter((r: any) => r.status === 'late').length,
+          totalAbsent: preFilteredByStatus.filter((r: any) => r.status === 'absent').length,
+          total: preFilteredByStatus.length,
+          avgHours: preFilteredByStatus.length > 0
+            ? (preFilteredByStatus.filter((r: any) => r.totalHours > 0).reduce((s: number, r: any) => s + r.totalHours, 0) /
+              (preFilteredByStatus.filter((r: any) => r.totalHours > 0).length || 1)).toFixed(1)
             : '0',
-          totalOvertime: (filtered.reduce((s: number, r: any) => s + (r.overtimeMinutes ?? 0), 0) / 60).toFixed(1),
-          totalUndertime: (filtered.reduce((s: number, r: any) => s + (r.undertimeMinutes ?? 0), 0) / 60).toFixed(1),
+          totalOvertime: (preFilteredByStatus.reduce((s: number, r: any) => s + (r.overtimeMinutes ?? 0), 0) / 60).toFixed(1),
+          totalUndertime: (preFilteredByStatus.reduce((s: number, r: any) => s + (r.undertimeMinutes ?? 0), 0) / 60).toFixed(1),
         })
       } else {
         setError(data.message || 'Failed to fetch records')
@@ -464,7 +470,7 @@ export default function BiometricPage() {
           </div>
           <div className="flex items-center gap-4">
             <div className="text-center">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Present</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">On Time</p>
               <p className="text-xl font-black text-emerald-500">{stats.totalPresent}</p>
             </div>
             <div className="w-px h-8 bg-border" />
@@ -518,11 +524,12 @@ export default function BiometricPage() {
                         <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">{row.department} • {row.branchName}</p>
                       </div>
                       <div className="shrink-0">
-                        <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${row.status === 'present' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
-                          : row.status === 'late' ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
-                            : 'text-red-500 bg-red-500/10 border-red-500/20'
+                        <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${row.displayStatus === 'present' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
+                          : row.displayStatus === 'IN_PROGRESS' ? 'text-blue-500 bg-blue-500/10 border-blue-500/20'
+                            : row.displayStatus === 'late' ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
+                              : 'text-red-500 bg-red-500/10 border-red-500/20'
                           }`}>
-                          {row.status === 'present' ? 'On Time' : row.status}
+                          {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus}
                         </span>
                       </div>
                     </div>
@@ -697,22 +704,22 @@ export default function BiometricPage() {
                         <Badge
                           variant="outline"
                           className={
-                            record.status === 'present'
+                            record.displayStatus === 'present'
                               ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                              : record.status === 'IN_PROGRESS'
+                              : record.displayStatus === 'IN_PROGRESS'
                                 ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-                                : record.status === 'late'
+                                : record.displayStatus === 'late'
                                   ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                                  : record.status === 'undertime'
+                                  : record.displayStatus === 'undertime'
                                     ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'
-                                    : record.status === 'incomplete'
+                                    : record.displayStatus === 'incomplete'
                                       ? 'bg-amber-500/20 text-amber-500 border-amber-500/30'
-                                      : record.status === 'absent'
+                                      : record.displayStatus === 'absent'
                                         ? 'bg-red-500/20 text-red-400 border-red-500/30'
                                         : 'bg-secondary/50 text-muted-foreground border-border'
                           }
                         >
-                          {record.status === 'IN_PROGRESS' ? 'In Progress' : record.status.charAt(0).toUpperCase() + record.status.slice(1)}
+                          {record.displayStatus === 'IN_PROGRESS' ? 'In Progress' : record.displayStatus ? record.displayStatus.charAt(0).toUpperCase() + record.displayStatus.slice(1) : '—'}
                         </Badge>
                       )}
                     </td>
