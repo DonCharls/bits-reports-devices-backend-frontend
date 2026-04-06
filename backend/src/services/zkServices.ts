@@ -1440,6 +1440,101 @@ export const enrollEmployeeCard = async (
     };
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// RFID BADGE CARD REMOVAL
+// Clears the card number on ALL active devices and sets it to null in the DB.
+// ─────────────────────────────────────────────────────────────────────────────
+export const removeEmployeeCard = async (
+    employeeId: number,
+): Promise<SyncResult> => {
+    console.log(`[CardRemove] Starting for employee ${employeeId}...`);
+
+    // 1. Load employee from DB
+    const employee = await prisma.employee.findUnique({
+        where: { id: employeeId },
+        select: { id: true, zkId: true, firstName: true, lastName: true, role: true, cardNumber: true },
+    });
+
+    if (!employee) {
+        return { success: false, message: `Employee ${employeeId} not found in database.` };
+    }
+
+    if (!employee.cardNumber) {
+        return { success: false, message: `Employee ${employeeId} does not have a badge assigned.` };
+    }
+
+    if (!employee.zkId) {
+        // No zkId — just clear DB and return
+        await prisma.employee.update({
+            where: { id: employeeId },
+            data: { cardNumber: null, updatedAt: new Date() },
+        });
+        return { success: true, message: `Badge removed for ${employee.firstName} ${employee.lastName}.` };
+    }
+
+    // 2. Clear card on ALL active devices
+    const fullName = `${employee.firstName} ${employee.lastName}`;
+    const visibleId = employee.zkId.toString();
+    const deviceUid = employee.zkId;
+    const deviceRole = employee.role === 'ADMIN' ? 14 : 0;
+
+    const dbDevices = await prisma.device.findMany({
+        where: { isActive: true, syncEnabled: true },
+        orderBy: { id: 'asc' },
+    });
+
+    let syncedCount = 0;
+    const failedDevices: string[] = [];
+
+    for (const dbDevice of dbDevices) {
+        await acquireInteractiveDeviceLock(dbDevice.id);
+        const zk = getDriver(dbDevice.ip, dbDevice.port);
+        try {
+            await connectWithRetry(zk, 1);
+
+            const deviceUsers = await zk.getUsers();
+            const occupant = deviceUsers.find((u: any) => u.uid === deviceUid);
+
+            if (occupant && String(occupant.userId).trim() !== visibleId.trim()) {
+                console.warn(`[CardRemove] ⚠ UID conflict on "${dbDevice.name}" — skipping.`);
+                failedDevices.push(`${dbDevice.name} (UID conflict)`);
+                continue;
+            }
+
+            // Write user record WITH card number = 0 (cleared)
+            await zk.setUser(deviceUid, fullName, '', deviceRole, 0, visibleId);
+            await zk.refreshData();
+
+            console.log(`[CardRemove] ✓ Card cleared for "${fullName}" on "${dbDevice.name}".`);
+            syncedCount++;
+        } catch (err: any) {
+            console.error(`[CardRemove] Failed on "${dbDevice.name}": ${zkErrMsg(err)}`);
+            failedDevices.push(`${dbDevice.name} (${zkErrMsg(err)})`);
+        } finally {
+            try { await zk.disconnect(); } catch { /* ignore */ }
+            releaseDeviceLock(dbDevice.id);
+        }
+    }
+
+    // 3. Clear in DB
+    await prisma.employee.update({
+        where: { id: employeeId },
+        data: { cardNumber: null, updatedAt: new Date() },
+    });
+
+    const msg = syncedCount > 0
+        ? `Badge removed for ${fullName}. Cleared on ${syncedCount} device(s).`
+        : `Badge removed for ${fullName} in database, but no devices could be synced.`;
+
+    if (failedDevices.length > 0) {
+        console.warn(`[CardRemove] Failed devices: ${failedDevices.join(', ')}`);
+    }
+
+    return {
+        success: true,
+        message: msg + (failedDevices.length > 0 ? ` Failed: ${failedDevices.join(', ')}` : ''),
+    };
+};
 
 export const testDeviceConnection = async (): Promise<SyncResult> => {
     const zk = getDriver();

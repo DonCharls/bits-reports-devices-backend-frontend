@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import bcrypt from 'bcryptjs';
 import attendanceEmitter from '../lib/attendanceEmitter';
+import { calculateAttendanceMetrics, formatToPhilippineTime } from '../services/attendance.service';
 
 // Get logged-in employee's own attendance records
 export const getMyAttendance = async (req: Request, res: Response): Promise<void> => {
@@ -29,10 +30,29 @@ export const getMyAttendance = async (req: Request, res: Response): Promise<void
                 employeeId,
                 ...(Object.keys(dateFilter).length > 0 && { date: dateFilter }),
             },
+            include: {
+                employee: {
+                    include: {
+                        Shift: true
+                    }
+                }
+            },
             orderBy: { date: 'desc' },
         });
 
-        res.status(200).json({ success: true, count: records.length, data: records });
+        // Enrich each record with shift-based calculations
+        const enrichedData = records.map((record: any) => {
+            const shift = record.employee?.Shift ?? null;
+            const metrics = calculateAttendanceMetrics(record, shift);
+            return {
+                ...record,
+                checkInTimePH: formatToPhilippineTime(record.checkInTime),
+                checkOutTimePH: record.checkOutTime ? formatToPhilippineTime(record.checkOutTime) : null,
+                ...metrics,
+            };
+        });
+
+        res.status(200).json({ success: true, count: enrichedData.length, data: enrichedData });
     } catch (error: any) {
         console.error('getMyAttendance error:', error);
         res.status(500).json({ success: false, message: 'Failed to fetch attendance records', error: error.message });

@@ -128,7 +128,7 @@ function EmployeeDirectoryContent() {
   }>({ open: false, employeeId: null, employeeName: '' });
 
   // ── RFID Card Enrollment state ──
-  const [cardEnrollOpen, setCardEnrollOpen] = useState<{ open: boolean, employeeId: number | null, employeeName: string }>({ open: false, employeeId: null, employeeName: '' });
+  const [cardEnrollOpen, setCardEnrollOpen] = useState<{ open: boolean, employeeId: number | null, employeeName: string, currentCardNumber: number | null }>({ open: false, employeeId: null, employeeName: '', currentCardNumber: null });
 
   const [devices, setDevices] = useState<{ id: number; name: string; location: string | null; isActive: boolean }[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
@@ -683,7 +683,7 @@ function EmployeeDirectoryContent() {
                         <button
                           onClick={() => {
                             const name = `${emp.firstName} ${emp.lastName}`;
-                            setCardEnrollOpen({ open: true, employeeId: emp.id!, employeeName: name });
+                            setCardEnrollOpen({ open: true, employeeId: emp.id!, employeeName: name, currentCardNumber: emp.cardNumber ?? null });
                           }}
                           className={`p-2.5 rounded-xl transition-all active:scale-90 ${
                             emp.cardNumber
@@ -1347,12 +1347,13 @@ function EmployeeDirectoryContent() {
         isOpen={cardEnrollOpen.open}
         employeeId={cardEnrollOpen.employeeId}
         employeeName={cardEnrollOpen.employeeName}
-        onClose={() => setCardEnrollOpen({ open: false, employeeId: null, employeeName: '' })}
+        currentCardNumber={cardEnrollOpen.currentCardNumber}
+        onClose={() => setCardEnrollOpen({ open: false, employeeId: null, employeeName: '', currentCardNumber: null })}
         onSuccess={(msg) => {
-          showToast('success', 'Badge Enrolled', msg);
+          showToast('success', 'Badge Updated', msg);
           fetchData();
         }}
-        onError={(msg) => showToast('error', 'Enrollment Failed', msg)}
+        onError={(msg) => showToast('error', 'Badge Operation Failed', msg)}
       />
 
       {/* ── Enrollment Loading Full-Screen Modal ── */}

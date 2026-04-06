@@ -7,6 +7,7 @@ import {
     createEmployee,
     enrollEmployeeFingerprintController,
     enrollEmployeeCardController,
+    removeEmployeeCardController,
     updateEmployee,
     permanentDeleteEmployee,
     resetEmployeePassword,
@@ -213,6 +214,29 @@ router.post('/:id/enroll-fingerprint', validate(enrollFingerprintValidator), enr
  *         description: Card number already assigned to another employee
  */
 router.post('/:id/enroll-card', validate(enrollCardValidator), enrollEmployeeCardController);
+
+/**
+ * @swagger
+ * /api/employees/{id}/remove-card:
+ *   delete:
+ *     summary: Remove RFID badge card from employee
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Employee ID
+ *     responses:
+ *       200:
+ *         description: Card removed successfully
+ *       404:
+ *         description: Employee not found
+ */
+router.delete('/:id/remove-card', removeEmployeeCardController);
 
 /**
  * @swagger

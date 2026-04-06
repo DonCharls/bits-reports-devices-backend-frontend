@@ -234,7 +234,9 @@ function AttendanceContent() {
             isNightShift: e.Shift?.isNightShift ?? false,
           }));
 
-        let full = [...mapped, ...absentRows];
+        let full = (statusFilter === 'all' || statusFilter === 'absent')
+          ? [...mapped, ...absentRows]
+          : [...mapped];
 
         // Apply client-side filters
         if (debouncedSearch) full = full.filter(r => r.employeeName.toLowerCase().includes(debouncedSearch.toLowerCase()));
@@ -322,6 +324,7 @@ function AttendanceContent() {
     const date = new Date(selectedDate + 'T00:00:00');
     const formattedDate = `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
     const branchLabel = branchFilter === 'All Branches' ? 'All Branches' : branchFilter;
+    const deptLabel = deptFilter === 'All Departments' ? 'All Departments' : deptFilter;
 
     const presentCount = records.filter(r => r.status === 'present').length;
     const lateCount = records.filter(r => r.status === 'late').length;
@@ -331,6 +334,7 @@ function AttendanceContent() {
 
     allRows.push(['BITS Attendance Report']);
     allRows.push(['Branch', branchLabel]);
+    allRows.push(['Department', deptLabel]);
     allRows.push(['Date', formattedDate]);
     allRows.push(['Generated', new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })]);
     allRows.push([]);

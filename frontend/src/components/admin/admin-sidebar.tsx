@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Clock, FileText, LayoutDashboard, UserCog, UserX, ChevronDown, Building2, Menu, X, Fingerprint, RadioTower, ScrollText, Server, ClipboardCheck } from 'lucide-react'
+import { Users, Clock, FileText, LayoutDashboard, UserCog, UserX, ChevronDown, Building2, Menu, X, Fingerprint, RadioTower, ScrollText, Server, History } from 'lucide-react'
 import { useRef, useState, useEffect, useCallback } from 'react'
 
 interface AdminSidebarProps {
@@ -20,9 +20,11 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
   const [isLg, setIsLg] = useState(false)
 
   const isOnEmployees = pathname.startsWith('/employees')
+  const isOnReports = pathname.startsWith('/admin/reports') || pathname.startsWith('/admin/adjust')
 
   // Inactive sub-item is toggleable anytime by clicking the chevron
   const [inactiveOpen, setInactiveOpen] = useState(isOnEmployees)
+  const [reportsOpen, setReportsOpen] = useState(isOnReports)
 
   // On mobile (<lg) the sidebar should NEVER appear collapsed — labels must always show
   const collapsed = isCollapsed && isLg
@@ -35,37 +37,25 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
     return () => mql.removeEventListener('change', handler)
   }, [])
 
-  const navItems = [
-    { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { label: 'Organization', href: '/departments', icon: Building2 },
-    { label: 'Shifts', href: '/shifts', icon: Clock },
-    { label: 'Attendance', href: '/attendance', icon: Fingerprint },
-    { label: 'Approvals', href: '/admin/adjustments', icon: ClipboardCheck },
-    { label: 'Devices', href: '/devices', icon: RadioTower },
-    { label: 'Reports', href: '/admin/reports', icon: FileText },
-    { label: 'System Logs', href: '/admin/logs', icon: ScrollText },
-    { label: 'System Settings', href: '/admin/system', icon: Server },
-    { label: 'User Accounts', href: '/admin/user-accounts', icon: UserCog },
-  ]
-
   // Flat list matching rendered <li> order for indicator
   const allItems = [
     { href: '/dashboard' },
-    { href: '/employees', matchPrefix: '/employees' },
-    { href: '/departments' },
-    { href: '/shifts' },
     { href: '/attendance' },
-    { href: '/admin/adjustments' },
+    { href: '/employees', matchPrefix: '/employees' },
+    { href: '/shifts' },
+    { href: '/departments' },
     { href: '/devices' },
-    { href: '/admin/reports' },
+    { href: '/admin/reports', matchPrefix: '/admin/reports' }, // Used for index match
     { href: '/admin/logs' },
     { href: '/admin/system' },
     { href: '/admin/user-accounts' },
   ]
 
-  const activeIndex = allItems.findIndex(item =>
-    item.matchPrefix ? pathname.startsWith(item.matchPrefix) : pathname === item.href
-  )
+  const activeIndex = allItems.findIndex(item => {
+    if (item.matchPrefix === '/admin/reports') return isOnReports;
+    if (item.matchPrefix) return pathname.startsWith(item.matchPrefix)
+    return pathname === item.href
+  })
 
   const updateIndicator = useCallback(() => {
     if (!listRef.current || activeIndex < 0) return
@@ -85,7 +75,14 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
   useEffect(() => {
     const timer = setTimeout(updateIndicator, 320)
     return () => clearTimeout(timer)
-  }, [inactiveOpen, collapsed, updateIndicator])
+  }, [inactiveOpen, reportsOpen, collapsed, updateIndicator])
+
+  const labelStyle = {
+    opacity: collapsed ? 0 : 1,
+    width: collapsed ? 0 : 'auto',
+    overflow: 'hidden',
+    transition: 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1), width 300ms cubic-bezier(0.4, 0, 0.2, 1)'
+  }
 
   return (
     <aside className={`
@@ -110,12 +107,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
         {/* --- Admin Panel Title --- */}
         <span
           className="font-bold text-xl text-white whitespace-nowrap ml-4"
-          style={{
-            opacity: collapsed ? 0 : 1,
-            width: collapsed ? 0 : 'auto',
-            overflow: 'hidden',
-            transition: 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1), width 300ms cubic-bezier(0.4, 0, 0.2, 1)'
-          }}
+          style={labelStyle}
         >
           Admin Panel
         </span>
@@ -160,16 +152,27 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
               title={collapsed ? 'Dashboard' : undefined}
             >
               <LayoutDashboard size={22} className={`shrink-0 ${pathname === '/dashboard' ? 'text-[#E60000]' : 'text-white'}`} />
-              <span className="font-bold text-lg whitespace-nowrap" style={{ opacity: collapsed ? 0 : 1, width: collapsed ? 0 : 'auto', overflow: 'hidden', transition: 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1), width 300ms cubic-bezier(0.4, 0, 0.2, 1)' }}>
-                Dashboard
-              </span>
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Dashboard</span>
             </Link>
           </li>
 
-          {/* Employees — link on the left, chevron toggle on the right */}
+          {/* Attendance */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <Link
+              href="/attendance"
+              onClick={onClose}
+              className={`flex items-center gap-4 py-3 relative z-10 ${pathname === '/attendance' ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
+              title={collapsed ? 'Attendance' : undefined}
+            >
+              <Fingerprint size={22} className={`shrink-0 ${pathname === '/attendance' ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Attendance</span>
+            </Link>
+          </li>
+
+          {/* Employees (with submenu) */}
           <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
             <div className="flex items-center relative z-10">
-              {/* The main Employees link */}
               <Link
                 href="/employees"
                 onClick={onClose}
@@ -178,17 +181,13 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
                 title={collapsed ? 'Employees' : undefined}
               >
                 <Users size={22} className={`shrink-0 ${isOnEmployees ? 'text-[#E60000]' : 'text-white'}`} />
-                <span className="font-bold text-lg whitespace-nowrap" style={{ opacity: collapsed ? 0 : 1, width: collapsed ? 0 : 'auto', overflow: 'hidden', transition: 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1), width 300ms cubic-bezier(0.4, 0, 0.2, 1)' }}>
-                  Employees
-                </span>
+                <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Employees</span>
               </Link>
-
-              {/* Chevron toggle — always clickable */}
               {!collapsed && (
                 <button
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); setInactiveOpen(o => !o); }}
                   className={`p-2 mr-2 rounded-lg transition-colors shrink-0 ${isOnEmployees ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
-                  title="Toggle Inactive Employees"
+                  title="Toggle submenu"
                 >
                   <ChevronDown
                     size={16}
@@ -197,8 +196,6 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
                 </button>
               )}
             </div>
-
-            {/* Inactive sub-item — slides in/out */}
             {!collapsed && (
               <div
                 style={{
@@ -212,12 +209,8 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
                     href="/employees/inactive"
                     onClick={onClose}
                     className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${pathname === '/employees/inactive'
-                      ? isOnEmployees
-                        ? 'text-[#E60000]'
-                        : 'text-white'
-                      : isOnEmployees
-                        ? 'text-[#E60000]/60 hover:text-[#E60000]'
-                        : 'text-white/60 hover:text-white'
+                      ? isOnEmployees ? 'text-[#E60000]' : 'text-white'
+                      : isOnEmployees ? 'text-[#E60000]/60 hover:text-[#E60000]' : 'text-white/60 hover:text-white'
                       }`}
                   >
                     <UserX size={15} className="shrink-0" />
@@ -228,27 +221,140 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
             )}
           </li>
 
-          {/* All other nav items */}
-          {navItems.slice(1).map((item) => {
-            const Icon = item.icon
-            const active = pathname === item.href
-            return (
-              <li key={item.href} className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
-                <Link
-                  href={item.href}
-                  onClick={onClose}
-                  className={`flex items-center gap-4 py-3 relative z-10 ${active ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
-                  style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
-                  title={collapsed ? item.label : undefined}
+          {/* Shifts */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <Link
+              href="/shifts"
+              onClick={onClose}
+              className={`flex items-center gap-4 py-3 relative z-10 ${pathname === '/shifts' ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
+              title={collapsed ? 'Shifts' : undefined}
+            >
+              <Clock size={22} className={`shrink-0 ${pathname === '/shifts' ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Shifts</span>
+            </Link>
+          </li>
+
+          {/* Organization */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <Link
+              href="/departments"
+              onClick={onClose}
+              className={`flex items-center gap-4 py-3 relative z-10 ${pathname === '/departments' ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
+              title={collapsed ? 'Organization' : undefined}
+            >
+              <Building2 size={22} className={`shrink-0 ${pathname === '/departments' ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Organization</span>
+            </Link>
+          </li>
+
+          {/* Devices */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <Link
+              href="/devices"
+              onClick={onClose}
+              className={`flex items-center gap-4 py-3 relative z-10 ${pathname === '/devices' ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
+              title={collapsed ? 'Devices' : undefined}
+            >
+              <RadioTower size={22} className={`shrink-0 ${pathname === '/devices' ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Devices</span>
+            </Link>
+          </li>
+
+          {/* Reports (with submenu) */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <div className="flex items-center relative z-10">
+              <Link
+                href="/admin/reports"
+                onClick={onClose}
+                className={`flex items-center gap-4 py-3 flex-1 ${isOnReports ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+                style={{ paddingLeft: '12px' }}
+                title={collapsed ? 'Reports' : undefined}
+              >
+                <FileText size={22} className={`shrink-0 ${isOnReports ? 'text-[#E60000]' : 'text-white'}`} />
+                <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Reports</span>
+              </Link>
+              {!collapsed && (
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setReportsOpen(o => !o); }}
+                  className={`p-2 mr-2 rounded-lg transition-colors shrink-0 ${isOnReports ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+                  title="Toggle submenu"
                 >
-                  <Icon size={22} className={`shrink-0 ${active ? 'text-[#E60000]' : 'text-white'}`} />
-                  <span className="font-bold text-lg whitespace-nowrap" style={{ opacity: collapsed ? 0 : 1, width: collapsed ? 0 : 'auto', overflow: 'hidden', transition: 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1), width 300ms cubic-bezier(0.4, 0, 0.2, 1)' }}>
-                    {item.label}
-                  </span>
-                </Link>
-              </li>
-            )
-          })}
+                  <ChevronDown
+                    size={16}
+                    style={{ transition: 'transform 300ms cubic-bezier(0.4, 0, 0.2, 1)', transform: reportsOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                  />
+                </button>
+              )}
+            </div>
+            {!collapsed && (
+              <div
+                style={{
+                  maxHeight: reportsOpen ? '56px' : '0px',
+                  overflow: 'hidden',
+                  transition: 'max-height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+              >
+                <div className="pl-4 pr-3 pb-2 relative z-10">
+                  <Link
+                    href="/admin/adjust"
+                    onClick={onClose}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${pathname === '/admin/adjust'
+                      ? isOnReports ? 'text-[#E60000]' : 'text-white'
+                      : isOnReports ? 'text-[#E60000]/60 hover:text-[#E60000]' : 'text-white/60 hover:text-white'
+                      }`}
+                  >
+                    <History size={15} className="shrink-0" />
+                    Adjustment Logs
+                  </Link>
+                </div>
+              </div>
+            )}
+          </li>
+
+          {/* System Logs */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <Link
+              href="/admin/logs"
+              onClick={onClose}
+              className={`flex items-center gap-4 py-3 relative z-10 ${pathname === '/admin/logs' ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
+              title={collapsed ? 'System Logs' : undefined}
+            >
+              <ScrollText size={22} className={`shrink-0 ${pathname === '/admin/logs' ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>System Logs</span>
+            </Link>
+          </li>
+
+          {/* System Settings */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <Link
+              href="/admin/system"
+              onClick={onClose}
+              className={`flex items-center gap-4 py-3 relative z-10 ${pathname === '/admin/system' ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
+              title={collapsed ? 'System Settings' : undefined}
+            >
+              <Server size={22} className={`shrink-0 ${pathname === '/admin/system' ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>System Settings</span>
+            </Link>
+          </li>
+
+          {/* User Accounts */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <Link
+              href="/admin/user-accounts"
+              onClick={onClose}
+              className={`flex items-center gap-4 py-3 relative z-10 ${pathname === '/admin/user-accounts' ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
+              title={collapsed ? 'User Accounts' : undefined}
+            >
+              <UserCog size={22} className={`shrink-0 ${pathname === '/admin/user-accounts' ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>User Accounts</span>
+            </Link>
+          </li>
 
         </ul>
       </nav>

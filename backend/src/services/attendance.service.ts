@@ -66,6 +66,11 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
             include: { employee: { include: { Shift: true } } }
         });
 
+        // Fetch System settings for dynamic constraints
+        const syncConfig = await prisma.syncConfig.findUnique({ where: { id: 1 } });
+        const minCheckoutMins = syncConfig?.globalMinCheckoutMinutes ?? 120;
+        const minCheckoutHours = minCheckoutMins / 60;
+
         let created = 0;
         let updated = 0;
 
@@ -101,7 +106,6 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             employeeId: log.employeeId,
                             date: dateOnly,
                             checkInTime: log.timestamp,
-                            checkInDeviceId: log.deviceId ?? undefined,
                             status: isLate ? 'late' : 'present'
                         },
                         include: {
@@ -126,8 +130,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         entityId: createdRecord.id,
                         performedBy: createdRecord.employeeId,
                         source: 'device-sync',
-                        details: `Employee checked in (${isLate ? 'Late' : 'On-time'})`,
-                        metadata: { category: 'attendance' }
+                        details: `Employee checked in (${isLate ? 'Late' : 'On-time'})`
                     });
 
                     const shift = createdRecord.employee?.Shift ?? null;
@@ -159,43 +162,10 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                 const diffMs = logTime.getTime() - checkInTime.getTime();
                 const diffHours = diffMs / (1000 * 60 * 60); //for every 1000 milliseconds, it will be 1 second
 
-                // RULE: User must be checked in for at least 2 hours before checking out
-                if (diffHours < 2) {
-                    const diffMinutes = Math.round(diffMs / (1000 * 60));
-
-                    // Flag the attendance record with a visible note (avoid duplicating)
-                    const existingNotes = existingAttendance.notes || '';
-                    if (!existingNotes.includes('Early punch detected')) {
-                        const flagNote = `Early punch detected — only ${diffMinutes} min after check-in (minimum: 120 min). Requires HR/Admin review.`;
-                        const newNotes = existingNotes
-                            ? `${existingNotes} | ${flagNote}`
-                            : flagNote;
-
-                        await prisma.attendance.update({
-                            where: { id: existingAttendance.id },
-                            data: { notes: newNotes }
-                        });
-                    }
-
-                    // Log as WARNING in System Logs
-                    void audit({
-                        action: 'SUSPICIOUS_CHECKOUT',
-                        level: 'WARN',
-                        entityType: 'Attendance',
-                        entityId: existingAttendance.id,
-                        performedBy: log.employeeId,
-                        source: 'device-sync',
-                        details: `Early punch ignored for ${log.employee?.firstName} ${log.employee?.lastName} — only ${diffMinutes} min after check-in (minimum: 120 min)`,
-                        metadata: {
-                            category: 'attendance',
-                            employeeId: log.employeeId,
-                            employeeName: `${log.employee?.firstName} ${log.employee?.lastName}`,
-                            checkInTime: existingAttendance.checkInTime,
-                            attemptedCheckOutTime: log.timestamp,
-                            durationMinutes: diffMinutes,
-                            thresholdMinutes: 120
-                        }
-                    });
+                // RULE: User must be checked in for at least the configured minimum hours before checking out
+                if (diffHours < minCheckoutHours) {
+                    // Too soon to check out - ignore this log
+                    // This prevents accidental double-scans from closing the attendance
                     continue;
                 }
 
@@ -206,7 +176,6 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             where: { id: existingAttendance.id },
                             data: {
                                 checkOutTime: log.timestamp,
-                                checkOutDeviceId: log.deviceId ?? undefined,
                                 updatedAt: new Date()
                             },
                             include: {
@@ -231,8 +200,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             entityId: updatedRecord.id,
                             performedBy: updatedRecord.employeeId,
                             source: 'device-sync',
-                            details: `Employee checked out (updated)`,
-                            metadata: { category: 'attendance' }
+                            details: `Employee checked out (updated)`
                         });
 
                         const shift = updatedRecord.employee?.Shift ?? null;
@@ -254,7 +222,6 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         where: { id: existingAttendance.id },
                         data: {
                             checkOutTime: log.timestamp,
-                            checkOutDeviceId: log.deviceId ?? undefined,
                             updatedAt: new Date()
                         },
                         include: {
@@ -279,8 +246,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         entityId: updatedRecord2.id,
                         performedBy: updatedRecord2.employeeId,
                         source: 'device-sync',
-                        details: `Employee checked out`,
-                        metadata: { category: 'attendance' }
+                        details: `Employee checked out`
                     });
 
                     const shift2 = updatedRecord2.employee?.Shift ?? null;
@@ -449,8 +415,7 @@ export const autoCheckoutEmployees = async (): Promise<number> => {
                 action: 'AUTO_CHECKOUT',
                 entityType: 'System',
                 source: 'cron',
-                details: `Auto-checkout applied to ${count} records`,
-                metadata: { category: 'system', recordCount: count }
+                details: `Auto-checkout applied to ${count} records`
             });
         }
 
@@ -514,8 +479,7 @@ export const repairMissingCheckouts = async (): Promise<number> => {
                 action: 'FLAG_MISSING_CHECKOUT',
                 entityType: 'System',
                 source: 'startup-repair',
-                details: `Startup: Flagged ${flaggedCount} records with missing checkouts for manual review`,
-                metadata: { category: 'system', flaggedCount }
+                details: `Startup: Flagged ${flaggedCount} records with missing checkouts for manual review`
             });
         }
 
@@ -583,9 +547,7 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
                         },
                         Shift: true
                     }
-                },
-                checkInDevice:  { select: { name: true } },
-                checkOutDevice: { select: { name: true } }
+                }
             },
             orderBy: [{ date: 'desc' }, { checkInTime: 'desc' }],
             skip,
@@ -601,8 +563,6 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
             ...record,
             checkInTimePH: formatToPhilippineTime(record.checkInTime),
             checkOutTimePH: record.checkOutTime ? formatToPhilippineTime(record.checkOutTime) : null,
-            checkInDeviceName:  record.checkInDevice?.name  ?? null,
-            checkOutDeviceName: record.checkOutDevice?.name ?? null,
             ...metrics,
         };
     });
@@ -615,7 +575,7 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
  * All times are stored as UTC where PHT midnight = UTC midnight offset by -8h
  * i.e. a stored timestamp of 2026-02-10T00:00:00Z represents 2026-02-10T08:00:00+08:00 PHT midnight workaround
  */
-function calculateAttendanceMetrics(record: any, shift: any) {
+export function calculateAttendanceMetrics(record: any, shift: any) {
     const shiftCode = shift?.shiftCode ?? null;
 
     if (!shift || !record.checkInTime) {
@@ -830,7 +790,7 @@ function calculateAttendanceMetrics(record: any, shift: any) {
 /**
  * Helper: Convert UTC date to Philippine Time string
  */
-function formatToPhilippineTime(utcDate: Date): string {
+export function formatToPhilippineTime(utcDate: Date): string {
     // Just use toLocaleString with timeZone option. 
     // The input utcDate is already a valid Date object (UTC).
     return utcDate.toLocaleString('en-US', {
