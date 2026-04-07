@@ -7,11 +7,13 @@ import {
     createEmployee,
     enrollEmployeeFingerprintController,
     enrollEmployeeCardController,
+    deleteEmployeeCardController,
     updateEmployee,
     permanentDeleteEmployee,
     resetEmployeePassword,
     checkEmailAvailability,
     getEmployeeFingerprintStatus,
+    getEmployeeCardStatus,
     deleteEmployeeFingerprint,
     syncEmployeeFingerprintsController
 } from '../controllers/employee.controller';
@@ -283,6 +285,41 @@ router.post('/:id/sync-fingerprints', syncEmployeeFingerprintsController);
  *         description: Card number already assigned to another employee
  */
 router.post('/:id/enroll-card', validate(enrollCardValidator), enrollEmployeeCardController);
+
+/**
+ * @swagger
+ * /api/employees/{id}/card-status:
+ *   get:
+ *     summary: Get RFID card status for an employee across all devices
+ *     tags: [Employees]
+ */
+router.get('/:id/card-status', getEmployeeCardStatus);
+
+/**
+ * @swagger
+ * /api/employees/{id}/card:
+ *   delete:
+ *     summary: Delete an employee's RFID card globally
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Employee ID
+ *     responses:
+ *       200:
+ *         description: Card deleted successfully
+ *       400:
+ *         description: Invalid input
+ *       500:
+ *         description: Server error
+ */
+router.delete('/:id/card', deleteEmployeeCardController);
+router.delete('/:id/card/device/:deviceId', deleteEmployeeCardController);
 
 /**
  * @swagger

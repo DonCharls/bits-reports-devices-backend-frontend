@@ -131,6 +131,7 @@ model Device {
   AttendanceLog            AttendanceLog[]
   EmployeeDeviceEnrollment EmployeeDeviceEnrollment[]
   EmployeeFingerprintEnrollment EmployeeFingerprintEnrollment[]
+  EmployeeCardEnrollment   EmployeeCardEnrollment[]
 
   @@index([isActive])
   @@index([syncEnabled])
@@ -171,6 +172,7 @@ model Employee {
   RefreshToken               RefreshToken[]
   EmployeeDeviceEnrollment   EmployeeDeviceEnrollment[]
   EmployeeFingerprintEnrollment EmployeeFingerprintEnrollment[]
+  EmployeeCardEnrollment        EmployeeCardEnrollment[]
   Department                 Department?                @relation(fields: [departmentId], references: [id])
   Branch                     Branch?                    @relation(fields: [branchId], references: [id])
   Shift                      Shift?                     @relation(fields: [shiftId], references: [id])
@@ -249,6 +251,21 @@ model EmployeeFingerprintEnrollment {
   device   Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, deviceId, fingerIndex])
+  @@index([employeeId])
+  @@index([deviceId])
+}
+
+model EmployeeCardEnrollment {
+  id              Int      @id @default(autoincrement())
+  employeeId      Int
+  deviceId        Int
+  enrolledAt      DateTime @default(now())
+  pendingDeletion Boolean  @default(false)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  device   Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, deviceId])
   @@index([employeeId])
   @@index([deviceId])
 }

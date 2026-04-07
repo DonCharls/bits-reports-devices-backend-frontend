@@ -1,12 +1,36 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { X, CreditCard, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
+import React, { useState, useEffect, useCallback } from 'react'
+import {
+  X, CreditCard, Loader2, Trash2, CheckCircle2,
+  AlertTriangle, Smartphone, Info, RefreshCw, WifiOff, Check, UploadCloud
+} from 'lucide-react'
+
+interface DeviceSyncStatus {
+  deviceId: number
+  deviceName: string
+  enrolled: boolean
+  enrolledAt?: string
+  isActive: boolean
+  syncEnabled: boolean
+  pendingDeletion: boolean
+}
+
+interface CardStatusResponse {
+  success: boolean
+  employee: {
+    id: number
+    name: string
+    cardNumber: number | null
+  }
+  devices: DeviceSyncStatus[]
+}
 
 interface RFIDCardEnrollmentModalProps {
   isOpen: boolean
   employeeId: number | null
   employeeName: string
+  currentCard?: number | null // Used to prepopulate but we fetch truth from API
   onClose: () => void
   onSuccess: (message: string) => void
   onError: (message: string) => void
@@ -20,200 +44,488 @@ export default function RFIDCardEnrollmentModal({
   onSuccess,
   onError
 }: RFIDCardEnrollmentModalProps) {
-  const [step, setStep] = useState<'input' | 'syncing' | 'done' | 'error'>('input')
+  const [loading, setLoading] = useState(true)
+  const [cardNumber, setCardNumber] = useState<number | null>(null)
+  const [devices, setDevices] = useState<DeviceSyncStatus[]>([])
+
+  // Action states
   const [cardInput, setCardInput] = useState('')
-  const [cardResultMsg, setCardResultMsg] = useState('')
+  const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [detailedResults, setDetailedResults] = useState<{ deviceName: string; status: 'synced' | 'failed'; error?: string }[] | null>(null)
+  
+  // Track ongoing granular actions
+  const [activeActions, setActiveActions] = useState<{ [key: string]: boolean }>({})
+  const [confirmGlobalDelete, setConfirmGlobalDelete] = useState(false)
+
+  const fetchStatus = useCallback(async () => {
+    if (!employeeId) return
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/employees/${employeeId}/card-status`)
+      const data: CardStatusResponse = await res.json()
+      if (data.success) {
+        setCardNumber(data.employee.cardNumber)
+        setDevices(data.devices || [])
+        // If they had a card initially, populate the input just in case they lose it
+        if (data.employee.cardNumber) {
+          setCardInput(data.employee.cardNumber.toString())
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load card status', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [employeeId])
 
   useEffect(() => {
     if (isOpen) {
-      setStep('input')
+      setSyncResult(null)
+      setDetailedResults(null)
       setCardInput('')
-      setCardResultMsg('')
+      setConfirmGlobalDelete(false)
+      setActiveActions({})
+      fetchStatus()
     }
-  }, [isOpen])
+  }, [isOpen, fetchStatus])
 
-  if (!isOpen) return null
+  if (!isOpen || !employeeId) return null
 
-  const handleEnrollCard = async () => {
+  // -------------------------
+  // ACTIONS
+  // -------------------------
+
+  const handleGlobalEnroll = async () => {
     if (!employeeId) return
     const raw = cardInput.replace(/\D/g, '')
-    const cardNumber = parseInt(raw, 10)
+    const parsedNumber = parseInt(raw, 10)
     
-    if (isNaN(cardNumber) || cardNumber < 1 || cardNumber > 4294967295) {
-      setCardResultMsg('Please enter a valid card number (1\u20134294967295)')
-      setStep('error')
+    if (isNaN(parsedNumber) || parsedNumber < 1 || parsedNumber > 4294967295) {
+      setSyncResult({ success: false, message: 'Please enter a valid card number (1–4294967295)' })
       return
     }
     
-    setStep('syncing')
+    setActiveActions(prev => ({ ...prev, globalEnroll: true }))
+    setSyncResult(null)
+    setDetailedResults(null)
+    
     try {
       const res = await fetch(`/api/employees/${employeeId}/enroll-card`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        body: JSON.stringify({ cardNumber: parsedNumber }),
+      })
+      const data = await res.json()
+      
+      if (data.results) setDetailedResults(data.results)
+
+      if (data.success) {
+        setSyncResult({ success: true, message: data.message || 'Card enrolled globally successfully.' })
+        onSuccess(data.message || 'Card enrolled successfully.')
+        await fetchStatus()
+      } else {
+        setSyncResult({ success: false, message: data.message || 'Global enrollment failed' })
+      }
+    } catch (error) {
+      setSyncResult({ success: false, message: 'Network error while enrolling card' })
+    } finally {
+      setActiveActions(prev => ({ ...prev, globalEnroll: false }))
+    }
+  }
+
+  const handleManualSync = async () => {
+    if (!employeeId || !cardNumber) return
+    
+    setActiveActions(prev => ({ ...prev, manualSync: true }))
+    setSyncResult(null)
+    setDetailedResults(null)
+    
+    try {
+      const res = await fetch(`/api/employees/${employeeId}/enroll-card`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cardNumber }),
       })
       const data = await res.json()
       
+      if (data.results) setDetailedResults(data.results)
+
       if (data.success) {
-        setCardResultMsg(data.message || `Card #${cardNumber} enrolled successfully.`)
-        setStep('done')
-        onSuccess(data.message || 'RFID badge enrolled successfully.')
+        setSyncResult({ success: true, message: data.message || 'Sync complete.' })
+        await fetchStatus()
       } else {
-        setCardResultMsg(data.message || 'Enrollment failed')
-        setStep('error')
-        onError(data.message || 'Could not enroll badge')
+        setSyncResult({ success: false, message: data.message || 'Sync failed.' })
       }
     } catch (error) {
-      console.error('Card enrollment error:', error)
-      setCardResultMsg('Network error \u2014 could not reach server')
-      setStep('error')
-      onError('Could not reach the server')
+      setSyncResult({ success: false, message: 'Network error while syncing card' })
+    } finally {
+      setActiveActions(prev => ({ ...prev, manualSync: false }))
+    }
+  }
+
+  const handleGlobalDelete = async () => {
+    setActiveActions(prev => ({ ...prev, globalDelete: true }))
+    setSyncResult(null)
+    try {
+      const res = await fetch(`/api/employees/${employeeId}/card`, {
+        method: 'DELETE'
+      })
+      const data = await res.json()
+      if (data.success) {
+        setSyncResult({ success: true, message: 'Card successfully removed from all devices.' })
+        onSuccess(data.message || 'Badge removed successfully.')
+        setCardInput('')
+        await fetchStatus()
+      } else {
+        setSyncResult({ success: false, message: data.message || 'Failed to delete card.' })
+      }
+    } catch {
+      setSyncResult({ success: false, message: 'Network error while globally deleting card' })
+    } finally {
+      setActiveActions(prev => ({ ...prev, globalDelete: false }))
+      setConfirmGlobalDelete(false)
+    }
+  }
+
+  const handlePushToDevice = async (deviceId: number) => {
+    setActiveActions(prev => ({ ...prev, [`push-${deviceId}`]: true }))
+    setSyncResult(null)
+    try {
+      const res = await fetch(`/api/employees/${employeeId}/enroll-card`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardNumber, deviceId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setSyncResult({ success: true, message: `Card pushed to device successfully.` })
+        await fetchStatus()
+      } else {
+        setSyncResult({ success: false, message: data.message || 'Push to device failed' })
+      }
+    } catch {
+      setSyncResult({ success: false, message: 'Network error while pushing to device' })
+    } finally {
+      setActiveActions(prev => ({ ...prev, [`push-${deviceId}`]: false }))
+    }
+  }
+
+  const handleDeleteFromDevice = async (deviceId: number) => {
+    setActiveActions(prev => ({ ...prev, [`delete-${deviceId}`]: true }))
+    setSyncResult(null)
+    try {
+      const res = await fetch(`/api/employees/${employeeId}/card/device/${deviceId}`, {
+        method: 'DELETE'
+      })
+      const data = await res.json()
+      if (data.success) {
+        setSyncResult({ success: true, message: `Card removed from device successfully.` })
+        await fetchStatus()
+      } else {
+        setSyncResult({ success: false, message: data.message || 'Removal from device failed' })
+      }
+    } catch {
+      setSyncResult({ success: false, message: 'Network error while removing from device' })
+    } finally {
+      setActiveActions(prev => ({ ...prev, [`delete-${deviceId}`]: false }))
     }
   }
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-0">
-      {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300 transition-all"
-        onClick={step !== 'syncing' ? onClose : undefined}
+      <div
+        className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300"
+        onClick={onClose}
       />
 
-      {/* Modal Container */}
-      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 fade-in duration-300">
-        
+      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="bg-red-600 px-6 py-4 flex items-center justify-between">
+        <div className="bg-red-600 px-6 py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
               <CreditCard className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h3 className="font-bold text-white text-base">
-                {step === 'input' ? 'Enroll RFID Badge' : step === 'syncing' ? 'Syncing...' : step === 'done' ? 'Badge Enrolled' : 'Enrollment Error'}
-              </h3>
-              {step === 'input' && (
-                <p className="text-[10px] text-red-100 uppercase tracking-widest font-bold mt-0.5">Physical Access Card</p>
-              )}
+              <h3 className="font-bold text-white text-base">RFID Card Management</h3>
+              <p className="text-[10px] text-red-100 uppercase tracking-widest font-bold mt-0.5">
+                {employeeName}
+              </p>
             </div>
           </div>
-          {step !== 'syncing' && (
-            <button 
-              onClick={onClose} 
-              className="text-white/70 hover:text-white transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
+          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors p-1">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* Content Body */}
-        <div className="p-7">
-          {step === 'input' && (
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <p className="text-sm text-slate-600 mb-5 leading-relaxed">
-                Enrolling physical badge for <span className="font-bold text-slate-900 px-1 py-0.5 bg-slate-100 rounded-md">{employeeName}</span>.
-              </p>
-              
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">
-                  Card Number
-                </label>
-                <input
-                  type="text"
-                  value={cardInput}
-                  onChange={e => setCardInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && cardInput.trim()) handleEnrollCard() }}
-                  placeholder="e.g. 12345678 or 123-456-78"
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 focus:bg-white transition-all shadow-sm"
-                  autoFocus
-                />
-              </div>
-
-              <div className="mt-4 p-4 bg-amber-50 border border-amber-100 rounded-xl flex gap-3 shadow-sm shadow-amber-600/5">
-                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
-                  Find the number printed on the back of the card, or use a USB reader to automatically scan it. 
-                  <strong className="block mt-1 uppercase tracking-tight">Once saved, it syncs to all active terminals.</strong>
-                </p>
-              </div>
-
-              <div className="flex justify-end gap-3 mt-7">
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-500 hover:bg-slate-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleEnrollCard}
-                  disabled={!cardInput.replace(/\D/g, '').trim()}
-                  className="px-6 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold shadow-lg shadow-red-600/25 transition-colors rounded-xl"
-                >
-                  Enroll Badge
-                </button>
-              </div>
+        {/* Delete Confirmation Overlay */}
+        {confirmGlobalDelete && (
+          <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-200">
+            <div className="w-16 h-16 rounded-2xl bg-red-100 flex items-center justify-center text-red-600 mb-5 shadow-inner">
+              <AlertTriangle className="w-8 h-8" />
             </div>
-          )}
-
-          {step === 'syncing' && (
-            <div className="flex flex-col items-center py-8 animate-in fade-in zoom-in-95 duration-300">
-              <div className="relative mb-5">
-                <div className="absolute inset-0 bg-blue-100 rounded-full animate-ping opacity-60" />
-                <div className="bg-blue-50 text-blue-600 p-4 rounded-full relative shadow-sm">
-                  <Loader2 className="w-8 h-8 animate-spin" />
-                </div>
-              </div>
-              <p className="text-sm font-bold text-slate-800">Syncing to devices...</p>
-              <p className="text-xs text-slate-400 mt-1 px-6 text-center">
-                Writing card #{cardInput.replace(/\D/g, '')} to all active devices
-              </p>
-            </div>
-          )}
-
-          {step === 'done' && (
-            <div className="flex flex-col items-center py-6 animate-in fade-in zoom-in-95 duration-500">
-              <div className="bg-green-50 text-green-500 p-4 rounded-full mb-4 shadow-sm">
-                <CheckCircle2 className="w-8 h-8" />
-              </div>
-              <p className="text-sm font-bold text-slate-800 text-center mb-1">{cardResultMsg}</p>
-              <p className="text-[11px] text-slate-400 font-medium mb-6">Employee can now tap to enter.</p>
-              
+            <h4 className="text-xl font-black text-slate-800 mb-2">Delete Global Card?</h4>
+            <p className="text-sm text-slate-500 mb-8 max-w-sm leading-relaxed">
+              This will permanently delete the RFID card from the database and queue a removal command for all online devices. <br/><span className="font-bold text-red-500">This action cannot be undone.</span>
+            </p>
+            <div className="flex gap-3 w-full max-w-xs">
               <button
-                onClick={onClose}
-                className="w-full py-3 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-all active:scale-95 shadow-sm"
+                onClick={() => setConfirmGlobalDelete(false)}
+                className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors"
+                disabled={activeActions['globalDelete']}
               >
-                Done
+                Cancel
+              </button>
+              <button
+                onClick={handleGlobalDelete}
+                className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg shadow-red-600/20"
+                disabled={activeActions['globalDelete']}
+              >
+                {activeActions['globalDelete'] ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Yes, Delete'}
               </button>
             </div>
-          )}
+          </div>
+        )}
 
-          {step === 'error' && (
-            <div className="flex flex-col items-center py-6 animate-in slide-in-from-right-4 duration-300">
-              <div className="bg-gradient-to-br from-red-50 to-rose-50 text-red-500 p-4 rounded-full mb-5 shadow-sm border border-red-100">
-                <AlertCircle className="w-9 h-9" />
-              </div>
-              <h4 className="text-base font-bold text-slate-800 mb-1">Enrollment Failed</h4>
-              <p className="text-xs font-medium text-slate-500 text-center px-4 leading-relaxed">{cardResultMsg}</p>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-red-500 mb-4" />
+              <p className="text-sm font-medium text-slate-500">Loading card data...</p>
+            </div>
+          ) : (
+            <div className="space-y-5">
               
-              <div className="flex gap-3 w-full mt-8">
-                <button
-                  onClick={() => {
-                    setStep('input')
-                    setCardResultMsg('')
-                  }}
-                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-all active:scale-95"
-                >
-                  Try Again
-                </button>
-                <button
-                  onClick={onClose}
-                  className="flex-1 py-2.5 bg-white border-2 border-slate-200 hover:border-slate-300 text-slate-700 text-sm font-bold rounded-xl transition-all active:scale-95"
-                >
-                  Close
-                </button>
-              </div>
+              {/* Sync Result */}
+              {syncResult && (
+                <div className={`flex items-start gap-3 p-4 rounded-2xl border transition-all ${
+                  syncResult.success
+                    ? 'bg-green-50 text-green-800 border-green-200'
+                    : 'bg-red-50 text-red-800 border-red-200'
+                }`}>
+                  {syncResult.success ? (
+                    <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+                  )}
+                  <p className="text-sm font-medium">{syncResult.message}</p>
+                </div>
+              )}
+
+              {/* Detailed Summary (Post-Enrollment) */}
+              {detailedResults && detailedResults.length > 0 && (
+                <div className="bg-white rounded-2xl border p-4 space-y-2 animate-in slide-in-from-top-2 duration-300">
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Sync Report</h4>
+                  {detailedResults.map((result, idx) => (
+                    <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 border border-transparent">
+                      <div className="flex items-center gap-2">
+                        <Smartphone className="w-4 h-4 text-slate-400" />
+                        <span className="text-sm font-bold text-slate-700">{result.deviceName}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {result.status === 'synced' ? (
+                          <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-green-100 text-green-700 text-xs font-bold">
+                            <CheckCircle2 className="w-3 h-3" /> Success
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-100 text-red-700 text-xs font-bold">
+                            <X className="w-3 h-3" /> Failed
+                          </span>
+                        )}
+                        {result.error && <span className="text-[10px] text-red-500 max-w-[120px] truncate" title={result.error}>({result.error})</span>}
+                      </div>
+                    </div>
+                  ))}
+                  <button onClick={() => setDetailedResults(null)} className="w-full mt-3 py-2 text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors">
+                    Dismiss Report
+                  </button>
+                </div>
+              )}
+
+              {/* CARD INPUT / ENROLLMENT AREA */}
+              {!cardNumber ? (
+                <div className="space-y-4">
+                  <div className="bg-white p-6 rounded-2xl border shadow-sm flex flex-col items-center text-center">
+                    <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center text-red-500 mb-4">
+                      <CreditCard className="w-8 h-8" />
+                    </div>
+                    <h3 className="font-bold text-slate-800 mb-1">No Card Enrolled</h3>
+                    <p className="text-sm text-slate-500 mb-6 max-w-sm">
+                      Enter the RFID card number to register it globally for this employee across all active devices.
+                    </p>
+                    
+                    <div className="w-full max-w-sm flex gap-2">
+                      <input
+                        type="text"
+                        className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-red-500 focus:outline-none transition-all"
+                        placeholder="Enter Card Number..."
+                        value={cardInput}
+                        onChange={(e) => setCardInput(e.target.value.replace(/\D/g, ''))}
+                      />
+                      <button
+                        onClick={handleGlobalEnroll}
+                        disabled={!cardInput || activeActions['globalEnroll']}
+                        className="px-6 py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-colors shadow-lg flex-shrink-0 flex items-center justify-center min-w-[100px]"
+                      >
+                        {activeActions['globalEnroll'] ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Enroll'}
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Pre-enrollment target specific list */}
+                  <div className="bg-white rounded-2xl border shadow-sm p-4">
+                     <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Target Devices</h4>
+                     <p className="text-[10px] text-slate-400 mb-3 px-1">Enrolling the card will push to the following active devices instantly:</p>
+                     <div className="space-y-1.5">
+                      {devices.length === 0 ? (
+                        <p className="text-center text-sm text-slate-500 py-4">No active devices found.</p>
+                      ) : (
+                        devices.map(device => (
+                          <div key={device.deviceId} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-transparent">
+                            <div className="flex items-center gap-3">
+                              <Smartphone className={`w-4 h-4 ${device.isActive && device.syncEnabled ? 'text-red-500' : 'text-slate-400'}`} />
+                              <div>
+                                <span className="text-sm font-bold text-slate-700">{device.deviceName}</span>
+                                {!device.isActive ? (
+                                  <span className="ml-2 text-[10px] text-red-500 font-bold bg-red-100 px-1.5 py-0.5 rounded-md">Offline</span>
+                                ) : !device.syncEnabled ? (
+                                  <span className="ml-2 text-[10px] text-amber-600 font-bold bg-amber-100 px-1.5 py-0.5 rounded-md">Sync Paused</span>
+                                ) : (
+                                  <span className="ml-2 text-[10px] text-green-600 font-bold bg-green-100 px-1.5 py-0.5 rounded-md">Ready</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                     </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+                  {/* Card Header */}
+                  <div className="bg-slate-50 px-4 py-4 border-b flex flex-wrap gap-4 items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-red-600 shrink-0">
+                        <CreditCard className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-black text-slate-800 text-lg tracking-tight">#{cardNumber}</h4>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Active Global Card</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      {/* Sync Visual Indicator Pill */}
+                      {(() => {
+                        const targetable = devices.filter(d => d.isActive && d.syncEnabled);
+                        const enrolled = targetable.filter(d => d.enrolled && !d.pendingDeletion);
+                        if (targetable.length === 0) return null;
+                        
+                        if (enrolled.length === targetable.length) {
+                           return <span className="px-2.5 py-1 bg-green-100 text-green-700 text-[10px] font-bold rounded-lg uppercase tracking-widest flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Fully Synced</span>;
+                        } else {
+                           return <span className="px-2.5 py-1 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-lg uppercase tracking-widest flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Missing {targetable.length - enrolled.length} Device(s)</span>;
+                        }
+                      })()}
+                      <button
+                        onClick={() => setConfirmGlobalDelete(true)}
+                        className="text-xs font-bold text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-2 flex items-center gap-1.5 rounded-xl transition-colors border border-transparent hover:border-red-200"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete Global
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Device List Header w/ Manual Sync */}
+                  <div className="px-4 pt-3 flex items-center justify-between">
+                    <h5 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Device Synchronization</h5>
+                    <button
+                      onClick={handleManualSync}
+                      disabled={activeActions['manualSync']}
+                      className="flex items-center gap-1.5 px-3 py-1.5 border hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-lg transition-colors shadow-sm"
+                    >
+                      {activeActions['manualSync'] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                      Sync All
+                    </button>
+                  </div>
+
+                  {/* Device List */}
+                  <div className="p-3 bg-white">
+                    <div className="space-y-1.5">
+                      {devices.length === 0 ? (
+                        <p className="text-center text-sm text-slate-500 py-4">No active devices found in the system.</p>
+                      ) : (
+                        devices.map(device => (
+                          <div key={device.deviceId} className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
+                            <div className="flex items-center gap-3">
+                              <Smartphone className={`w-4 h-4 ${device.enrolled ? 'text-red-500' : 'text-slate-300'}`} />
+                              <div>
+                                <p className={`text-sm font-bold ${device.pendingDeletion ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                                  {device.deviceName}
+                                </p>
+                                {device.pendingDeletion ? (
+                                  <p className="text-[10px] text-red-400 font-bold flex items-center gap-1">
+                                    <AlertTriangle className="w-3 h-3" /> Pending offline deletion...
+                                  </p>
+                                ) : device.enrolled ? (
+                                  <p className="text-[10px] text-green-600 font-medium">
+                                    Synced {device.enrolledAt ? `on ${new Date(device.enrolledAt).toLocaleDateString()}` : ''}
+                                  </p>
+                                ) : device.isActive ? (
+                                  <p className="text-[10px] text-amber-500 font-bold flex items-center gap-1">
+                                    <AlertTriangle className="w-3 h-3" /> Not synced
+                                  </p>
+                                ) : (
+                                  <p className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                                    <WifiOff className="w-3 h-3" /> Device offline
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Actions per device */}
+                            {device.isActive && device.syncEnabled && (
+                              <div className="flex items-center">
+                                {device.enrolled && !device.pendingDeletion ? (
+                                  <button
+                                    onClick={() => handleDeleteFromDevice(device.deviceId)}
+                                    disabled={activeActions[`delete-${device.deviceId}`]}
+                                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1.5"
+                                    title="Remove from this device"
+                                  >
+                                    {activeActions[`delete-${device.deviceId}`] ? 
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin text-red-500" /> : 
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    }
+                                  </button>
+                                ) : !device.pendingDeletion ? (
+                                  <button
+                                    onClick={() => handlePushToDevice(device.deviceId)}
+                                    disabled={activeActions[`push-${device.deviceId}`]}
+                                    className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1.5 border border-transparent shadow-sm bg-white"
+                                    title="Push to this device"
+                                  >
+                                    {activeActions[`push-${device.deviceId}`] ? 
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 
+                                      <UploadCloud className="w-3.5 h-3.5" />
+                                    }
+                                    <span className="text-xs font-bold mr-1">Push</span>
+                                  </button>
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
         </div>

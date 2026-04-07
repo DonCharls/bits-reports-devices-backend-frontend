@@ -144,7 +144,7 @@ export default function EmployeesPage() {
   }>({ open: false, employeeId: null, employeeName: '' })
 
   // ── RFID Card Enrollment state ──
-  const [cardEnrollOpen, setCardEnrollOpen] = useState<{ open: boolean, employeeId: number | null, employeeName: string }>({ open: false, employeeId: null, employeeName: '' })
+  const [cardEnrollOpen, setCardEnrollOpen] = useState<{ open: boolean, employeeId: number | null, employeeName: string, currentCard: number | null }>({ open: false, employeeId: null, employeeName: '', currentCard: null })
 
   const handleEnrollFingerprint = async (employeeId: number, deviceId: number, fingerIndex: number = 5) => {
     setEnrollStatus(prev => ({ ...prev, [employeeId]: 'loading' }))
@@ -1189,7 +1189,7 @@ export default function EmployeesPage() {
                         <button
                           onClick={() => {
                             const name = `${employee.firstName} ${employee.lastName}`
-                            setCardEnrollOpen({ open: true, employeeId: employee.id, employeeName: name })
+                            setCardEnrollOpen({ open: true, employeeId: employee.id, employeeName: name, currentCard: employee.cardNumber || null })
                           }}
                           className={`p-2.5 rounded-xl transition-all active:scale-90 ${
                             employee.cardNumber
@@ -1352,7 +1352,8 @@ export default function EmployeesPage() {
         isOpen={cardEnrollOpen.open}
         employeeId={cardEnrollOpen.employeeId}
         employeeName={cardEnrollOpen.employeeName}
-        onClose={() => setCardEnrollOpen({ open: false, employeeId: null, employeeName: '' })}
+        currentCard={cardEnrollOpen.currentCard}
+        onClose={() => setCardEnrollOpen({ open: false, employeeId: null, employeeName: '', currentCard: null })}
         onSuccess={(msg) => {
           showToast('success', 'Badge Enrolled', msg)
           fetchEmployees()
