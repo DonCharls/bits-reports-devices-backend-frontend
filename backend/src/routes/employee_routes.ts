@@ -7,11 +7,15 @@ import {
     createEmployee,
     enrollEmployeeFingerprintController,
     enrollEmployeeCardController,
-    removeEmployeeCardController,
+    deleteEmployeeCardController,
     updateEmployee,
     permanentDeleteEmployee,
     resetEmployeePassword,
-    checkEmailAvailability
+    checkEmailAvailability,
+    getEmployeeFingerprintStatus,
+    getEmployeeCardStatus,
+    deleteEmployeeFingerprint,
+    syncEmployeeFingerprintsController
 } from '../controllers/employee.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { adminOrHR } from '../middleware/role.middleware';
@@ -181,6 +185,73 @@ router.post('/:id/enroll-fingerprint', validate(enrollFingerprintValidator), enr
 
 /**
  * @swagger
+ * /api/employees/{id}/fingerprint-status:
+ *   get:
+ *     summary: Get fingerprint enrollment status for employee
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Fingerprint status
+ */
+router.get('/:id/fingerprint-status', getEmployeeFingerprintStatus);
+
+/**
+ * @swagger
+ * /api/employees/{id}/fingerprint/{fingerIndex}:
+ *   delete:
+ *     summary: Delete a specific fingerprint globally
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: fingerIndex
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Fingerprint deleted globally
+ */
+router.delete('/:id/fingerprint/:fingerIndex', deleteEmployeeFingerprint);
+
+/**
+ * @swagger
+ * /api/employees/{id}/sync-fingerprints:
+ *   post:
+ *     summary: Sync employee fingerprints across all active devices
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Fingerprints synced
+ *       400:
+ *         description: No fingerprints to sync
+ */
+router.post('/:id/sync-fingerprints', syncEmployeeFingerprintsController);
+
+/**
+ * @swagger
  * /api/employees/{id}/enroll-card:
  *   post:
  *     summary: Enroll RFID badge card for employee
@@ -217,9 +288,18 @@ router.post('/:id/enroll-card', validate(enrollCardValidator), enrollEmployeeCar
 
 /**
  * @swagger
- * /api/employees/{id}/remove-card:
+ * /api/employees/{id}/card-status:
+ *   get:
+ *     summary: Get RFID card status for an employee across all devices
+ *     tags: [Employees]
+ */
+router.get('/:id/card-status', getEmployeeCardStatus);
+
+/**
+ * @swagger
+ * /api/employees/{id}/card:
  *   delete:
- *     summary: Remove RFID badge card from employee
+ *     summary: Delete an employee's RFID card globally
  *     tags: [Employees]
  *     security:
  *       - bearerAuth: []
@@ -232,11 +312,14 @@ router.post('/:id/enroll-card', validate(enrollCardValidator), enrollEmployeeCar
  *         description: Employee ID
  *     responses:
  *       200:
- *         description: Card removed successfully
- *       404:
- *         description: Employee not found
+ *         description: Card deleted successfully
+ *       400:
+ *         description: Invalid input
+ *       500:
+ *         description: Server error
  */
-router.delete('/:id/remove-card', removeEmployeeCardController);
+router.delete('/:id/card', deleteEmployeeCardController);
+router.delete('/:id/card/device/:deviceId', deleteEmployeeCardController);
 
 /**
  * @swagger

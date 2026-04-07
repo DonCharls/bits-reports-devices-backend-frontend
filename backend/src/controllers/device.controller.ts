@@ -373,6 +373,62 @@ export const toggleDevice = async (req: Request, res: Response) => {
     }
 };
 
+// ─── POST /api/devices/sync-biometrics ───────────────────────────────────────
+// Triggers a system-wide fingerprint sync for all active employees. Runs in
+// the background since it may take a significant amount of time.
+export const syncBiometrics = async (req: Request, res: Response) => {
+    try {
+        const employees = await prisma.employee.findMany({
+            where: { employmentStatus: 'ACTIVE', zkId: { not: null } },
+            select: { id: true, firstName: true, lastName: true },
+        });
+
+        if (employees.length === 0) {
+            return res.json({ success: true, message: 'No active employees to sync.' });
+        }
+
+        // Fire background job
+        setImmediate(async () => {
+            const { syncEmployeeFingerprints } = await import('../services/zkServices');
+            console.log(`[GlobalSync] Starting background biometric sync for ${employees.length} employees...`);
+            let successCount = 0;
+            let failCount = 0;
+
+            for (const emp of employees) {
+                try {
+                    const result = await syncEmployeeFingerprints(emp.id);
+                    if (result.success) successCount++;
+                    else failCount++;
+                } catch (err: any) {
+                    console.error(`[GlobalSync] Error syncing ${emp.firstName} ${emp.lastName}:`, err.message);
+                    failCount++;
+                }
+            }
+
+            console.log(`[GlobalSync] Completed. ${successCount} successful, ${failCount} failed.`);
+            
+            await audit({
+                action: 'SYNC',
+                entityType: 'System',
+                entityId: 0,
+                performedBy: req.user?.employeeId,
+                source: 'admin-panel',
+                details: `Global biometric sync completed. ${successCount} success, ${failCount} failed.`,
+                metadata: { category: 'device', successCount, failCount }
+            });
+        });
+
+        res.json({
+            success: true,
+            message: `Background sync started for ${employees.length} active employees.`,
+        });
+
+    } catch (error: any) {
+        console.error('[GlobalSync] Failed to initiate biometric sync:', error);
+        res.status(500).json({ success: false, message: 'Failed to initiate biometric sync', error: error.message });
+    }
+};
+
 
 /**
  * GET /api/devices/stream
@@ -440,20 +496,31 @@ export const streamDeviceStatus = async (req: Request, res: Response): Promise<v
         res.write(`event: config-update\ndata: {}\n\n`);
     };
 
+    const onEnrollmentGap = (payload: {
+        deviceId: number;
+        deviceName: string;
+        count: number;
+        employees: { zkId: number; name: string }[];
+    }) => {
+        res.write(
+            `event: enrollment-gap\ndata: ${JSON.stringify(payload)}\n\n`
+        );
+    };
+
     deviceEmitter.on('status-change', onStatusChange);
     deviceEmitter.on('device-sync-result', onSyncResult);
     deviceEmitter.on('config-update', onConfigUpdate);
+    deviceEmitter.on('enrollment-gap', onEnrollmentGap);
 
     req.on('close', () => {
         clearInterval(heartbeatInterval);
         deviceEmitter.off('status-change', onStatusChange);
         deviceEmitter.off('device-sync-result', onSyncResult);
         deviceEmitter.off('config-update', onConfigUpdate);
+        deviceEmitter.off('enrollment-gap', onEnrollmentGap);
         console.log(`[SSE] Client disconnected from device stream`);
     });
 
     console.log(`[SSE] Client connected to device stream`);
 };
-
-
 

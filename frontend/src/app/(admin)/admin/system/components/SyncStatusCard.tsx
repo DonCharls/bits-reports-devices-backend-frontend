@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Server, Activity, Clock, Play, AlertTriangle, XCircle } from 'lucide-react';
+import { Server, Activity, Clock, Play, AlertTriangle, XCircle, HeartPulse } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { format } from 'date-fns';
 import {
@@ -23,6 +23,12 @@ interface SyncStatus {
     configUpdatedAt: string | null;
     globalSyncEnabled: boolean;
     currentMode?: 'PEAK' | 'OFF-PEAK' | 'DEFAULT';
+    healthCheck?: {
+        isActive: boolean;
+        intervalSec: number;
+        lastCheckAt: string | null;
+        nextCheckAt: string | null;
+    };
 }
 
 interface FailedDevice {
@@ -173,7 +179,7 @@ export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusC
                     </div>
                 </CardHeader>
                 <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-4">
                         <div className="flex flex-col gap-2">
                             <div className="text-sm text-muted-foreground flex items-center gap-1">
                                 <Activity className="h-4 w-4" /> Current Interval
@@ -198,6 +204,28 @@ export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusC
                             </div>
                             <div className="text-lg font-medium">
                                 {status.lastSyncAt ? format(new Date(status.lastSyncAt), 'PPpp') : 'Never'}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                            <div className="text-sm text-muted-foreground flex items-center gap-1">
+                                <HeartPulse className="h-4 w-4" /> Health Monitor
+                            </div>
+                            {status.healthCheck?.isActive ? (
+                                <div className="text-lg font-medium flex items-center gap-2">
+                                    <div className="h-2.5 w-2.5 rounded-full bg-green-500 animate-pulse" />
+                                    Active <span className="text-sm text-muted-foreground font-normal">({status.healthCheck.intervalSec}s)</span>
+                                </div>
+                            ) : (
+                                <div className="text-lg font-medium flex items-center gap-2 text-muted-foreground">
+                                    <div className="h-2.5 w-2.5 rounded-full bg-gray-400" />
+                                    Disabled
+                                </div>
+                            )}
+                            <div className="text-xs text-muted-foreground">
+                                {status.healthCheck?.isActive 
+                                    ? `Last check: ${status.healthCheck.lastCheckAt ? format(new Date(status.healthCheck.lastCheckAt), 'HH:mm:ss') : 'Pending...'}`
+                                    : 'Offline'}
                             </div>
                         </div>
 

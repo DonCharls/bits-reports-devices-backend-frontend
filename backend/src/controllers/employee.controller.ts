@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
-import { syncEmployeesToDevice, enrollEmployeeFingerprint, enrollEmployeeCard, removeEmployeeCard, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex } from '../services/zkServices';
+import { syncEmployeesToDevice, enrollEmployeeFingerprint, enrollEmployeeCard, deleteEmployeeCard, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex, deleteFingerprintGlobally, syncEmployeeFingerprints } from '../services/zkServices';
 import { audit } from '../lib/auditLogger';
 import bcrypt from 'bcryptjs';
 import { generateRandomPassword } from '../utils/password.utils';
@@ -497,6 +497,21 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
 
         const device = deviceId ? parseInt(deviceId) : undefined;
 
+        // Check 3-finger max limit
+        const existingFingers = await prisma.employeeFingerprintEnrollment.findMany({
+            where: { employeeId },
+            distinct: ['fingerIndex'],
+            select: { fingerIndex: true },
+        });
+
+        const isNewFinger = !existingFingers.some(f => f.fingerIndex === finger);
+        if (isNewFinger && existingFingers.length >= 3) {
+            return res.status(400).json({
+                success: false,
+                message: 'Employee has reached the maximum limit of 3 fingerprints. Please delete an existing fingerprint first.',
+            });
+        }
+
         console.log(`[API] Starting fingerprint enrollment for employee ${employeeId} (finger: ${finger}, device: ${device ?? 'auto'})...`);
 
         const result = await enrollEmployeeFingerprint(employeeId, finger, device);
@@ -585,9 +600,12 @@ export const enrollEmployeeCardController = async (req: Request, res: Response) 
             });
         }
 
-        console.log(`[API] Starting RFID card enrollment for employee ${employeeId}, card ${cardNumber}...`);
+        const deviceIdParam = body.deviceId;
+        const deviceId = deviceIdParam ? parseInt(deviceIdParam as string) : undefined;
 
-        const result = await enrollEmployeeCard(employeeId, cardNumber);
+        console.log(`[API] Starting RFID card enrollment for employee ${employeeId}, card ${cardNumber}${deviceId ? ` on device ${deviceId}` : ''}...`);
+
+        const result = await enrollEmployeeCard(employeeId, cardNumber, deviceId);
 
         if (result.success) {
             const emp = await prisma.employee.findUnique({
@@ -607,6 +625,7 @@ export const enrollEmployeeCardController = async (req: Request, res: Response) 
             return res.status(200).json({
                 success: true,
                 message: result.message,
+                results: result.results,
             });
         } else {
             const statusCode = result.error === 'duplicate_card' ? 409 : 500;
@@ -625,6 +644,7 @@ export const enrollEmployeeCardController = async (req: Request, res: Response) 
                 success: false,
                 message: result.message || 'Card enrollment failed',
                 error: result.error,
+                results: result.results,
             });
         }
 
@@ -650,22 +670,21 @@ export const enrollEmployeeCardController = async (req: Request, res: Response) 
     }
 };
 
-// DELETE /api/employees/:id/remove-card - Remove RFID badge card from employee
-export const removeEmployeeCardController = async (req: Request, res: Response) => {
+export const deleteEmployeeCardController = async (req: Request, res: Response) => {
     try {
         const id = req.params.id as string;
         const employeeId = parseInt(id);
 
         if (isNaN(employeeId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid employee ID',
-            });
+            return res.status(400).json({ success: false, message: 'Invalid employee ID' });
         }
 
-        console.log(`[API] Starting RFID card removal for employee ${employeeId}...`);
+        const deviceIdParam = req.params.deviceId;
+        const deviceId = deviceIdParam ? parseInt(deviceIdParam as string) : undefined;
 
-        const result = await removeEmployeeCard(employeeId);
+        console.log(`[API] Deleting RFID card for employee ${employeeId}${deviceId ? ` on device ${deviceId}` : ''}...`);
+
+        const result = await deleteEmployeeCard(employeeId, deviceId);
 
         if (result.success) {
             const emp = await prisma.employee.findUnique({
@@ -674,7 +693,7 @@ export const removeEmployeeCardController = async (req: Request, res: Response) 
             });
 
             await audit({
-                action: 'UPDATE',
+                action: 'DELETE',
                 entityType: 'Employee',
                 entityId: employeeId,
                 performedBy: req.user?.employeeId,
@@ -687,41 +706,19 @@ export const removeEmployeeCardController = async (req: Request, res: Response) 
                 message: result.message,
             });
         } else {
-            await audit({
-                action: 'UPDATE',
-                level: 'ERROR',
-                entityType: 'Employee',
-                entityId: employeeId,
-                performedBy: req.user?.employeeId,
-                details: `Failed to remove RFID badge: ${result.message}`,
-                metadata: { error: result.error || result.message }
-            });
-
             return res.status(500).json({
                 success: false,
-                message: result.message || 'Card removal failed',
+                message: result.message || 'Card deletion failed',
                 error: result.error,
             });
         }
 
     } catch (error: any) {
-        console.error('[API] Card removal error:', error);
-
-        const empId = req.params.id ? parseInt(req.params.id as string) : undefined;
-        await audit({
-            action: 'UPDATE',
-            level: 'ERROR',
-            entityType: 'Employee',
-            entityId: isNaN(empId as number) ? undefined : empId,
-            performedBy: req.user?.employeeId,
-            details: `Exception while removing RFID badge: ${error.message}`,
-            metadata: { error: error.message }
-        });
-
+        console.error('[API] Card deletion error:', error);
         return res.status(500).json({
             success: false,
-            message: 'Failed to remove RFID badge',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+            message: 'Server error during card deletion',
+            error: error.message
         });
     }
 };
@@ -1084,6 +1081,300 @@ export const checkEmailAvailability = async (req: Request, res: Response) => {
         res.status(500).json({
             success: false,
             message: 'Failed to check email availability',
+        });
+    }
+};
+
+// GET /api/employees/:id/fingerprint-status - Get fingerprint enrollment dashboard data
+export const getEmployeeFingerprintStatus = async (req: Request, res: Response) => {
+    try {
+        const employeeId = parseInt(req.params.id as string);
+
+        if (isNaN(employeeId)) {
+            return res.status(400).json({ success: false, message: 'Invalid employee ID' });
+        }
+
+        const employee = await prisma.employee.findUnique({
+            where: { id: employeeId },
+            select: { id: true, zkId: true, firstName: true, lastName: true },
+        });
+
+        if (!employee) {
+            return res.status(404).json({ success: false, message: 'Employee not found' });
+        }
+
+        // Fetch all fingerprint enrollment records for this employee
+        const enrollments = await prisma.employeeFingerprintEnrollment.findMany({
+            where: { employeeId },
+            include: {
+                device: {
+                    select: { id: true, name: true, isActive: true, syncEnabled: true },
+                },
+            },
+        });
+
+        // Fetch all active devices
+        const activeDevices = await prisma.device.findMany({
+            where: { isActive: true },
+            select: { id: true, name: true, isActive: true, syncEnabled: true },
+            orderBy: { id: 'asc' },
+        });
+
+        // Group enrollments by fingerIndex → collect device info per finger
+        const fingerMap = new Map<number, {
+            fingerIndex: number;
+            fingerLabel: string;
+            devices: {
+                deviceId: number;
+                deviceName: string;
+                enrolled: boolean;
+                enrolledAt?: string;
+                isActive: boolean;
+                syncEnabled: boolean;
+                pendingDeletion: boolean;
+            }[];
+        }>();
+
+        for (const enrollment of enrollments) {
+            if (!fingerMap.has(enrollment.fingerIndex)) {
+                fingerMap.set(enrollment.fingerIndex, {
+                    fingerIndex: enrollment.fingerIndex,
+                    fingerLabel: `Finger ${enrollment.fingerIndex + 1}`,
+                    devices: [],
+                });
+            }
+
+            fingerMap.get(enrollment.fingerIndex)!.devices.push({
+                deviceId: enrollment.device.id,
+                deviceName: enrollment.device.name,
+                enrolled: true,
+                enrolledAt: enrollment.enrolledAt.toISOString(),
+                isActive: enrollment.device.isActive,
+                syncEnabled: enrollment.device.syncEnabled,
+                pendingDeletion: enrollment.pendingDeletion,
+            });
+        }
+
+        // Build slots array (Finger 1/2/3) — map existing enrollments to slots
+        const MAX_SLOTS = 3;
+        const enrolledFingerIndices = Array.from(fingerMap.keys()).sort((a, b) => a - b);
+        const slots: Array<{
+            slot: number;
+            label: string;
+            fingerIndex: number | null;
+            enrolled: boolean;
+            devices: {
+                deviceId: number;
+                deviceName: string;
+                enrolled: boolean;
+                enrolledAt?: string;
+                isActive: boolean;
+                syncEnabled: boolean;
+                pendingDeletion: boolean;
+            }[];
+        }> = [];
+
+        for (let i = 0; i < MAX_SLOTS; i++) {
+            const fingerIndex = enrolledFingerIndices[i] ?? null;
+            const fingerData = fingerIndex !== null ? fingerMap.get(fingerIndex) : null;
+
+            const devices = activeDevices.map(device => {
+                const enrolledDevice = fingerData?.devices.find(d => d.deviceId === device.id);
+                return {
+                    deviceId: device.id,
+                    deviceName: device.name,
+                    enrolled: enrolledDevice?.enrolled ?? false,
+                    enrolledAt: enrolledDevice?.enrolledAt,
+                    isActive: device.isActive,
+                    syncEnabled: device.syncEnabled,
+                    pendingDeletion: enrolledDevice?.pendingDeletion ?? false,
+                };
+            });
+
+            slots.push({
+                slot: i + 1,
+                label: `Finger ${i + 1}`,
+                fingerIndex,
+                enrolled: fingerData !== null,
+                devices,
+            });
+        }
+
+        const totalEnrolled = fingerMap.size;
+
+        return res.status(200).json({
+            success: true,
+            employee: {
+                id: employee.id,
+                name: `${employee.firstName} ${employee.lastName}`,
+                zkId: employee.zkId,
+            },
+            slots,
+            summary: {
+                totalEnrolled,
+                maxSlots: MAX_SLOTS,
+                canEnrollMore: totalEnrolled < MAX_SLOTS,
+            },
+            allDevices: activeDevices,
+        });
+
+    } catch (error: any) {
+        console.error('[API] Fingerprint status error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch fingerprint status',
+        });
+    }
+};
+
+// DELETE /api/employees/:id/fingerprint/:fingerIndex - Delete specific fingerprint globally
+export const deleteEmployeeFingerprint = async (req: Request, res: Response) => {
+    try {
+        const employeeId = parseInt(req.params.id as string);
+        const fingerIndex = parseInt(req.params.fingerIndex as string);
+
+        if (isNaN(employeeId) || isNaN(fingerIndex)) {
+            return res.status(400).json({ success: false, message: 'Invalid parameters' });
+        }
+
+        if (fingerIndex < 0 || fingerIndex > 9) {
+            return res.status(400).json({ success: false, message: 'Finger index must be between 0 and 9' });
+        }
+
+        const result = await deleteFingerprintGlobally(employeeId, fingerIndex);
+
+        if (result.success) {
+            const fingerLabel = `Finger ${fingerIndex + 1}`;
+
+            await audit({
+                action: 'DELETE',
+                entityType: 'Employee',
+                entityId: employeeId,
+                performedBy: req.user?.employeeId,
+                details: `Deleted ${fingerLabel} globally`,
+                metadata: { category: 'employee', fingerIndex, fingerLabel },
+            });
+
+            return res.status(200).json(result);
+        } else {
+            return res.status(500).json(result);
+        }
+
+    } catch (error: any) {
+        console.error('[API] Delete fingerprint error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to delete fingerprint',
+        });
+    }
+};
+
+// POST /api/employees/:id/sync-fingerprints - Sync fingerprints across devices
+export const syncEmployeeFingerprintsController = async (req: Request, res: Response) => {
+    try {
+        const employeeId = parseInt(req.params.id as string);
+
+        if (isNaN(employeeId)) {
+            return res.status(400).json({ success: false, message: 'Invalid employee ID' });
+        }
+
+        const result = await syncEmployeeFingerprints(employeeId);
+
+        if (result.success) {
+            const emp = await prisma.employee.findUnique({
+                where: { id: employeeId },
+                select: { firstName: true, lastName: true },
+            });
+
+            await audit({
+                action: 'UPDATE',
+                entityType: 'Employee',
+                entityId: employeeId,
+                performedBy: req.user?.employeeId,
+                details: `Synced fingerprints for ${emp?.firstName} ${emp?.lastName}: ${result.results.filter(r => r.status === 'synced').length} device(s)`,
+                metadata: { category: 'employee', results: result.results },
+            });
+
+            return res.status(200).json(result);
+        } else {
+            return res.status(400).json(result);
+        }
+
+    } catch (error: any) {
+        console.error('[API] Sync fingerprints error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to sync fingerprints',
+            results: [],
+        });
+    }
+};
+
+// GET /api/employees/:id/card-status - Get card enrollment dashboard data
+export const getEmployeeCardStatus = async (req: Request, res: Response) => {
+    try {
+        const employeeId = parseInt(req.params.id as string);
+
+        if (isNaN(employeeId)) {
+            return res.status(400).json({ success: false, message: 'Invalid employee ID' });
+        }
+
+        const employee = await prisma.employee.findUnique({
+            where: { id: employeeId },
+            select: { id: true, zkId: true, firstName: true, lastName: true, cardNumber: true },
+        });
+
+        if (!employee) {
+            return res.status(404).json({ success: false, message: 'Employee not found' });
+        }
+
+        // Fetch all card enrollment records for this employee
+        const enrollments = await prisma.employeeCardEnrollment.findMany({
+            where: { employeeId },
+            include: {
+                device: {
+                    select: { id: true, name: true, isActive: true, syncEnabled: true },
+                },
+            },
+        });
+
+        // Fetch all active devices
+        const activeDevices = await prisma.device.findMany({
+            where: { isActive: true },
+            select: { id: true, name: true, isActive: true, syncEnabled: true },
+            orderBy: { id: 'asc' },
+        });
+
+        // Build devices result
+        const devicesResult = activeDevices.map(device => {
+            const enroll = enrollments.find(e => e.deviceId === device.id);
+            return {
+                deviceId: device.id,
+                deviceName: device.name,
+                enrolled: !!enroll && !enroll.pendingDeletion,
+                enrolledAt: enroll ? enroll.enrolledAt.toISOString() : undefined,
+                isActive: device.isActive,
+                syncEnabled: device.syncEnabled,
+                pendingDeletion: enroll ? enroll.pendingDeletion : false,
+            };
+        });
+
+        res.json({
+            success: true,
+            employee: {
+                id: employee.id,
+                name: `${employee.firstName} ${employee.lastName}`,
+                cardNumber: employee.cardNumber,
+            },
+            devices: devicesResult,
+        });
+
+    } catch (error: any) {
+        console.error('Error fetching employee card status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch employee card status',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
         });
     }
 };

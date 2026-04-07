@@ -233,4 +233,19 @@ router.post('/unlock', (req, res) => {
     res.json({ success: true, message: 'Device lock force-released.' });
 });
 
+/**
+ * @swagger
+ * /api/devices/sync-biometrics:
+ *   post:
+ *     summary: Trigger a system-wide background sync of all active employee fingerprints across all devices
+ *     tags: [Devices]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Background sync initiated
+ */
+import { syncBiometrics } from '../controllers/device.controller';
+router.post('/sync-biometrics', syncBiometrics);
+
 export default router;

@@ -105,6 +105,7 @@ export default function Dashboard() {
   const [totalAbsent, setTotalAbsent] = useState(0)
   const [updatedAt, setUpdatedAt] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [globalSyncEnabled, setGlobalSyncEnabled] = useState(true)
 
   /** Returns true if checkInTime (ISO string) is past 08:00 AM PHT */
   // No more checkLate: we now use the backend's accurately calculated lateMinutes.
@@ -119,7 +120,7 @@ export default function Dashboard() {
       const weekEnd = phtStr(weekDates[4].date)
 
       // Cookies are sent automatically — no Authorization header needed
-      const [bRes, dRes, eRes, aRes, wRes] = await Promise.all([
+      const [bRes, dRes, eRes, aRes, wRes, sRes] = await Promise.all([
         fetch('/api/branches', { credentials: 'include' }),
         fetch('/api/devices', { credentials: 'include' }),
         fetch('/api/employees?limit=5000', { credentials: 'include' }),
@@ -127,6 +128,7 @@ export default function Dashboard() {
           { credentials: 'include' }),
         fetch(`/api/attendance?startDate=${weekStart}&endDate=${weekEnd}&limit=5000`,
           { credentials: 'include' }),
+        fetch('/api/system/sync-status', { credentials: 'include' }),
       ])
       if (eRes.status === 401) { router.replace('/login'); return }
 
@@ -135,6 +137,7 @@ export default function Dashboard() {
       const ed = await eRes.json()
       const ad = await aRes.json()
       const wd = await wRes.json()
+      const sd = sRes.ok ? await sRes.json() : { success: false }
 
       const branchList: Branch[] = bd.success ? (bd.branches || bd.data || []) : []
       const deviceList: Device[] = dd.success ? (dd.devices || dd.data || []) : []
@@ -180,6 +183,10 @@ export default function Dashboard() {
         online: dev.isActive
       }))
       setDevices(devicesWithStatus)
+
+      if (sd && sd.success) {
+        setGlobalSyncEnabled(sd.status.globalSyncEnabled)
+      }
 
       setTotalEmployees(activeCount)
 
@@ -477,6 +484,11 @@ export default function Dashboard() {
             <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100">
               <h2 className="text-xs font-black text-slate-600 uppercase tracking-widest flex items-center gap-1.5">
                 <RadioTower className="w-3.5 h-3.5 text-red-500" /> Devices
+                {!globalSyncEnabled && (
+                  <span className="ml-1 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-black border border-red-200">
+                    SYNC PAUSED
+                  </span>
+                )}
               </h2>
               <div className="flex gap-1.5">
                 <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">

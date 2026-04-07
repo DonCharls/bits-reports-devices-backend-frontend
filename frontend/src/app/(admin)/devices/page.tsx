@@ -46,6 +46,9 @@ export default function DevicesPage() {
     const [saving, setSaving] = useState(false)
     const [formError, setFormError] = useState<string | null>(null)
 
+    // Global Sync State
+    const [globalSyncEnabled, setGlobalSyncEnabled] = useState(true)
+
     // Delete confirm
     const [deletingId, setDeletingId] = useState<number | null>(null)
     const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
@@ -69,10 +72,20 @@ export default function DevicesPage() {
         setLoading(true)
         setError(null)
         try {
-            const res = await fetch('/api/devices', { credentials: 'include' })
-            const data = await res.json()
+            const [devRes, syncRes] = await Promise.all([
+                fetch('/api/devices', { credentials: 'include' }),
+                fetch('/api/system/sync-status', { credentials: 'include' })
+            ])
+            const data = await devRes.json()
             if (data.success) setDevices(data.devices)
             else setError(data.message || 'Failed to fetch devices')
+
+            if (syncRes.ok) {
+                const syncData = await syncRes.json()
+                if (syncData.success) {
+                    setGlobalSyncEnabled(syncData.status.globalSyncEnabled)
+                }
+            }
         } catch (e: any) {
             setError(e.message || 'Network error')
         } finally {
@@ -143,7 +156,7 @@ export default function DevicesPage() {
     const handleSave = async () => {
         if (!form.name.trim()) { setFormError('Device name is required'); return }
         if (!form.ip.trim()) { setFormError('IP address is required'); return }
-        if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(form.ip.trim())) { setFormError('Invalid IP address format (e.g. 192.168.1.201)'); return }
+        if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(form.ip.trim())) { setFormError('Invalid IP address format (e.g. 192.168.0.201)'); return }
         const port = parseInt(form.port)
         if (isNaN(port) || port < 1 || port > 65535) { setFormError('Port must be between 1 and 65535'); return }
 
@@ -244,6 +257,7 @@ export default function DevicesPage() {
         }
     }
 
+
     return (
         <div className="space-y-6">
 
@@ -259,6 +273,7 @@ export default function DevicesPage() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2 self-end sm:self-center">
+
                     <Button variant="outline" size="sm" onClick={fetchDevices} className="gap-2 border-border">
                         <RefreshCw className="w-4 h-4" />
                         <span className="hidden sm:inline">Refresh</span>
@@ -275,6 +290,18 @@ export default function DevicesPage() {
                 <Alert variant="destructive"><AlertCircle className="h-4 w-4" />
                     <AlertTitle>Error</AlertTitle>
                     <AlertDescription>{error}</AlertDescription>
+                </Alert>
+            )}
+
+            {/* Global Sync Warning */}
+            {!globalSyncEnabled && (
+                <Alert variant="destructive" className="bg-red-50 text-red-700 border-red-200">
+                    <AlertCircle className="h-4 w-4 text-red-600" />
+                    <AlertTitle className="font-bold">Global Synchronization is Paused</AlertTitle>
+                    <AlertDescription>
+                        System-wide synchronization is currently disabled in System Settings. 
+                        Even if individual devices have sync enabled below, no logs will be pulled until global sync is resumed.
+                    </AlertDescription>
                 </Alert>
             )}
 
