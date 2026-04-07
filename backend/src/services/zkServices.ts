@@ -319,6 +319,102 @@ function tryAcquireDeviceLock(deviceId: number): boolean {
     return true;
 }
 
+/**
+ * Global Deletion: Removes a specific fingerprint across ALL active devices.
+ * If a device is offline, flags the DB row as pendingDeletion=true so the 
+ * auto-reconciler sweeps it when the device reconnects.
+ */
+export const deleteFingerprintGlobally = async (
+    employeeId: number,
+    fingerIndex: number
+): Promise<{ success: boolean; message: string }> => {
+    const employee = await prisma.employee.findUnique({
+        where: { id: employeeId },
+        select: { id: true, zkId: true, firstName: true, lastName: true },
+    });
+
+    if (!employee?.zkId) {
+        return { success: false, message: 'Employee not found or has no zkId' };
+    }
+
+    const enrollments = await prisma.employeeFingerprintEnrollment.findMany({
+        where: { employeeId, fingerIndex },
+        include: { device: true },
+    });
+
+    if (enrollments.length === 0) {
+        return { success: true, message: 'Fingerprint is not enrolled on any device.' };
+    }
+
+    const fullName = `${employee.firstName} ${employee.lastName}`;
+    const fingerLabel = FINGER_MAP[fingerIndex] || `Finger ${fingerIndex + 1}`;
+    console.log(`[GlobalDelete] Wiping ${fingerLabel} for ${fullName} across ${enrollments.length} device(s)...`);
+
+    // Flag all relevant records as pending deletion so offline devices remember
+    await prisma.employeeFingerprintEnrollment.updateMany({
+        where: { employeeId, fingerIndex },
+        data: { pendingDeletion: true }
+    });
+
+    let wipedCount = 0;
+    const offlineOrFailed: string[] = [];
+
+    // Attempt to delete from all devices concurrently (with individual locks)
+    await Promise.all(enrollments.map(async (enr) => {
+        const device = enr.device;
+
+        if (!device.isActive) {
+            console.log(`[GlobalDelete] Device "${device.name}" is offline. Soft-delete pending.`);
+            offlineOrFailed.push(`"${device.name}" (Offline)`);
+            return;
+        }
+
+        await acquireDeviceLock(device.id); // bg lock, non-urgent
+        const zk = getDriver(device.ip, device.port);
+
+        try {
+            await connectWithRetry(zk, 1);
+            await zk.deleteFingerTemplate(employee.zkId!, fingerIndex);
+            await zk.refreshData();
+
+            // Destroy the DB record immediately if device accepted it
+            await prisma.employeeFingerprintEnrollment.delete({ where: { id: enr.id } });
+            wipedCount++;
+            console.log(`[GlobalDelete] ✓ Wiped from "${device.name}".`);
+
+            // Also remove device enrollment if no fingerprints remain
+            const remaining = await prisma.employeeFingerprintEnrollment.count({
+                where: { employeeId, deviceId: device.id }
+            });
+            if (remaining === 0) {
+                await prisma.employeeDeviceEnrollment.deleteMany({
+                    where: { employeeId, deviceId: device.id }
+                });
+                console.log(`[GlobalDelete] No fingerprints remain on "${device.name}" — device enrollment record removed.`);
+            }
+
+        } catch (error: any) {
+            console.warn(`[GlobalDelete] ⚠ Failed to wipe from "${device.name}": ${zkErrMsg(error)}. Soft-delete left pending.`);
+            offlineOrFailed.push(`"${device.name}" (${zkErrMsg(error)})`);
+        } finally {
+            try { await zk.disconnect(); } catch { /* ignore */ }
+            releaseDeviceLock(device.id);
+        }
+    }));
+
+    if (offlineOrFailed.length > 0) {
+        return { 
+            success: true, // It's still a success because the system absorbed the intent
+            message: `Deleted from ${wipedCount} device(s). Pending offline wipe for: ${offlineOrFailed.join(', ')}` 
+        };
+    }
+
+    return { 
+        success: true, 
+        message: `${fingerLabel} wiped globally from all devices.` 
+    };
+};
+
 // Force-release the lock from an external endpoint (e.g. POST /api/devices/unlock)
 // If deviceId is provided, releases only that device. Otherwise releases ALL devices (emergency).
 export function forceReleaseLock(deviceId?: number): void {
@@ -1281,7 +1377,7 @@ export const enrollEmployeeFingerprint = async (
             console.error('[BiometricSync] Background task error:', err);
         });
 
-        // 5. Record enrollment in DB
+        // 5. Record enrollment in DB (device-level)
         await prisma.employeeDeviceEnrollment.upsert({
             where: {
                 employeeId_deviceId: {
@@ -1298,7 +1394,26 @@ export const enrollEmployeeFingerprint = async (
             },
         });
 
-        console.log(`[Enrollment] ✓ Enrollment recorded in DB for employee ${employeeId} on device "${dbDevice.name}".`);
+        // Record fingerprint-level metadata (finger × device)
+        const fingerLabel = FINGER_MAP[fingerIndex] || `Finger ${fingerIndex}`;
+        await prisma.employeeFingerprintEnrollment.upsert({
+            where: {
+                employeeId_deviceId_fingerIndex: {
+                    employeeId: employee.id,
+                    deviceId: dbDevice.id,
+                    fingerIndex,
+                },
+            },
+            update: { enrolledAt: new Date() },
+            create: {
+                employeeId: employee.id,
+                deviceId: dbDevice.id,
+                fingerIndex,
+                fingerLabel,
+            },
+        });
+
+        console.log(`[Enrollment] ✓ Enrollment recorded in DB for employee ${employeeId} (${fingerLabel}) on device "${dbDevice.name}".`);
 
         return {
             success: true,
@@ -1431,6 +1546,19 @@ export const propagateFingerprintToAllDevices = async (
             }
 
             for (const { finger, data } of templates) {
+                // Guard: check if this specific slot already has a template on the target.
+                // ZKTeco binary reads are lossy — overwriting an existing template with
+                // a re-serialized copy degrades it. Only write to genuinely empty slots.
+                const existing = await tgtZk.getFingerTemplate(employee.zkId, finger);
+                if (existing && existing.length > 0) {
+                    console.log(
+                        `[Propagate] Slot ${finger} already has ${existing.length}B on`,
+                        `"${targetDevice.name}" — skipping to prevent degradation.`
+                    );
+                    existing.fill(0); // zero the read buffer
+                    continue;
+                }
+
                 console.log(
                     `[Propagate] Writing slot ${finger} (${data.length} bytes)`,
                     `to "${targetDevice.name}" for UID=${employee.zkId}...`
@@ -1457,7 +1585,7 @@ export const propagateFingerprintToAllDevices = async (
                 );
             }
 
-            // Record enrollment in DB
+            // Record device-level enrollment in DB
             await prisma.employeeDeviceEnrollment.upsert({
                 where: {
                     employeeId_deviceId: {
@@ -1467,6 +1595,27 @@ export const propagateFingerprintToAllDevices = async (
                 update: { enrolledAt: new Date() },
                 create: { employeeId, deviceId: targetDevice.id }
             });
+
+            // Record fingerprint-level metadata for each propagated template
+            for (const { finger } of templates) {
+                const fingerLabel = FINGER_MAP[finger] || `Finger ${finger}`;
+                await prisma.employeeFingerprintEnrollment.upsert({
+                    where: {
+                        employeeId_deviceId_fingerIndex: {
+                            employeeId,
+                            deviceId: targetDevice.id,
+                            fingerIndex: finger,
+                        },
+                    },
+                    update: { enrolledAt: new Date() },
+                    create: {
+                        employeeId,
+                        deviceId: targetDevice.id,
+                        fingerIndex: finger,
+                        fingerLabel,
+                    },
+                });
+            }
 
             pushed++;
 
@@ -1545,27 +1694,28 @@ async function extractAndDistributeTemplate(deviceId: number, employeeId: number
     }
 
 
-    // ─── In-memory propagation ───────────────────────────────────────────
-    // Read the template from the source device and write it directly to all
-    // other active devices. No database involvement. Buffer zeroed after.
+    // ─── DB-driven propagation ─────────────────────────────────────────────
+    // Use the same DB-driven per-slot sync as manual sync. By this point the
+    // enrollment record for this finger already exists in the DB, so
+    // syncEmployeeFingerprints will identify exactly which devices are missing
+    // this fingerIndex and push only that specific slot — never touching
+    // existing templates on devices that already have them.
     console.log(`[BiometricSync] Starting in-memory propagation for ${employee.firstName}...`);
 
-    const result = await propagateFingerprintToAllDevices(
-        employeeId, dbDevice.id, fingerIndex
-    );
+    const result = await syncEmployeeFingerprints(employeeId);
 
     if (result.success) {
+        const synced = result.results.filter(r => r.status === 'synced').length;
         console.log(
             `[BiometricSync] ✓ Propagation complete:`,
-            `${result.pushed} device(s) updated.`
+            `${synced} device(s) updated.`
         );
     } else {
+        const errors = result.results.filter(r => r.error).map(r => `${r.deviceName}: ${r.error}`);
         console.warn(
             `[BiometricSync] ⚠ Propagation partial or failed:`,
-            result.errors.join('; ')
+            errors.length > 0 ? errors.join('; ') : result.message
         );
-        // Offline device gaps will surface via enrollment-gap notification
-        // on next reconcile when the device comes back online.
     }
 }
 
@@ -1884,6 +2034,42 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
         console.log(`[Reconcile] Connecting to "${dbDevice.name}" (${dbDevice.ip}:${dbDevice.port})...`);
         await connectWithRetry(zk, 2);
 
+        // ── PRE-RECONCILE: Sweep Pending Global Deletions ───────────────────
+        if (!dryRun) {
+            const pendingDeletions = await prisma.employeeFingerprintEnrollment.findMany({
+                where: { deviceId, pendingDeletion: true },
+                include: { employee: true }
+            });
+
+            if (pendingDeletions.length > 0) {
+                console.log(`[Reconcile] Sweeping ${pendingDeletions.length} pending fingerprint deletion(s) on "${dbDevice.name}"...`);
+                for (const deletion of pendingDeletions) {
+                    if (!deletion.employee.zkId) continue;
+                    try {
+                        await zk.deleteFingerTemplate(deletion.employee.zkId, deletion.fingerIndex);
+                        await zk.refreshData();
+                        await prisma.employeeFingerprintEnrollment.delete({ where: { id: deletion.id } });
+                        console.log(`[Reconcile] ✓ Cleared pending deletion: ${deletion.fingerLabel} for ${deletion.employee.firstName} from UID=${deletion.employee.zkId}.`);
+                    } catch (err: any) {
+                        console.warn(`[Reconcile] ⚠ Failed to clear pending deletion for UID=${deletion.employee.zkId}: ${zkErrMsg(err)}`);
+                        // Leave in pending state to retry later
+                    }
+                }
+
+                // After sweeping, check and clean up orphaned device-level enrollments
+                for (const deletion of pendingDeletions) {
+                    const remaining = await prisma.employeeFingerprintEnrollment.count({
+                        where: { employeeId: deletion.employeeId, deviceId }
+                    });
+                    if (remaining === 0) {
+                        await prisma.employeeDeviceEnrollment.deleteMany({
+                            where: { employeeId: deletion.employeeId, deviceId }
+                        });
+                    }
+                }
+            }
+        }
+
         // 3. Get all users currently on device
         const deviceUsers = await zk.getUsers();
         console.log(`[Reconcile] Device has ${deviceUsers.length} users. DB has ${dbEmployees.length} active employees.`);
@@ -2002,6 +2188,22 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
         if (!dryRun) {
             await zk.refreshData();
             await prisma.device.update({ where: { id: deviceId }, data: { isActive: true, updatedAt: new Date() } });
+
+            // Fire async fingerprint sync for users that were newly pushed or found missing fingerprints
+            if (report.needsEnrollment.length > 0) {
+                console.log(`[Reconcile] 🔄 Spawning background fingerprint sync for ${report.needsEnrollment.length} user(s)...`);
+                setImmediate(async () => {
+                    for (const { zkId } of report.needsEnrollment) {
+                        try {
+                            const emp = await prisma.employee.findUnique({ where: { zkId }, select: { id: true } });
+                            // Await sequentially to avoid overwhelming the device locks
+                            if (emp) await syncEmployeeFingerprints(emp.id);
+                        } catch (err: any) {
+                            console.error(`[Reconcile] Background sync failed for zkId ${zkId}:`, err.message);
+                        }
+                    }
+                });
+            }
         }
 
         const mode = dryRun ? 'DRY RUN preview' : 'Live run';
@@ -2061,4 +2263,320 @@ export const syncAllDeviceClocks = async (): Promise<void> => {
     }
 
     console.log('[ClockSync] Done.');
+};
+
+/**
+ * Delete a specific fingerprint from a specific device.
+ *
+ * 1. Connects to the target device
+ * 2. Clears the finger template slot (preserving other slots)
+ * 3. Removes the EmployeeFingerprintEnrollment metadata row
+ * 4. Verifies deletion succeeded on the device
+ *
+ * Does NOT affect other devices or other fingers.
+ */
+export const deleteFingerprintFromDevice = async (
+    employeeId: number,
+    fingerIndex: number,
+    deviceId: number
+): Promise<{ success: boolean; message: string }> => {
+    const employee = await prisma.employee.findUnique({
+        where: { id: employeeId },
+        select: { id: true, zkId: true, firstName: true, lastName: true },
+    });
+
+    if (!employee?.zkId) {
+        return { success: false, message: 'Employee not found or has no zkId' };
+    }
+
+    const device = await prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device) {
+        return { success: false, message: 'Device not found' };
+    }
+
+    if (!device.isActive) {
+        return { success: false, message: `Device "${device.name}" is offline` };
+    }
+
+    const fullName = `${employee.firstName} ${employee.lastName}`;
+    const fingerLabel = `Finger ${fingerIndex + 1}`;
+
+    await acquireInteractiveDeviceLock(deviceId);
+    const zk = getDriver(device.ip, device.port);
+
+    try {
+        await connectWithRetry(zk, 1);
+
+        console.log(`[DeleteFinger] Deleting ${fingerLabel} for ${fullName} from "${device.name}"...`);
+
+        // Step 1: Delete only the specific finger index
+        await zk.deleteFingerTemplate(employee.zkId, fingerIndex);
+        await zk.refreshData();
+
+        // Step 2: Verify the target slot is actually empty
+        const verifyTemplate = await zk.getFingerTemplate(employee.zkId, fingerIndex);
+        if (verifyTemplate !== null) {
+            console.warn(`[DeleteFinger] ⚠ Verification failed — template still present in slot ${fingerIndex} on "${device.name}". Retrying clear...`);
+            // Retry clear just this specific slot
+            try {
+                await zk.deleteFingerTemplate(employee.zkId, fingerIndex);
+                await zk.refreshData();
+            } catch { /* best effort retry */ }
+            verifyTemplate.fill(0);
+        }
+
+        console.log(`[DeleteFinger] ✓ Deleted ${fingerLabel} for ${fullName} from "${device.name}".`);
+
+        // Step 7: Remove fingerprint enrollment metadata from DB
+        await prisma.employeeFingerprintEnrollment.deleteMany({
+            where: { employeeId, deviceId, fingerIndex },
+        });
+
+        // Step 8: If no fingerprints remain on this device, remove the device-level enrollment
+        const remaining = await prisma.employeeFingerprintEnrollment.count({
+            where: { employeeId, deviceId },
+        });
+
+        if (remaining === 0) {
+            await prisma.employeeDeviceEnrollment.deleteMany({
+                where: { employeeId, deviceId },
+            });
+            console.log(`[DeleteFinger] No fingerprints remain on "${device.name}" — device enrollment record removed.`);
+        }
+
+        return { success: true, message: `${fingerLabel} deleted from "${device.name}"` };
+
+    } catch (error: any) {
+        console.error(`[DeleteFinger] Error:`, error);
+        return { success: false, message: `Failed to delete fingerprint: ${zkErrMsg(error)}` };
+    } finally {
+        try { await zk.disconnect(); } catch { /* ignore */ }
+        releaseDeviceLock(deviceId);
+    }
+};
+
+/**
+ * DB-driven per-slot fingerprint sync.
+ *
+ * Instead of reading ALL templates and comparing unreliable device slot numbers,
+ * this function uses the database (EmployeeFingerprintEnrollment) as the source
+ * of truth. For each target device it:
+ *   1. Identifies which fingerIndices are MISSING from that device's DB records.
+ *   2. Reads ONLY the missing fingerIndex from a source device that has it.
+ *   3. Pushes ONLY that individual slot — never touching existing templates.
+ *
+ * This prevents the lossy read-write cycle from corrupting existing templates
+ * and avoids ZKTeco's non-deterministic slot numbering entirely.
+ */
+export const syncEmployeeFingerprints = async (
+    employeeId: number
+): Promise<{
+    success: boolean;
+    message: string;
+    results: Array<{ deviceId: number; deviceName: string; status: 'synced' | 'skipped' | 'failed' | 'offline'; error?: string }>;
+}> => {
+    const employee = await prisma.employee.findUnique({
+        where: { id: employeeId },
+        select: { id: true, zkId: true, firstName: true, lastName: true },
+    });
+
+    if (!employee?.zkId) {
+        return { success: false, message: 'Employee not found or has no zkId', results: [] };
+    }
+
+    const fullName = `${employee.firstName} ${employee.lastName}`;
+
+    // ── STEP 1: DB-driven gap analysis ─────────────────────────────────────
+    const allDevices = await prisma.device.findMany({
+        where: { isActive: true, syncEnabled: true },
+        orderBy: { id: 'asc' },
+    });
+
+    if (allDevices.length === 0) {
+        return { success: false, message: 'No active devices configured', results: [] };
+    }
+
+    const enrollments = await prisma.employeeFingerprintEnrollment.findMany({
+        where: { employeeId },
+        include: { device: { select: { id: true, name: true, isActive: true, syncEnabled: true, ip: true, port: true } } },
+    });
+
+    if (enrollments.length === 0) {
+        return {
+            success: false,
+            message: `${fullName} has no fingerprint enrollments on any device. Enroll first.`,
+            results: allDevices.map(d => ({ deviceId: d.id, deviceName: d.name, status: 'skipped' as const })),
+        };
+    }
+
+    // Build map: fingerIndex → list of deviceIds that have it (sources)
+    const fingerToSources = new Map<number, number[]>();
+    for (const enrollment of enrollments) {
+        if (!enrollment.device.isActive || !enrollment.device.syncEnabled) continue;
+        if (!fingerToSources.has(enrollment.fingerIndex)) {
+            fingerToSources.set(enrollment.fingerIndex, []);
+        }
+        fingerToSources.get(enrollment.fingerIndex)!.push(enrollment.deviceId);
+    }
+
+    const allFingerIndices = Array.from(fingerToSources.keys()).sort((a, b) => a - b);
+    console.log(
+        `[SyncFingers] ${fullName}: ${allFingerIndices.length} distinct finger(s) ` +
+        `[${allFingerIndices.join(', ')}] enrolled in DB.`
+    );
+
+    // ── STEP 2: Per-device, per-slot sync ──────────────────────────────────
+    const results: Array<{ deviceId: number; deviceName: string; status: 'synced' | 'skipped' | 'failed' | 'offline'; error?: string }> = [];
+
+    for (const targetDevice of allDevices) {
+        // Which fingerIndices does this device already have in the DB?
+        const enrolledOnTarget = new Set(
+            enrollments
+                .filter(e => e.deviceId === targetDevice.id)
+                .map(e => e.fingerIndex)
+        );
+
+        // Which fingerIndices are MISSING on this device?
+        const missingFingers = allFingerIndices.filter(fi => !enrolledOnTarget.has(fi));
+
+        if (missingFingers.length === 0) {
+            results.push({ deviceId: targetDevice.id, deviceName: targetDevice.name, status: 'skipped' });
+            console.log(`[SyncFingers] "${targetDevice.name}": all ${allFingerIndices.length} finger(s) already enrolled — skipping.`);
+            continue;
+        }
+
+        console.log(
+            `[SyncFingers] "${targetDevice.name}": missing finger(s) [${missingFingers.join(', ')}] — syncing.`
+        );
+
+        // ── STEP 3: Read each missing finger from a source, push to target ──
+        let pushed = 0;
+        const slotErrors: string[] = [];
+
+        await acquireInteractiveDeviceLock(targetDevice.id);
+        const tgtZk = getDriver(targetDevice.ip, targetDevice.port);
+
+        try {
+            await connectWithRetry(tgtZk, 1);
+
+            // Ensure user record exists on target
+            const deviceUsers = await tgtZk.getUsers();
+            const userExists = deviceUsers.find(
+                (u: any) => String(u.userId).trim() === String(employee.zkId)
+            );
+            if (!userExists) {
+                await tgtZk.setUser(employee.zkId, fullName, '', 0, 0, String(employee.zkId));
+                await tgtZk.refreshData();
+                console.log(`[SyncFingers] Created user record on "${targetDevice.name}".`);
+            }
+
+            for (const fingerIndex of missingFingers) {
+                // Find source devices for this fingerIndex (excluding the target itself)
+                const candidateIds = (fingerToSources.get(fingerIndex) || [])
+                    .filter(id => id !== targetDevice.id);
+
+                if (candidateIds.length === 0) {
+                    slotErrors.push(`Finger ${fingerIndex}: no source device`);
+                    continue;
+                }
+
+                // Try each candidate until we get the template
+                let templateData: Buffer | null = null;
+                for (const srcDeviceId of candidateIds) {
+                    const srcDevice = allDevices.find(d => d.id === srcDeviceId);
+                    if (!srcDevice) continue;
+
+                    await acquireInteractiveDeviceLock(srcDeviceId);
+                    const srcZk = getDriver(srcDevice.ip, srcDevice.port);
+
+                    try {
+                        await connectWithRetry(srcZk, 1);
+                        const raw = await srcZk.getFingerTemplate(employee.zkId, fingerIndex);
+                        if (raw && raw.length > 0) {
+                            templateData = Buffer.alloc(raw.length);
+                            raw.copy(templateData);
+                            raw.fill(0);
+                            console.log(
+                                `[SyncFingers] Read finger ${fingerIndex} (${templateData.length}B) from "${srcDevice.name}".`
+                            );
+                            break;
+                        }
+                    } catch (err: any) {
+                        console.warn(
+                            `[SyncFingers] Failed to read finger ${fingerIndex} from "${srcDevice.name}": ${zkErrMsg(err)}`
+                        );
+                    } finally {
+                        try { await srcZk.disconnect(); } catch { /* ignore */ }
+                        releaseDeviceLock(srcDeviceId);
+                    }
+                }
+
+                if (!templateData) {
+                    slotErrors.push(`Finger ${fingerIndex}: could not extract from any source`);
+                    continue;
+                }
+
+                // Push this specific finger to the target
+                try {
+                    await tgtZk.setFingerTemplate(employee.zkId, fingerIndex, templateData);
+                    pushed++;
+                    console.log(
+                        `[SyncFingers] ✓ Wrote finger ${fingerIndex} (${templateData.length}B) to "${targetDevice.name}".`
+                    );
+
+                    // Record in DB
+                    const fingerLabel = FINGER_MAP[fingerIndex] || `Finger ${fingerIndex}`;
+                    await prisma.employeeFingerprintEnrollment.upsert({
+                        where: {
+                            employeeId_deviceId_fingerIndex: {
+                                employeeId, deviceId: targetDevice.id, fingerIndex,
+                            },
+                        },
+                        update: { enrolledAt: new Date() },
+                        create: { employeeId, deviceId: targetDevice.id, fingerIndex, fingerLabel },
+                    });
+                } catch (err: any) {
+                    slotErrors.push(`Finger ${fingerIndex}: write failed — ${zkErrMsg(err)}`);
+                } finally {
+                    templateData.fill(0);
+                }
+            }
+
+            if (pushed > 0) {
+                await tgtZk.refreshData();
+                await prisma.employeeDeviceEnrollment.upsert({
+                    where: { employeeId_deviceId: { employeeId, deviceId: targetDevice.id } },
+                    update: { enrolledAt: new Date() },
+                    create: { employeeId, deviceId: targetDevice.id },
+                });
+            }
+
+            const status = pushed > 0 ? 'synced' as const : 'skipped' as const;
+            const errorMsg = slotErrors.length > 0 ? slotErrors.join('; ') : undefined;
+            results.push({ deviceId: targetDevice.id, deviceName: targetDevice.name, status, error: errorMsg });
+            console.log(
+                `[SyncFingers] "${targetDevice.name}": wrote ${pushed}/${missingFingers.length} finger(s).` +
+                (slotErrors.length > 0 ? ` Errors: ${slotErrors.join('; ')}` : '')
+            );
+
+        } catch (err: any) {
+            const errMsg = zkErrMsg(err);
+            results.push({ deviceId: targetDevice.id, deviceName: targetDevice.name, status: 'failed', error: errMsg });
+            console.error(`[SyncFingers] ✗ Failed on "${targetDevice.name}": ${errMsg}`);
+        } finally {
+            try { await tgtZk.disconnect(); } catch { /* ignore */ }
+            releaseDeviceLock(targetDevice.id);
+        }
+    }
+
+    const synced = results.filter(r => r.status === 'synced').length;
+    const failed = results.filter(r => r.status === 'failed').length;
+
+    return {
+        success: failed === 0,
+        message: failed === 0
+            ? `Fingerprints synced to ${synced} device(s) for ${fullName}.`
+            : `Partial sync: ${synced} succeeded, ${failed} failed for ${fullName}.`,
+        results,
+    };
 };

@@ -274,6 +274,27 @@ export class ZKDriver {
     }
 
     /**
+     * Delete a single fingerprint template for a specific finger slot.
+     * @param uid  Internal device UID (NOT the visible userId string)
+     * @param fingerIndex  0-9
+     */
+    async deleteFingerTemplate(uid: number, fingerIndex: number): Promise<void> {
+        if (!this.zkInstance) throw new Error('Not connected');
+        const { COMMANDS } = require('node-zklib/constants');
+
+        const buf = Buffer.alloc(3);
+        buf.writeUInt16LE(uid, 0);
+        buf.writeUInt8(fingerIndex, 2);
+
+        try {
+            await this.zkInstance.executeCmd(COMMANDS.CMD_DELETE_USERTEMP, buf);
+            console.log(`[ZKDriver] Deleted template for UID=${uid}, finger=${fingerIndex}.`);
+        } catch {
+            // Template may not exist — not an error
+        }
+    }
+
+    /**
      * Clear ALL fingerprint templates for a given device UID.
      *
      * ZKTeco stores user records (CMD_USER_WRQ) and fingerprint templates
@@ -379,16 +400,18 @@ export class ZKDriver {
                     const reportedFlag = rawTemplate.readUInt8(5);
 
                     if (
-                        reportedSize === rawTemplate.length &&
+                        reportedSize <= rawTemplate.length &&
                         reportedUid === uid &&
-                        reportedFinger === fingerIndex &&
                         reportedFlag === 1
                     ) {
-                        const strippedTemplate = rawTemplate.subarray(6);
+                        // reportedSize is the biometric payload size (excluding header).
+                        // Slice precisely to drop both the 6-byte header and trailing TCP padding.
+                        const strippedTemplate = rawTemplate.subarray(6, 6 + reportedSize);
                         console.log(
-                            `[ZKDriver] getFingerTemplate: Stripped 6-byte entry header. ` +
-                            `Raw biometric data size: ${strippedTemplate.length} bytes / ` +
-                            `Original size: ${rawTemplate.length} bytes.`
+                            `[ZKDriver] getFingerTemplate: Stripped 6-byte entry header ` +
+                            `(hdr finger=${reportedFinger}, queried finger=${fingerIndex}). ` +
+                            `Biometric payload: ${strippedTemplate.length} bytes / ` +
+                            `Raw buffer: ${rawTemplate.length} bytes.`
                         );
                         return strippedTemplate;
                     }

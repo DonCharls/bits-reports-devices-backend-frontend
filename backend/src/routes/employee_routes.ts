@@ -10,7 +10,10 @@ import {
     updateEmployee,
     permanentDeleteEmployee,
     resetEmployeePassword,
-    checkEmailAvailability
+    checkEmailAvailability,
+    getEmployeeFingerprintStatus,
+    deleteEmployeeFingerprint,
+    syncEmployeeFingerprintsController
 } from '../controllers/employee.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { adminOrHR } from '../middleware/role.middleware';
@@ -177,6 +180,73 @@ router.post('/sync-to-device', syncEmployeesToDeviceController);
  *         description: Employee not found
  */
 router.post('/:id/enroll-fingerprint', validate(enrollFingerprintValidator), enrollEmployeeFingerprintController);
+
+/**
+ * @swagger
+ * /api/employees/{id}/fingerprint-status:
+ *   get:
+ *     summary: Get fingerprint enrollment status for employee
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Fingerprint status
+ */
+router.get('/:id/fingerprint-status', getEmployeeFingerprintStatus);
+
+/**
+ * @swagger
+ * /api/employees/{id}/fingerprint/{fingerIndex}:
+ *   delete:
+ *     summary: Delete a specific fingerprint globally
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: fingerIndex
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Fingerprint deleted globally
+ */
+router.delete('/:id/fingerprint/:fingerIndex', deleteEmployeeFingerprint);
+
+/**
+ * @swagger
+ * /api/employees/{id}/sync-fingerprints:
+ *   post:
+ *     summary: Sync employee fingerprints across all active devices
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Fingerprints synced
+ *       400:
+ *         description: No fingerprints to sync
+ */
+router.post('/:id/sync-fingerprints', syncEmployeeFingerprintsController);
 
 /**
  * @swagger

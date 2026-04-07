@@ -17,6 +17,7 @@ import { validateEmployeeId } from '@/lib/employeeValidation'
 import { useTableSort } from '@/hooks/useTableSort'
 import { SortableHeader } from '@/components/ui/SortableHeader'
 import RFIDCardEnrollmentModal from './components/RFIDCardEnrollmentModal'
+import FingerprintDashboardModal from './components/FingerprintDashboardModal'
 
 type Employee = {
   id: number
@@ -136,39 +137,14 @@ export default function EmployeesPage() {
   })
 
   // Enrollment modal state
-  const [enrollConfirmModal, setEnrollConfirmModal] = useState<{
+  const [fingerprintDashboardOpen, setFingerprintDashboardOpen] = useState<{
     open: boolean
     employeeId: number | null
     employeeName: string
   }>({ open: false, employeeId: null, employeeName: '' })
-
-  const [devicePickerModal, setDevicePickerModal] = useState<{
-    open: boolean
-    employeeId: number | null
-    employeeName: string
-  }>({ open: false, employeeId: null, employeeName: '' })
-
-  const [devices, setDevices] = useState<{ id: number; name: string; location: string | null; isActive: boolean; syncEnabled?: boolean }[]>([])
-  const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null)
-  const [loadingDevices, setLoadingDevices] = useState(false)
 
   // ── RFID Card Enrollment state ──
   const [cardEnrollOpen, setCardEnrollOpen] = useState<{ open: boolean, employeeId: number | null, employeeName: string }>({ open: false, employeeId: null, employeeName: '' })
-
-  const fetchDevices = async () => {
-    setLoadingDevices(true)
-    try {
-      const res = await fetch('/api/devices', { credentials: 'include' })
-      const data = await res.json()
-      if (data.success) {
-        setDevices(data.devices || data.data || [])
-      }
-    } catch (error) {
-      console.error('Failed to fetch devices:', error)
-    } finally {
-      setLoadingDevices(false)
-    }
-  }
 
   const handleEnrollFingerprint = async (employeeId: number, deviceId: number, fingerIndex: number = 5) => {
     setEnrollStatus(prev => ({ ...prev, [employeeId]: 'loading' }))
@@ -184,23 +160,24 @@ export default function EmployeesPage() {
 
       const data = await res.json()
 
+      // Always clear the loading state so the button resets to its original appearance
+      setEnrollStatus(prev => { const next = { ...prev }; delete next[employeeId]; return next })
+      setEnrollMsg(prev => { const next = { ...prev }; delete next[employeeId]; return next })
+
       if (data.success) {
-        setEnrollStatus(prev => ({ ...prev, [employeeId]: 'success' }))
-        setEnrollMsg(prev => ({ ...prev, [employeeId]: 'Device ready — scan finger now' }))
+        showToast('success', 'Enrollment Started', 'Device ready — follow the on-screen instructions')
         const emp = employees.find(e => e.id === employeeId)
         const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'Employee'
         setScanModal({ open: true, employeeName: empName, countdown: 60 })
         // Refresh employee list so enrollment badges update
         await fetchEmployees()
       } else {
-        setEnrollStatus(prev => ({ ...prev, [employeeId]: 'error' }))
-        setEnrollMsg(prev => ({ ...prev, [employeeId]: data.message || 'Enrollment failed' }))
         showToast('error', 'Enrollment Failed', data.message || 'Could not start enrollment')
       }
     } catch (error) {
       console.error('Enrollment error:', error)
-      setEnrollStatus(prev => ({ ...prev, [employeeId]: 'error' }))
-      setEnrollMsg(prev => ({ ...prev, [employeeId]: 'Network error' }))
+      setEnrollStatus(prev => { const next = { ...prev }; delete next[employeeId]; return next })
+      setEnrollMsg(prev => { const next = { ...prev }; delete next[employeeId]; return next })
       showToast('error', 'Enrollment Failed', 'Could not reach the server')
     }
   }
@@ -1186,7 +1163,6 @@ export default function EmployeesPage() {
                         {/* Fingerprint Enrollment */}
                         {(() => {
                           const status = enrollStatus[employee.id] || 'idle'
-                          const msg = enrollMsg[employee.id] || ''
                           if (status === 'loading') {
                             return (
                               <button disabled className="p-2.5 rounded-xl bg-blue-50 text-blue-400 cursor-wait" title="Enrolling...">
@@ -1194,39 +1170,15 @@ export default function EmployeesPage() {
                               </button>
                             )
                           }
-                          if (status === 'success') {
-                            return (
-                              <div className="flex items-center gap-1">
-                                <span className="p-2.5 rounded-xl bg-green-50 text-green-500">
-                                  <CheckCircle2 className="w-4 h-4" />
-                                </span>
-                                <span className="text-[10px] text-green-600 font-semibold max-w-[90px] leading-tight">{msg}</span>
-                              </div>
-                            )
-                          }
-                          if (status === 'error') {
-                            const msgLower = msg.toLowerCase();
-                            const isOffline = msgLower.includes('offline');
-                            return (
-                              <div className="flex items-center gap-1" title={msg}>
-                                <span className={`p-2.5 rounded-xl ${isOffline ? 'bg-slate-100 text-slate-500' : 'bg-amber-50 text-amber-500'}`}>
-                                  {isOffline ? <WifiOff className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
-                                </span>
-                                <span className={`text-[10px] font-semibold max-w-[90px] leading-tight ${isOffline ? 'text-slate-500' : 'text-amber-600'}`}>
-                                  {isOffline ? 'Device Offline' : msgLower.includes('sync') ? 'Sync Paused' : 'Failed'}
-                                </span>
-                              </div>
-                            )
-                          }
                           return (
                             <button
                               onClick={() => {
                                 const emp = employees.find(e => e.id === employee.id)
                                 const name = emp ? `${emp.firstName} ${emp.lastName}` : 'this employee'
-                                setEnrollConfirmModal({ open: true, employeeId: employee.id, employeeName: name })
+                                setFingerprintDashboardOpen({ open: true, employeeId: employee.id, employeeName: name })
                               }}
                               className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-100 rounded-xl transition-all active:scale-90"
-                              title="Enroll Fingerprint"
+                              title="Manage Fingerprints"
                             >
                               <Fingerprint className="w-4 h-4" />
                             </button>
@@ -1383,168 +1335,17 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* Step 1: Enrollment Confirmation Modal */}
-      {enrollConfirmModal.open && (
-        <div className="fixed inset-0 z-200 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-white border-0 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-            {/* Red header */}
-            <div className="bg-red-600 px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
-                  <Fingerprint className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-white text-base">Enroll Fingerprint</h3>
-                  <p className="text-[10px] text-red-100 uppercase tracking-widest font-bold">Biometric registration</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setEnrollConfirmModal({ open: false, employeeId: null, employeeName: '' })}
-                className="text-white/70 hover:text-white transition-colors"
-              >
-                <XIcon className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="px-6 py-5 space-y-4">
-              <p className="text-sm text-slate-600">
-                Do you want to enroll the fingerprint for{' '}
-                <span className="font-semibold text-slate-800">{enrollConfirmModal.employeeName}</span>?
-              </p>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setEnrollConfirmModal({ open: false, employeeId: null, employeeName: '' })}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-500 hover:bg-slate-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    setEnrollConfirmModal({ open: false, employeeId: null, employeeName: '' })
-                    setSelectedDeviceId(null)
-                    setDevicePickerModal({
-                      open: true,
-                      employeeId: enrollConfirmModal.employeeId,
-                      employeeName: enrollConfirmModal.employeeName,
-                    })
-                    fetchDevices()
-                  }}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-bold shadow-lg shadow-red-600/25 transition-colors"
-                >
-                  Yes, Proceed
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Step 2: Device Picker Modal */}
-      {devicePickerModal.open && (
-        <div className="fixed inset-0 z-200 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-white border-0 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-            {/* Red header */}
-            <div className="bg-red-600 px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
-                  <Fingerprint className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-white text-base">Select Device</h3>
-                  <p className="text-[10px] text-red-100 uppercase tracking-widest font-bold">
-                    Enrolling <span className="text-white">{devicePickerModal.employeeName}</span>
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setDevicePickerModal({ open: false, employeeId: null, employeeName: '' })
-                  setSelectedDeviceId(null)
-                }}
-                className="text-white/70 hover:text-white transition-colors"
-              >
-                <XIcon className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="px-6 py-5 space-y-4">
-              {loadingDevices ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-red-500" />
-                </div>
-              ) : devices.length === 0 ? (
-                <div className="text-center py-6 text-sm text-slate-400">
-                  No devices configured. Please add a device first.
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {devices.map(device => (
-                    <button
-                      key={device.id}
-                      disabled={!device.isActive}
-                      onClick={() => setSelectedDeviceId(device.id)}
-                      className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-colors text-left ${!device.isActive ? 'opacity-60 cursor-not-allowed bg-slate-50 border-slate-200' : selectedDeviceId === device.id
-                        ? 'border-red-500 bg-red-50'
-                        : 'border-slate-200 hover:bg-slate-50'
-                        }`}
-                    >
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${device.isActive ? 'bg-green-500' : 'bg-slate-300'}`} />
-                      <div className="min-w-0 flex-1 flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-700 truncate">{device.name}</p>
-                          {device.location && (
-                            <p className="text-xs text-slate-400 truncate">{device.location}</p>
-                          )}
-                        </div>
-                        {!device.isActive ? (
-                          <span className="text-[9px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-1 rounded uppercase tracking-wider shrink-0">
-                            Offline
-                          </span>
-                        ) : device.syncEnabled === false ? (
-                          <span className="text-[9px] font-bold text-amber-600 bg-amber-50/80 border border-amber-200/50 px-2 py-1 rounded uppercase tracking-wider shrink-0" title="Device sync is paused, but you can still enroll fingerprints.">
-                            Sync Paused
-                          </span>
-                        ) : null}
-                      </div>
-                      {selectedDeviceId === device.id && device.isActive && (
-                        <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center shrink-0">
-                          <div className="w-2 h-2 rounded-full bg-white" />
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setDevicePickerModal({ open: false, employeeId: null, employeeName: '' })
-                    setSelectedDeviceId(null)
-                  }}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-500 hover:bg-slate-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  disabled={!selectedDeviceId}
-                  onClick={() => {
-                    if (!selectedDeviceId || !devicePickerModal.employeeId) return
-                    const empId = devicePickerModal.employeeId;
-                    setDevicePickerModal({ open: false, employeeId: null, employeeName: '' })
-                    handleEnrollFingerprint(empId, selectedDeviceId)
-                    setSelectedDeviceId(null)
-                  }}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold shadow-lg shadow-red-600/25 transition-colors"
-                >
-                  Enroll on This Device
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <FingerprintDashboardModal
+        isOpen={fingerprintDashboardOpen.open}
+        employeeId={fingerprintDashboardOpen.employeeId}
+        employeeName={fingerprintDashboardOpen.employeeName}
+        onClose={() => setFingerprintDashboardOpen({ open: false, employeeId: null, employeeName: '' })}
+        onScanNow={(fingerIndex, deviceId) => {
+          if (fingerprintDashboardOpen.employeeId) {
+            handleEnrollFingerprint(fingerprintDashboardOpen.employeeId, deviceId, fingerIndex)
+          }
+        }}
+      />
 
       {/* ── RFID Card Enrollment Modal ── */}
       <RFIDCardEnrollmentModal
