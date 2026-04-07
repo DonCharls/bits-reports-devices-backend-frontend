@@ -16,8 +16,8 @@ import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll'
 import { validateEmployeeId } from '@/lib/employeeValidation'
 import { useTableSort } from '@/hooks/useTableSort'
 import { SortableHeader } from '@/components/ui/SortableHeader'
-import RFIDCardEnrollmentModal from './components/RFIDCardEnrollmentModal'
-import FingerprintDashboardModal from './components/FingerprintDashboardModal'
+import RFIDCardEnrollmentModal from '@/components/biometrics/RFIDCardEnrollmentModal'
+import FingerprintDashboardModal from '@/components/biometrics/FingerprintDashboardModal'
 
 type Employee = {
   id: number

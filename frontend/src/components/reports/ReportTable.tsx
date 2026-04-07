@@ -1,11 +1,12 @@
 import React from 'react';
 import { ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
-import { ReportRow } from '../types';
-import { formatHrsMins, formatShiftTime, formatLateHrs } from '../utils/formatters';
+import { ReportRow } from '@/types/reports';
+import { formatHrsMins, formatShiftTime, formatLateHrs } from '@/lib/reports/formatters';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import { SortableHeader } from '@/components/ui/SortableHeader';
 
 interface ReportTableProps {
+  variant?: 'admin' | 'hr';
   paginatedData: ReportRow[];
   filteredDataLength: number;
   loading: boolean;
@@ -19,6 +20,7 @@ interface ReportTableProps {
 }
 
 export const ReportTable: React.FC<ReportTableProps> = ({
+  variant = 'admin',
   paginatedData,
   filteredDataLength,
   loading,
@@ -51,8 +53,17 @@ export const ReportTable: React.FC<ReportTableProps> = ({
 
   const dragScrollRef = useHorizontalDragScroll();
 
+  // Variant-specific styling
+  const tableContainerClass = variant === 'hr'
+    ? "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" 
+    : "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden";
+
+  const btnClass = variant === 'hr'
+    ? "px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-full transition-colors shadow-sm"
+    : "px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-full transition-colors shadow-sm"; // Example divergence: we can define Admin vs HR button stylings
+
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div className={tableContainerClass}>
       <div className="px-6 py-4 border-b border-slate-100">
         <h3 className="text-sm font-bold text-slate-700 uppercase tracking-widest">
           Preview Records
@@ -165,7 +176,10 @@ export const ReportTable: React.FC<ReportTableProps> = ({
                   <td className="px-6 py-5">
                     <button
                       onClick={() => setSelectedEmployee(employee)}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-full transition-colors shadow-sm"
+                      className={variant === 'hr' 
+                        ? 'px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-full transition-colors shadow-sm'
+                        : 'px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-full transition-colors shadow-sm'
+                      }
                     >
                       View History
                     </button>

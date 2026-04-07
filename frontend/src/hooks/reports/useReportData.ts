@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AttendanceRecord, ReportRow } from '../types';
+import { AttendanceRecord, ReportRow } from '@/types/reports';
 
 /**
  * Counts the number of scheduled working days within a date range

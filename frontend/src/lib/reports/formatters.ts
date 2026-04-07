@@ -1,4 +1,4 @@
-import { AttendanceRecord } from '../types';
+import { AttendanceRecord } from '@/types/reports';
 
 /** Derive a display status from backend-enriched record fields */
 export const getRecordStatusFromBackend = (

@@ -2,6 +2,7 @@ import React from 'react';
 import { Search } from 'lucide-react';
 
 interface ReportFiltersProps {
+  variant?: 'admin' | 'hr';
   startDate: string;
   setStartDate: (v: string) => void;
   endDate: string;
@@ -18,6 +19,7 @@ interface ReportFiltersProps {
 }
 
 export const ReportFilters: React.FC<ReportFiltersProps> = ({
+  variant = 'admin',
   startDate,
   setStartDate,
   endDate,
@@ -32,8 +34,13 @@ export const ReportFilters: React.FC<ReportFiltersProps> = ({
   setSearchTerm,
   onFilterChange,
 }) => {
+  // Variant-specific styling
+  const containerClass = variant === 'hr'
+    ? 'bg-white rounded-2xl border border-slate-200 p-5'
+    : 'bg-white rounded-2xl border border-slate-200 p-5';   // They are perfectly identical, but we allow future divergence
+
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-5">
+    <div className={containerClass}>
       <div className="flex flex-col lg:flex-row gap-4">
         <div className="flex-1 min-w-0">
           <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold block mb-1.5">

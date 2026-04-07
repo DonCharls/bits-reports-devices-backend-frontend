@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { ReportRow, AttendanceRecord } from '../types';
+import { ReportRow, AttendanceRecord } from '@/types/reports';
 import {
   formatDateShort,
   formatShiftTime,
@@ -39,7 +39,8 @@ const fmtFullDate = (d: Date) =>
 export const handleExport = (
   filteredData: ReportRow[],
   startDate: string,
-  endDate: string
+  endDate: string,
+  exportSource: 'admin-panel' | 'hr-panel' = 'admin-panel'
 ) => {
   const allRows: (string | number)[][] = [];
   const s = new Date(startDate + 'T00:00:00');
@@ -99,7 +100,7 @@ export const handleExport = (
     body: JSON.stringify({
       exportType: 'report',
       entityType: 'Attendance',
-      source: 'admin-panel',
+      source: exportSource,
       details: `Exported attendance report (${filteredData.length} employees) for ${startDate} to ${endDate}`,
       filters: { dateFrom: startDate, dateTo: endDate },
       recordCount: filteredData.length,
@@ -113,7 +114,8 @@ export const handleExportIndividual = (
   emp: ReportRow,
   startDate: string,
   endDate: string,
-  records: AttendanceRecord[]
+  records: AttendanceRecord[],
+  exportSource: 'admin-panel' | 'hr-panel' = 'admin-panel'
 ) => {
   const allRows: (string | number)[][] = [];
   allRows.push(['Employee', emp.name, '', 'Branch', emp.branch]);
@@ -306,7 +308,7 @@ export const handleExportIndividual = (
     body: JSON.stringify({
       exportType: 'report',
       entityType: 'Attendance',
-      source: 'admin-panel',
+      source: exportSource,
       details: `Exported individual report for ${emp.name} (${records.length} records) for ${startDate} to ${endDate}`,
       filters: { dateFrom: startDate, dateTo: endDate, employeeName: emp.name, department: emp.department, branch: emp.branch },
       recordCount: records.length,
