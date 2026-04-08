@@ -547,9 +547,15 @@ export default function BiometricPage() {
                         <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Clock In</p>
                         <p className="font-mono text-emerald-500 font-black text-sm">{row.checkIn}</p>
                         {row.checkIn !== '—' && (
-                          <p className="text-xs text-gray-500 mt-0.5 truncate">
-                            📍 {row.checkInDevice ?? 'Manual'}
-                          </p>
+                          <div 
+                            title={row.checkInDevice ?? 'Manual'}
+                            className="inline-flex items-center gap-1 mt-1 bg-secondary/60 hover:bg-secondary border border-border/50 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-full"
+                          >
+                            <Fingerprint className="w-2.5 h-2.5 text-primary shrink-0 opacity-80" />
+                            <span className="text-[9px] text-muted-foreground font-bold truncate leading-none pt-px">
+                              {row.checkInDevice ?? 'Manual'}
+                            </span>
+                          </div>
                         )}
                       </div>
                       <div><p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Clock Out</p>
@@ -561,7 +567,15 @@ export default function BiometricPage() {
                           <>
                             <p className="font-mono text-muted-foreground font-black text-sm">{row.checkOut}</p>
                             {row.checkOut !== '—' && (
-                              <p className="text-xs text-gray-500 mt-0.5 truncate">📍 {row.checkOutDevice ?? 'Manual'}</p>
+                              <div 
+                                title={row.checkOutDevice ?? 'Manual'}
+                                className="inline-flex items-center gap-1 mt-1 bg-secondary/60 hover:bg-secondary border border-border/50 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-full"
+                              >
+                                <Fingerprint className="w-2.5 h-2.5 text-primary shrink-0 opacity-80" />
+                                <span className="text-[9px] text-muted-foreground font-bold truncate leading-none pt-px">
+                                  {row.checkOutDevice ?? 'Manual'}
+                                </span>
+                              </div>
                             )}
                           </>
                         )}
@@ -626,9 +640,15 @@ export default function BiometricPage() {
                           </span>
                         )}
                         {record.checkIn !== '—' && (
-                          <span className="text-xs text-gray-500 mt-0.5 truncate max-w-[120px]">
-                            📍 {record.checkInDevice ?? 'Manual'}
-                          </span>
+                          <div 
+                            title={record.checkInDevice ?? 'Manual'}
+                            className="inline-flex items-center gap-1 mt-1 bg-secondary/60 hover:bg-secondary border border-border/50 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]"
+                          >
+                            <Fingerprint className="w-2.5 h-2.5 text-primary shrink-0 opacity-80" />
+                            <span className="text-[9px] text-muted-foreground font-bold truncate leading-none pt-px">
+                              {record.checkInDevice ?? 'Manual'}
+                            </span>
+                          </div>
                         )}
                       </div>
                     </td>
@@ -668,9 +688,15 @@ export default function BiometricPage() {
                         <div className="flex flex-col">
                           <span>{record.checkOut}</span>
                           {record.checkOut !== '—' && (
-                            <span className="text-[9px] text-gray-500 font-medium mt-0.5 truncate max-w-[120px]">
-                              📍 {record.checkOutDevice ?? 'Manual'}
-                            </span>
+                            <div 
+                              title={record.checkOutDevice ?? 'Manual'}
+                              className="inline-flex items-center gap-1 mt-1 bg-secondary/60 hover:bg-secondary border border-border/50 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]"
+                            >
+                              <Fingerprint className="w-2.5 h-2.5 text-primary shrink-0 opacity-80" />
+                              <span className="text-[9px] text-muted-foreground font-bold truncate leading-none pt-px">
+                                {record.checkOutDevice ?? 'Manual'}
+                              </span>
+                            </div>
                           )}
                         </div>
                       )}

@@ -31,6 +31,8 @@ export const getMyAttendance = async (req: Request, res: Response): Promise<void
                 ...(Object.keys(dateFilter).length > 0 && { date: dateFilter }),
             },
             include: {
+                checkInDevice: { select: { name: true } },
+                checkOutDevice: { select: { name: true } },
                 employee: {
                     include: {
                         Shift: true
@@ -46,6 +48,8 @@ export const getMyAttendance = async (req: Request, res: Response): Promise<void
             const metrics = calculateAttendanceMetrics(record, shift);
             return {
                 ...record,
+                checkInDeviceName: record.checkInDevice?.name || null,
+                checkOutDeviceName: record.checkOutDevice?.name || null,
                 checkInTimePH: formatToPhilippineTime(record.checkInTime),
                 checkOutTimePH: record.checkOutTime ? formatToPhilippineTime(record.checkOutTime) : null,
                 ...metrics,
