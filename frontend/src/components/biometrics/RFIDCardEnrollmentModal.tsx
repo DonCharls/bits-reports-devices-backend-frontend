@@ -79,6 +79,26 @@ export default function RFIDCardEnrollmentModal({
     }
   }, [employeeId])
 
+  // Optimistically mark active+sync-enabled devices (or a specific device) as synced
+  // right after the API confirms success. A deferred re-fetch then reconciles with the DB.
+  const optimisticallySetEnrolled = useCallback((enrolledCardNumber: number, targetDeviceId?: number) => {
+    const now = new Date().toISOString()
+    setCardNumber(enrolledCardNumber)
+    setDevices(prev => prev.map(d => {
+      if (targetDeviceId !== undefined) {
+        // Per-device push: only update the target device
+        return d.deviceId === targetDeviceId
+          ? { ...d, enrolled: true, enrolledAt: now, pendingDeletion: false }
+          : d
+      }
+      // Global enroll: mark all active+sync-enabled devices as synced
+      if (d.isActive && d.syncEnabled) {
+        return { ...d, enrolled: true, enrolledAt: now, pendingDeletion: false }
+      }
+      return d
+    }))
+  }, [])
+
   useEffect(() => {
     if (isOpen) {
       setSyncResult(null)
@@ -123,7 +143,10 @@ export default function RFIDCardEnrollmentModal({
       if (data.success) {
         setSyncResult({ success: true, message: data.message || 'Card enrolled globally successfully.' })
         onSuccess(data.message || 'Card enrolled successfully.')
-        await fetchStatus()
+        // Immediately update state so the UI reflects synced status without waiting for re-fetch
+        optimisticallySetEnrolled(parsedNumber)
+        // Deferred reconciliation giving the backend queue time to write to DB
+        setTimeout(() => fetchStatus(), 3000)
       } else {
         setSyncResult({ success: false, message: data.message || 'Global enrollment failed' })
       }
@@ -153,7 +176,8 @@ export default function RFIDCardEnrollmentModal({
 
       if (data.success) {
         setSyncResult({ success: true, message: data.message || 'Sync complete.' })
-        await fetchStatus()
+        if (cardNumber) optimisticallySetEnrolled(cardNumber)
+        setTimeout(() => fetchStatus(), 3000)
       } else {
         setSyncResult({ success: false, message: data.message || 'Sync failed.' })
       }
@@ -200,7 +224,8 @@ export default function RFIDCardEnrollmentModal({
       const data = await res.json()
       if (data.success) {
         setSyncResult({ success: true, message: `Card pushed to device successfully.` })
-        await fetchStatus()
+        if (cardNumber) optimisticallySetEnrolled(cardNumber, deviceId)
+        setTimeout(() => fetchStatus(), 3000)
       } else {
         setSyncResult({ success: false, message: data.message || 'Push to device failed' })
       }
@@ -221,7 +246,11 @@ export default function RFIDCardEnrollmentModal({
       const data = await res.json()
       if (data.success) {
         setSyncResult({ success: true, message: `Card removed from device successfully.` })
-        await fetchStatus()
+        // Optimistically mark that specific device as unenrolled
+        setDevices(prev => prev.map(d =>
+          d.deviceId === deviceId ? { ...d, enrolled: false, enrolledAt: undefined } : d
+        ))
+        setTimeout(() => fetchStatus(), 3000)
       } else {
         setSyncResult({ success: false, message: data.message || 'Removal from device failed' })
       }
@@ -468,23 +497,27 @@ export default function RFIDCardEnrollmentModal({
                                 <p className={`text-sm font-bold ${device.pendingDeletion ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
                                   {device.deviceName}
                                 </p>
-                                {device.pendingDeletion ? (
-                                  <p className="text-[10px] text-red-400 font-bold flex items-center gap-1">
-                                    <AlertTriangle className="w-3 h-3" /> Pending offline deletion...
-                                  </p>
-                                ) : device.enrolled ? (
-                                  <p className="text-[10px] text-green-600 font-medium">
-                                    Synced {device.enrolledAt ? `on ${new Date(device.enrolledAt).toLocaleDateString()}` : ''}
-                                  </p>
-                                ) : device.isActive ? (
-                                  <p className="text-[10px] text-amber-500 font-bold flex items-center gap-1">
-                                    <AlertTriangle className="w-3 h-3" /> Not synced
-                                  </p>
-                                ) : (
-                                  <p className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
-                                    <WifiOff className="w-3 h-3" /> Device offline
-                                  </p>
-                                )}
+                                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                    {device.pendingDeletion ? (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 text-red-600 text-[9px] font-bold uppercase tracking-wider border border-red-100">
+                                        <AlertTriangle className="w-2.5 h-2.5" /> Pending Delete
+                                      </span>
+                                    ) : device.enrolled ? (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[9px] font-bold uppercase tracking-wider border border-emerald-100">
+                                        <Check className="w-2.5 h-2.5" /> Synced {device.enrolledAt ? `(${new Date(device.enrolledAt).toLocaleDateString()})` : ''}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[9px] font-bold uppercase tracking-wider border border-amber-100">
+                                        <AlertTriangle className="w-2.5 h-2.5" /> Not Synced
+                                      </span>
+                                    )}
+
+                                    {!device.isActive && (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-bold uppercase tracking-wider border border-slate-200">
+                                        <WifiOff className="w-2.5 h-2.5" /> Offline
+                                      </span>
+                                    )}
+                                  </div>
                               </div>
                             </div>
 

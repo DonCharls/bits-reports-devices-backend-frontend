@@ -361,23 +361,27 @@ export default function FingerprintDashboardModal({
                                   <p className={`text-sm font-medium ${device.pendingDeletion ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
                                     {device.deviceName}
                                   </p>
-                                  {device.pendingDeletion ? (
-                                    <p className="text-[10px] text-red-400 font-bold flex items-center gap-1">
-                                      <AlertTriangle className="w-3 h-3" /> Pending offline deletion...
-                                    </p>
-                                  ) : device.enrolled ? (
-                                    <p className="text-[10px] text-green-600 font-medium">
-                                      Synced {device.enrolledAt ? `on ${new Date(device.enrolledAt).toLocaleDateString()}` : ''}
-                                    </p>
-                                  ) : device.isActive ? (
-                                    <p className="text-[10px] text-amber-500 font-bold flex items-center gap-1">
-                                      <AlertTriangle className="w-3 h-3" /> Not synced
-                                    </p>
-                                  ) : (
-                                    <p className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
-                                      <WifiOff className="w-3 h-3" /> Device offline
-                                    </p>
-                                  )}
+                                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                    {device.pendingDeletion ? (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 text-red-600 text-[9px] font-bold uppercase tracking-wider border border-red-100">
+                                        <AlertTriangle className="w-2.5 h-2.5" /> Pending Delete
+                                      </span>
+                                    ) : device.enrolled ? (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[9px] font-bold uppercase tracking-wider border border-emerald-100">
+                                        <Check className="w-2.5 h-2.5" /> Synced {device.enrolledAt ? `(${new Date(device.enrolledAt).toLocaleDateString()})` : ''}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[9px] font-bold uppercase tracking-wider border border-amber-100">
+                                        <AlertTriangle className="w-2.5 h-2.5" /> Not Synced
+                                      </span>
+                                    )}
+
+                                    {!device.isActive && (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-bold uppercase tracking-wider border border-slate-200">
+                                        <WifiOff className="w-2.5 h-2.5" /> Offline
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </div>

@@ -1163,9 +1163,8 @@ export const getEmployeeFingerprintStatus = async (req: Request, res: Response) 
             },
         });
 
-        // Fetch all active devices
+        // Fetch all devices
         const activeDevices = await prisma.device.findMany({
-            where: { isActive: true },
             select: { id: true, name: true, isActive: true, syncEnabled: true },
             orderBy: { id: 'asc' },
         });
@@ -1388,9 +1387,8 @@ export const getEmployeeCardStatus = async (req: Request, res: Response) => {
             },
         });
 
-        // Fetch all active devices
+        // Fetch all devices
         const activeDevices = await prisma.device.findMany({
-            where: { isActive: true },
             select: { id: true, name: true, isActive: true, syncEnabled: true },
             orderBy: { id: 'asc' },
         });

@@ -290,6 +290,28 @@ async function executeTask(task: any, zk: any): Promise<void> {
                 await zk.clearUserFingerprints(deviceUid);
                 await zk.setUser(deviceUid, payload.name, "", payload.role, payload.card, visibleId);
             }
+
+            // Sync the database state for the card based on the successful device write
+            const emp = await prisma.employee.findUnique({ where: { zkId: payload.zkId } });
+            if (emp) {
+                if (payload.card && payload.card > 0) {
+                    await prisma.employeeCardEnrollment.upsert({
+                        where: { employeeId_deviceId: { employeeId: emp.id, deviceId: task.deviceId } },
+                        update: { enrolledAt: new Date() },
+                        create: { employeeId: emp.id, deviceId: task.deviceId }
+                    });
+                    
+                    await prisma.employeeDeviceEnrollment.upsert({
+                        where: { employeeId_deviceId: { employeeId: emp.id, deviceId: task.deviceId } },
+                        update: { enrolledAt: new Date() },
+                        create: { employeeId: emp.id, deviceId: task.deviceId }
+                    });
+                } else if (payload.card === 0) {
+                    await prisma.employeeCardEnrollment.deleteMany({
+                        where: { employeeId: emp.id, deviceId: task.deviceId }
+                    });
+                }
+            }
         } 
         else if (actionType === 'DELETE_USER') {
             const payload = task.payload as DeleteUserPayload;
