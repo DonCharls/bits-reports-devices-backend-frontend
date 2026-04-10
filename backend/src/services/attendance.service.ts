@@ -106,7 +106,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             employeeId: log.employeeId,
                             date: dateOnly,
                             checkInTime: log.timestamp,
-                            status: isLate ? 'late' : 'present'
+                            status: isLate ? 'late' : 'present',
+                            checkInDeviceId: log.deviceId
                         },
                         include: {
                             employee: {
@@ -119,7 +120,9 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                                     branch: true,
                                     Shift: true,
                                 }
-                            }
+                            },
+                            checkInDevice: { select: { name: true } },
+                            checkOutDevice: { select: { name: true } }
                         }
                     });
                     created++;
@@ -142,6 +145,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         type: 'check-in',
                         record: {
                             ...createdRecord,
+                            checkInDeviceName: createdRecord.checkInDevice?.name || null,
+                            checkOutDeviceName: createdRecord.checkOutDevice?.name || null,
                             checkInTimePH: formatToPhilippineTime(createdRecord.checkInTime),
                             checkOutTimePH: null,
                             ...metrics,
@@ -176,7 +181,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             where: { id: existingAttendance.id },
                             data: {
                                 checkOutTime: log.timestamp,
-                                updatedAt: new Date()
+                                updatedAt: new Date(),
+                                checkOutDeviceId: log.deviceId
                             },
                             include: {
                                 employee: {
@@ -189,7 +195,9 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                                         branch: true,
                                         Shift: true,
                                     }
-                                }
+                                },
+                                checkInDevice: { select: { name: true } },
+                                checkOutDevice: { select: { name: true } }
                             }
                         });
                         updated++;
@@ -210,6 +218,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             type: 'check-out',
                             record: {
                                 ...updatedRecord,
+                                checkInDeviceName: updatedRecord.checkInDevice?.name || null,
+                                checkOutDeviceName: updatedRecord.checkOutDevice?.name || null,
                                 checkInTimePH: formatToPhilippineTime(updatedRecord.checkInTime),
                                 checkOutTimePH: updatedRecord.checkOutTime ? formatToPhilippineTime(updatedRecord.checkOutTime) : null,
                                 ...metrics,
@@ -222,7 +232,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         where: { id: existingAttendance.id },
                         data: {
                             checkOutTime: log.timestamp,
-                            updatedAt: new Date()
+                            updatedAt: new Date(),
+                            checkOutDeviceId: log.deviceId
                         },
                         include: {
                             employee: {
@@ -235,7 +246,9 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                                     branch: true,
                                     Shift: true,
                                 }
-                            }
+                            },
+                            checkInDevice: { select: { name: true } },
+                            checkOutDevice: { select: { name: true } }
                         }
                     });
                     updated++;
@@ -256,6 +269,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         type: 'check-out',
                         record: {
                             ...updatedRecord2,
+                            checkInDeviceName: updatedRecord2.checkInDevice?.name || null,
+                            checkOutDeviceName: updatedRecord2.checkOutDevice?.name || null,
                             checkInTimePH: formatToPhilippineTime(updatedRecord2.checkInTime),
                             checkOutTimePH: updatedRecord2.checkOutTime ? formatToPhilippineTime(updatedRecord2.checkOutTime) : null,
                             ...metrics2,
@@ -540,6 +555,8 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
         prisma.attendance.findMany({
             where,
             include: {
+                checkInDevice: { select: { name: true } },
+                checkOutDevice: { select: { name: true } },
                 employee: {
                     include: {
                         Department: {
@@ -561,6 +578,8 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
         const metrics = calculateAttendanceMetrics(record, shift);
         return {
             ...record,
+            checkInDeviceName: record.checkInDevice?.name || null,
+            checkOutDeviceName: record.checkOutDevice?.name || null,
             checkInTimePH: formatToPhilippineTime(record.checkInTime),
             checkOutTimePH: record.checkOutTime ? formatToPhilippineTime(record.checkOutTime) : null,
             ...metrics,

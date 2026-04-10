@@ -26,6 +26,9 @@ import {
   TrendingDown,
   Timer,
   GitBranch,
+  Edit2,
+  Loader2,
+  X,
 } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useTableSort } from '@/hooks/useTableSort'
@@ -74,6 +77,14 @@ export default function BiometricPage() {
   const dragScrollRef = useHorizontalDragScroll()
 
   // Stats
+  const [editingLog, setEditingLog] = useState<any | null>(null)
+  const [showCancelModal, setShowCancelModal] = useState(false)
+  const [showSuccessToast, setShowSuccessToast] = useState(false)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [editCheckIn, setEditCheckIn] = useState('')
+  const [editCheckOut, setEditCheckOut] = useState('')
+  const [editReason, setEditReason] = useState('')
+
   const [stats, setStats] = useState({
     totalPresent: 0,
     totalLate: 0,
@@ -115,11 +126,67 @@ export default function BiometricPage() {
     return `${h}h ${m}m`
   }
 
+  const toTimeInput = (str: string): string => {
+    if (!str || str === '—') return ''
+    try {
+      const d = new Date(`1970-01-01 ${str}`)
+      if (isNaN(d.getTime())) return ''
+      return d.toTimeString().slice(0, 5)
+    } catch { return '' }
+  }
+
+  const handleEditClick = (row: any) => {
+    setEditingLog(row)
+    setEditCheckIn(toTimeInput(row.checkIn))
+    setEditCheckOut(toTimeInput(row.checkOut))
+    setEditReason('')
+  }
+
+  const handleApplyChanges = async () => {
+    if (!editingLog) return
+    if (String(editingLog.id).startsWith('absent-')) {
+      alert('Cannot edit an absent record — the employee has no clock-in/out entry for this day.')
+      return
+    }
+    setActionLoading(true)
+    try {
+      const body: any = { reason: editReason }
+      if (editCheckIn) body.checkInTime = `${editingLog.date}T${editCheckIn}:00+08:00`
+      if (editCheckOut) body.checkOutTime = `${editingLog.date}T${editCheckOut}:00+08:00`
+
+      const res = await fetch(`/api/attendance/${editingLog.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setShowSuccessToast(true)
+        setEditingLog(null)
+        fetchRecords()
+      } else {
+        alert(data.message || 'Update failed')
+      }
+    } catch (e: any) {
+      alert(e.message || 'Network error')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   /* ── Effects ── */
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchTerm), 400)
     return () => clearTimeout(t)
   }, [searchTerm])
+
+  useEffect(() => {
+    if (showSuccessToast) {
+      const t = setTimeout(() => setShowSuccessToast(false), 3000)
+      return () => clearTimeout(t)
+    }
+  }, [showSuccessToast])
 
   useEffect(() => {
     setCurrentPage(1)
@@ -532,7 +599,7 @@ export default function BiometricPage() {
                         <p className="font-black text-foreground text-sm truncate uppercase tracking-tight">{row.employeeName}</p>
                         <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">{row.department} • {row.branchName}</p>
                       </div>
-                      <div className="shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
                         <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${row.displayStatus === 'present' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
                           : row.displayStatus === 'IN_PROGRESS' ? 'text-blue-500 bg-blue-500/10 border-blue-500/20'
                             : row.displayStatus === 'late' ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
@@ -540,6 +607,9 @@ export default function BiometricPage() {
                           }`}>
                           {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus}
                         </span>
+                        <button onClick={() => handleEditClick(row)} className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-all">
+                          <Edit2 size={14} />
+                        </button>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -547,9 +617,15 @@ export default function BiometricPage() {
                         <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Clock In</p>
                         <p className="font-mono text-emerald-500 font-black text-sm">{row.checkIn}</p>
                         {row.checkIn !== '—' && (
-                          <p className="text-xs text-gray-500 mt-0.5 truncate">
-                            📍 {row.checkInDevice ?? 'Manual'}
-                          </p>
+                          <div 
+                            title={row.checkInDevice ?? 'Manual'}
+                            className="inline-flex items-center gap-1 mt-1 bg-secondary/60 hover:bg-secondary border border-border/50 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-full"
+                          >
+                            <Fingerprint className="w-2.5 h-2.5 text-primary shrink-0 opacity-80" />
+                            <span className="text-[9px] text-muted-foreground font-bold truncate leading-none pt-px">
+                              {row.checkInDevice ?? 'Manual'}
+                            </span>
+                          </div>
                         )}
                       </div>
                       <div><p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Clock Out</p>
@@ -561,7 +637,15 @@ export default function BiometricPage() {
                           <>
                             <p className="font-mono text-muted-foreground font-black text-sm">{row.checkOut}</p>
                             {row.checkOut !== '—' && (
-                              <p className="text-xs text-gray-500 mt-0.5 truncate">📍 {row.checkOutDevice ?? 'Manual'}</p>
+                              <div 
+                                title={row.checkOutDevice ?? 'Manual'}
+                                className="inline-flex items-center gap-1 mt-1 bg-secondary/60 hover:bg-secondary border border-border/50 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-full"
+                              >
+                                <Fingerprint className="w-2.5 h-2.5 text-primary shrink-0 opacity-80" />
+                                <span className="text-[9px] text-muted-foreground font-bold truncate leading-none pt-px">
+                                  {row.checkOutDevice ?? 'Manual'}
+                                </span>
+                              </div>
                             )}
                           </>
                         )}
@@ -593,6 +677,7 @@ export default function BiometricPage() {
                   <SortableHeader label="OT" sortKey="overtimeMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-emerald-500" />
                   <SortableHeader label="UT" sortKey="undertimeMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-red-500" />
                   <SortableHeader label="Status" sortKey="status" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center" />
+                  <th className="px-4 py-4 text-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -626,9 +711,15 @@ export default function BiometricPage() {
                           </span>
                         )}
                         {record.checkIn !== '—' && (
-                          <span className="text-xs text-gray-500 mt-0.5 truncate max-w-[120px]">
-                            📍 {record.checkInDevice ?? 'Manual'}
-                          </span>
+                          <div 
+                            title={record.checkInDevice ?? 'Manual'}
+                            className="inline-flex items-center gap-1 mt-1 bg-secondary/60 hover:bg-secondary border border-border/50 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]"
+                          >
+                            <Fingerprint className="w-2.5 h-2.5 text-primary shrink-0 opacity-80" />
+                            <span className="text-[9px] text-muted-foreground font-bold truncate leading-none pt-px">
+                              {record.checkInDevice ?? 'Manual'}
+                            </span>
+                          </div>
                         )}
                       </div>
                     </td>
@@ -668,9 +759,15 @@ export default function BiometricPage() {
                         <div className="flex flex-col">
                           <span>{record.checkOut}</span>
                           {record.checkOut !== '—' && (
-                            <span className="text-[9px] text-gray-500 font-medium mt-0.5 truncate max-w-[120px]">
-                              📍 {record.checkOutDevice ?? 'Manual'}
-                            </span>
+                            <div 
+                              title={record.checkOutDevice ?? 'Manual'}
+                              className="inline-flex items-center gap-1 mt-1 bg-secondary/60 hover:bg-secondary border border-border/50 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]"
+                            >
+                              <Fingerprint className="w-2.5 h-2.5 text-primary shrink-0 opacity-80" />
+                              <span className="text-[9px] text-muted-foreground font-bold truncate leading-none pt-px">
+                                {record.checkOutDevice ?? 'Manual'}
+                              </span>
+                            </div>
                           )}
                         </div>
                       )}
@@ -732,6 +829,11 @@ export default function BiometricPage() {
                         </Badge>
                       )}
                     </td>
+                    <td className="px-4 py-4 text-center">
+                      <button onClick={() => handleEditClick(record)} className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-all">
+                        <Edit2 size={16} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -749,6 +851,108 @@ export default function BiometricPage() {
           </div>
         )}
       </Card>
+
+      {/* Edit Modal */}
+      {editingLog && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col">
+            <div className="p-5 bg-primary text-primary-foreground flex justify-between items-center shrink-0">
+              <h3 className="font-bold text-lg leading-tight tracking-tight">Manual Time Changes</h3>
+              <button onClick={() => setShowCancelModal(true)} className="text-primary-foreground/70 hover:text-primary-foreground">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-secondary p-3 rounded-xl border border-border">
+                <p className="text-sm font-bold text-foreground leading-none">{editingLog.employeeName}</p>
+                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider mt-1">
+                  {editingLog.department} • {editingLog.branchName}
+                  {editingLog.shiftCode && <span className="ml-2">• {editingLog.shiftCode}</span>}
+                </p>
+              </div>
+              {String(editingLog.id).startsWith('absent-') && (
+                <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-xl flex gap-3">
+                  <AlertCircle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-xs font-medium text-amber-600">This employee has no existing clock-in record for this day. Changes cannot be saved.</p>
+                </div>
+              )}
+              <div className="bg-primary/10 border border-primary/20 p-3 rounded-xl flex gap-3">
+                <Clock size={16} className="text-primary shrink-0 mt-0.5" />
+                <p className="text-[10px] text-foreground leading-relaxed font-medium">
+                  <strong className="block mb-0.5 tracking-tight uppercase">Auto-Computed Status</strong>
+                  Status will be automatically determined based on the employee&apos;s assigned shift schedule and the recorded time-in / time-out.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-muted-foreground tracking-wider flex items-center gap-1.5"><Clock size={10} className="text-emerald-500" /> Clock In</label>
+                  <input type="time" value={editCheckIn} onChange={(e) => setEditCheckIn(e.target.value)}
+                    className="w-full p-2 bg-secondary border border-border rounded-xl text-xs font-bold text-foreground outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-muted-foreground tracking-wider flex items-center gap-1.5"><Clock size={10} className="text-red-500" /> Clock Out</label>
+                  <input type="time" value={editCheckOut} onChange={(e) => setEditCheckOut(e.target.value)}
+                    className="w-full p-2 bg-secondary border border-border rounded-xl text-xs font-bold text-foreground outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black uppercase text-muted-foreground tracking-wider">Reason for Adjustment <span className="text-destructive">*</span></label>
+                <textarea value={editReason} onChange={(e) => setEditReason(e.target.value)}
+                  placeholder="e.g., Biometric error, Official business..."
+                  className={`w-full p-3 bg-secondary rounded-xl h-16 text-xs outline-none focus:ring-2 focus:ring-primary/20 resize-none ${!editReason.trim() ? 'border border-destructive focus:ring-destructive/20' : 'border border-border'}`} />
+                {!editReason.trim() && (
+                  <p className="text-[10px] text-destructive font-medium flex items-center gap-1">
+                    <AlertCircle size={10} />
+                    Reason is required. Please provide a reason before submitting.
+                  </p>
+                )}
+              </div>
+              <div className="bg-destructive/10 border border-destructive/20 p-3 rounded-xl flex gap-3 shadow-sm">
+                <AlertCircle size={18} className="text-destructive shrink-0" />
+                <p className="text-[10px] text-foreground leading-relaxed font-medium">
+                  <strong className="block mb-0.5 tracking-tight uppercase">Admin Override</strong>
+                  This change will bypass the adjustment queue and update the record permanently.
+                </p>
+              </div>
+            </div>
+            <div className="p-5 bg-card border-t border-border flex gap-3 shrink-0">
+              <button onClick={() => setShowCancelModal(true)} className="flex-1 px-4 py-3.5 text-sm font-bold text-muted-foreground hover:text-foreground transition-colors border border-border rounded-xl">Cancel</button>
+              <button
+                onClick={handleApplyChanges}
+                disabled={actionLoading || String(editingLog.id).startsWith('absent-') || !editReason.trim()}
+                className="flex-1 px-4 py-3.5 bg-primary text-primary-foreground rounded-xl text-sm font-black shadow-lg shadow-primary/30 hover:bg-primary/90 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {actionLoading && <Loader2 size={15} className="animate-spin" />}
+                Apply Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel confirm modal */}
+      {showCancelModal && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 text-center space-y-4">
+              <h3 className="text-lg font-black text-foreground tracking-tight">Discard changes?</h3>
+              <p className="text-sm font-medium text-muted-foreground">Your unsaved modifications will be lost.</p>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setShowCancelModal(false)} className="flex-1 px-4 py-2.5 border border-border text-foreground rounded-xl text-sm font-bold hover:bg-secondary transition-all">Cancel</button>
+                <button onClick={() => { setEditingLog(null); setShowCancelModal(false); }} className="flex-1 px-4 py-2.5 bg-destructive text-destructive-foreground rounded-xl text-sm font-bold hover:bg-destructive/90 transition-all active:scale-95">Yes</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success toast */}
+      {showSuccessToast && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-foreground text-background px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 z-[110]">
+          <span className="text-sm font-bold tracking-tight">Settings Applied</span>
+        </div>
+      )}
+
     </div>
   )
 }
