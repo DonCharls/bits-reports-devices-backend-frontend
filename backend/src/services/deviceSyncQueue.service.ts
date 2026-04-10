@@ -4,7 +4,8 @@ import {
     acquireDeviceLock, 
     releaseDeviceLock, 
     zkErrMsg, 
-    connectWithRetry 
+    connectWithRetry,
+    tryAcquireDeviceLock
 } from './zkServices';
 import { audit } from '../lib/auditLogger';
 
@@ -12,7 +13,7 @@ import { audit } from '../lib/auditLogger';
 // Types & Interfaces
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type SyncActionType = 'UPSERT_USER' | 'DELETE_USER' | 'DELETE_FINGER';
+export type SyncActionType = 'UPSERT_USER' | 'DELETE_USER' | 'DELETE_FINGER' | 'SYNC_FINGER_FROM_SOURCE';
 
 export interface UpsertUserPayload {
     zkId: number;
@@ -28,6 +29,12 @@ export interface DeleteUserPayload {
 export interface DeleteFingerPayload {
     zkId: number;
     fingerIndex: number;
+}
+
+export interface SyncFingerPayload {
+    zkId: number;
+    fingerIndex: number;
+    employeeId: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,6 +76,42 @@ export async function enqueueUpsertUser(
     });
 
     console.log(`[SyncQueue] Enqueued UPSERT_USER for zkId=${payload.zkId} on device ${deviceId}`);
+}
+
+/**
+ * Pushes a task to pull a fingerprint from a source device and push it to this target device.
+ */
+export async function enqueueFingerprintPull(
+    targetDeviceId: number,
+    payload: SyncFingerPayload
+): Promise<void> {
+    const entityId = `FINGER_PULL_${payload.zkId}_${payload.fingerIndex}`;
+    
+    await prisma.deviceSyncTask.upsert({
+        where: {
+            deviceId_actionType_entityId: {
+                deviceId: targetDeviceId,
+                actionType: 'SYNC_FINGER_FROM_SOURCE',
+                entityId
+            }
+        },
+        update: {
+            payload: payload as any,
+            status: 'PENDING',
+            retryCount: 0,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        },
+        create: {
+            deviceId: targetDeviceId,
+            actionType: 'SYNC_FINGER_FROM_SOURCE',
+            entityId,
+            payload: payload as any,
+            status: 'PENDING'
+        }
+    });
+
+    console.log(`[SyncQueue] Enqueued SYNC_FINGER_FROM_SOURCE for zkId=${payload.zkId} finger=${payload.fingerIndex} on device ${targetDeviceId}`);
 }
 
 /**
@@ -255,6 +298,77 @@ async function executeTask(task: any, zk: any): Promise<void> {
         else if (actionType === 'DELETE_FINGER') {
             const payload = task.payload as DeleteFingerPayload;
             await zk.deleteFingerTemplate(payload.zkId, payload.fingerIndex);
+        }
+        else if (actionType === 'SYNC_FINGER_FROM_SOURCE') {
+            const payload = task.payload as SyncFingerPayload;
+            
+            // 1. Evaluate possible source devices
+            const enrollments = await prisma.employeeFingerprintEnrollment.findMany({
+                where: { employeeId: payload.employeeId, fingerIndex: payload.fingerIndex },
+                select: { deviceId: true }
+            });
+            const sourceCandidateIds = enrollments.map(e => e.deviceId).filter(id => id !== task.deviceId);
+            
+            if (sourceCandidateIds.length === 0) {
+                throw new Error(`Finger ${payload.fingerIndex} has no source devices (record might be corrupted or source devices deleted)`);
+            }
+
+            let sourceTemplateData: Buffer | null = null;
+            const sourceDevices = await prisma.device.findMany({
+                where: { id: { in: sourceCandidateIds }, isActive: true }
+            });
+
+            // 2. Iterate and securely extract template
+            for (const srcDb of sourceDevices) {
+                if (!tryAcquireDeviceLock(srcDb.id)) {
+                    console.warn(`[SyncQueue] Source device ${srcDb.name} is busy. Skipping for now.`);
+                    continue; // try next candidate (or fail and retry queue task later)
+                }
+
+                const srcZk = getDriver(srcDb.ip, srcDb.port);
+                try {
+                    await connectWithRetry(srcZk, 1);
+                    const raw = await srcZk.getFingerTemplate(payload.zkId, payload.fingerIndex);
+                    if (raw && raw.length > 0) {
+                        sourceTemplateData = Buffer.alloc(raw.length);
+                        raw.copy(sourceTemplateData);
+                        raw.fill(0); // Secure wipe
+                        break;
+                    }
+                } catch (err: any) {
+                    console.warn(`[SyncQueue] Failed reading finger from source device ${srcDb.name}: ${zkErrMsg(err)}`);
+                } finally {
+                    try { await srcZk.disconnect(); } catch { /* ignore */ }
+                    releaseDeviceLock(srcDb.id);
+                }
+            }
+
+            if (!sourceTemplateData) {
+                // Throw error so DeviceSyncQueue retries this exact task later!
+                throw new Error(`Failed to extract finger template ${payload.fingerIndex} from any source devices (they might be offline or busy).`);
+            }
+
+            // 3. Write securely to target
+            try {
+                await zk.setFingerTemplate(payload.zkId, payload.fingerIndex, sourceTemplateData);
+                
+                await prisma.employeeFingerprintEnrollment.upsert({
+                    where: { employeeId_deviceId_fingerIndex: { employeeId: payload.employeeId, deviceId: task.deviceId, fingerIndex: payload.fingerIndex } },
+                    update: { enrolledAt: new Date() },
+                    create: { employeeId: payload.employeeId, deviceId: task.deviceId, fingerIndex: payload.fingerIndex, fingerLabel: `Finger ${payload.fingerIndex}` }
+                });
+                
+                // Update parent device enrollment wrapper
+                await prisma.employeeDeviceEnrollment.upsert({
+                    where: { employeeId_deviceId: { employeeId: payload.employeeId, deviceId: task.deviceId } },
+                    update: { enrolledAt: new Date() },
+                    create: { employeeId: payload.employeeId, deviceId: task.deviceId }
+                });
+                
+                console.log(`[SyncQueue] ✓ Synced finger ${payload.fingerIndex} for zkId ${payload.zkId} securely over the network from device.`);
+            } finally {
+                sourceTemplateData.fill(0); // Final wipe
+            }
         }
         else {
             throw new Error(`Unknown actionType: ${actionType}`);

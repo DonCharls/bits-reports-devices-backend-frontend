@@ -16,9 +16,11 @@ export interface DeviceConnectedPayload {
         ip: string
         isActive: boolean
         syncEnabled: boolean
-        lastSyncedAt: string | null
-        lastSyncStatus: string | null
-        lastSyncError: string | null
+        lastPolledAt?: string | null
+        lastSyncedAt?: string | null
+        lastSyncStatus?: string | null
+        lastSyncError?: string | null
+        lastReconciledAt?: string | null
     }[]
 }
 

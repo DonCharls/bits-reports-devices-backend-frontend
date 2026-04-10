@@ -17,9 +17,24 @@ function zkErrMsg(err: any): string {
 // ─── GET /api/devices ────────────────────────────────────────────────────────
 export const getAllDevices = async (req: Request, res: Response) => {
     try {
-        const devices = await prisma.device.findMany({
+        const devicesRaw = await prisma.device.findMany({
             orderBy: { createdAt: 'asc' },
+            include: {
+                _count: {
+                    select: { DeviceSyncTasks: { where: { status: 'PENDING' } } }
+                }
+            }
         });
+
+        // Flatten the count into the payload
+        const devices = devicesRaw.map(d => {
+            const { _count, ...rest } = d;
+            return {
+                ...rest,
+                pendingTasks: _count.DeviceSyncTasks
+            };
+        });
+
         res.json({ success: true, devices });
     } catch (error: any) {
         console.error('[Devices] Error fetching devices:', error);
@@ -308,7 +323,7 @@ export const reconcileDevice = async (req: Request, res: Response) => {
         console.log(`[Devices] Starting reconcile for device ${id} (dryRun=${dryRun})...`);
         const { reconcileDeviceWithDB } = await import('../services/zkServices');
         const report = await reconcileDeviceWithDB(id, dryRun);
-        const mode = dryRun ? 'Preview (dry run)' : 'Reconcile complete';
+        const mode = dryRun ? 'Preview (dry run)' : 'Reconcile Queued';
 
         if (!dryRun) {
             await audit({
@@ -317,14 +332,16 @@ export const reconcileDevice = async (req: Request, res: Response) => {
                 entityId: id,
                 performedBy: req.user?.employeeId,
                 source: 'admin-panel',
-                details: `Reconciled device: pushed ${report.pushed.length}, removed ${report.deleted.length}`,
+                details: `Reconciled device (queued): pushing ${report.pushed.length}, removing ${report.deleted.length}`,
                 metadata: { category: 'device' }
             });
         }
 
         return res.json({
             success: true,
-            message: `${mode}: ${report.pushed.length} to push, ${report.deleted.length} to remove, ${report.needsEnrollment.length} need enrollment.`,
+            message: dryRun
+                ? `${mode}: ${report.pushed.length} to push, ${report.deleted.length} to remove. ${report.needsEnrollment.length} missing fingerprints found.`
+                : `${mode}: ${report.pushed.length} push tasks, ${report.deleted.length} deletion tasks, and finger pulls (${report.needsEnrollment.length} users) enqueued successfully.`,
             report,
         });
     } catch (error: any) {
@@ -458,7 +475,7 @@ export const streamDeviceStatus = async (req: Request, res: Response): Promise<v
     // client has accurate status immediately without a separate HTTP request.
     try {
         const devices = await prisma.device.findMany({
-            select: { id: true, name: true, ip: true, isActive: true, syncEnabled: true, lastSyncedAt: true, lastSyncStatus: true, lastSyncError: true },
+            select: { id: true, name: true, ip: true, isActive: true, syncEnabled: true, lastSyncedAt: true, lastSyncStatus: true, lastSyncError: true, lastPolledAt: true, lastReconciledAt: true },
             orderBy: { id: 'asc' },
         });
         res.write(`event: connected\ndata: ${JSON.stringify({ devices })}\n\n`);

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { Card } from '@/components/ui/card'
+import { formatDistanceToNow, format } from 'date-fns'
 import { useDeviceStream, DeviceStatusPayload, DeviceConnectedPayload } from '@/hooks/useDeviceStream'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,7 +11,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
     Wifi, WifiOff, Plus, Pencil, Trash2, X, Check,
     Server, MapPin, RadioTower, Loader2, AlertCircle, RefreshCw,
-    ChevronRight, Activity
+    ChevronRight, Activity, ListTodo, Clock
 } from 'lucide-react'
 
 interface Device {
@@ -21,6 +22,12 @@ interface Device {
     location: string | null
     isActive: boolean
     syncEnabled: boolean
+    lastPolledAt?: string | null
+    lastSyncedAt?: string | null
+    lastSyncStatus?: string | null
+    lastSyncError?: string | null
+    lastReconciledAt?: string | null
+    pendingTasks?: number
     createdAt: string
     updatedAt: string
 }
@@ -59,6 +66,14 @@ export default function DevicesPage() {
 
     // Toggle sync state
     const [togglingId, setTogglingId] = useState<number | null>(null)
+
+    // Reconcile state
+    const [reconcilingId, setReconcilingId] = useState<number | null>(null)
+    const [reconcileTarget, setReconcileTarget] = useState<Device | null>(null)
+
+    const confirmReconcile = (device: Device) => {
+        setReconcileTarget(device)
+    }
 
     // Toast
     const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
@@ -105,7 +120,16 @@ export default function DevicesPage() {
         setDevices(prev => prev.map(device => {
             const fresh = payload.devices.find(d => d.id === device.id)
             if (!fresh) return device
-            return { ...device, isActive: fresh.isActive, syncEnabled: fresh.syncEnabled }
+            return { 
+                ...device, 
+                isActive: fresh.isActive, 
+                syncEnabled: fresh.syncEnabled,
+                lastPolledAt: fresh.lastPolledAt !== undefined ? fresh.lastPolledAt : device.lastPolledAt,
+                lastSyncedAt: fresh.lastSyncedAt !== undefined ? fresh.lastSyncedAt : device.lastSyncedAt,
+                lastSyncStatus: fresh.lastSyncStatus !== undefined ? fresh.lastSyncStatus : device.lastSyncStatus,
+                lastSyncError: fresh.lastSyncError !== undefined ? fresh.lastSyncError : device.lastSyncError,
+                lastReconciledAt: fresh.lastReconciledAt !== undefined ? fresh.lastReconciledAt : device.lastReconciledAt,
+            }
         }))
     }, [])
 
@@ -127,9 +151,24 @@ export default function DevicesPage() {
         )
     }, [])
 
+    const handleSyncResult = useCallback((payload: any) => {
+        setDevices(prev => prev.map(device =>
+            device.id === payload.id
+                ? { 
+                    ...device, 
+                    lastSyncStatus: payload.lastSyncStatus, 
+                    lastSyncedAt: payload.lastSyncedAt, 
+                    lastSyncError: payload.lastSyncError,
+                    lastPolledAt: payload.lastPolledAt ?? device.lastPolledAt
+                  }
+                : device
+        ))
+    }, [])
+
     useDeviceStream({
         onConnected: handleDeviceConnected,
         onStatusChange: handleDeviceStatus,
+        onSyncResult: handleSyncResult,
     })
 
     const openAdd = () => {
@@ -223,6 +262,29 @@ export default function DevicesPage() {
             setTestResults(prev => ({ ...prev, [device.id]: { success: false, message: e.message || 'Connection failed' } }))
         } finally {
             setTestingId(null)
+        }
+    }
+
+    const handleReconcile = async () => {
+        if (!reconcileTarget) return;
+
+        setReconcilingId(reconcileTarget.id)
+        try {
+            const res = await fetch(`/api/devices/${reconcileTarget.id}/reconcile`, {
+                method: 'POST',
+                credentials: 'include'
+            })
+            const data = await res.json()
+            if (data.success) {
+                showToast(data.message)
+            } else {
+                showToast(data.message || 'Failed to queue reconcile', false)
+            }
+        } catch (e: any) {
+            showToast(e.message || 'Network error', false)
+        } finally {
+            setReconcilingId(null)
+            setReconcileTarget(null)
         }
     }
 
@@ -336,6 +398,7 @@ export default function DevicesPage() {
                         const isTesting = testingId === device.id
                         const isConfirmingDelete = deleteConfirmId === device.id
                         const isToggling = togglingId === device.id
+                        const isReconciling = reconcilingId === device.id
 
                         return (
                             <Card key={device.id} className="bg-card border-border overflow-hidden">
@@ -358,7 +421,7 @@ export default function DevicesPage() {
                                                         : 'bg-secondary/50 text-muted-foreground border-border'
                                                         }`}
                                                 >
-                                                    {device.isActive ? '● Online' : '○ Offline'}
+                                                    {device.isActive ? '● Online' : `○ Offline${device.lastPolledAt ? ` (${formatDistanceToNow(new Date(device.lastPolledAt))} ago)` : ''}`}
                                                 </Badge>
                                                 <Badge
                                                     variant="outline"
@@ -403,6 +466,56 @@ export default function DevicesPage() {
                                     )}
                                 </div>
 
+                                {/* Device Health Dashboard (Beautified Metrics) */}
+                                <div className="px-5 pb-4">
+                                    <div className="bg-secondary/20 rounded-xl p-1.5 grid grid-cols-2 gap-1.5 border border-border mt-1">
+                                        
+                                        {/* Pending Sync */}
+                                        <div className="bg-card rounded-lg p-2.5 shadow-sm border border-border/40 flex flex-col justify-between group hover:border-border transition-colors">
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                                                    <ListTodo className="w-3 h-3" /> Queue
+                                                </span>
+                                                {device.pendingTasks && device.pendingTasks > 0 ? (
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse shadow-[0_0_6px_rgba(249,115,22,0.6)]" />
+                                                ) : (
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-border" />
+                                                )}
+                                            </div>
+                                            <div className="flex items-baseline gap-1 mt-0.5">
+                                                <span className={`text-lg font-bold tracking-tight leading-none ${device.pendingTasks && device.pendingTasks > 0 ? 'text-orange-600' : 'text-foreground'}`}>
+                                                    {device.pendingTasks || 0}
+                                                </span>
+                                                <span className="text-[9px] font-medium text-muted-foreground uppercase">Tasks</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Last Sync */}
+                                        <div className="bg-card rounded-lg p-2.5 shadow-sm border border-border/40 flex flex-col justify-between group hover:border-border transition-colors">
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                                                    <Clock className="w-3 h-3" /> Sync
+                                                </span>
+                                                {device.lastSyncedAt && (
+                                                    <div className={`w-1.5 h-1.5 rounded-full ${device.lastSyncStatus === 'SUCCESS' ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-red-500 animate-pulse shadow-[0_0_6px_rgba(239,68,68,0.6)]'}`} title={device.lastSyncStatus === 'SUCCESS' ? 'Success' : device.lastSyncError || 'Failed'} />
+                                                )}
+                                            </div>
+                                            {device.lastSyncedAt ? (
+                                                <div className="mt-0.5">
+                                                    <span className="text-xs font-bold text-foreground tracking-tight truncate leading-none block" title={format(new Date(device.lastSyncedAt), 'MMM d, p')}>
+                                                        {formatDistanceToNow(new Date(device.lastSyncedAt), { addSuffix: true }).replace('about ', '')}
+                                                    </span>
+                                                </div>
+                                            ) : (
+                                                <div className="mt-0.5">
+                                                    <span className="text-xs font-bold text-muted-foreground tracking-tight leading-none block">Never</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                    </div>
+                                </div>
+
                                 {/* Test Result */}
                                 {testResult && (
                                     <div className={`mx-5 mb-4 px-3 py-2.5 rounded-xl text-xs font-medium border ${testResult.success
@@ -427,18 +540,31 @@ export default function DevicesPage() {
 
                                 {/* Actions */}
                                 <div className="px-5 pb-5 flex flex-col gap-2">
-                                    {/* Test Connection */}
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => handleTest(device)}
-                                        disabled={isTesting || isToggling}
-                                        className="w-full gap-2 border-border text-sm"
-                                    >
-                                        {isTesting
-                                            ? <><Loader2 className="w-4 h-4 animate-spin" /> Testing...</>
-                                            : <><Activity className="w-4 h-4" /> Test Connection</>}
-                                    </Button>
+                                    {/* Top Row: Test & Reconcile */}
+                                    <div className="flex gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleTest(device)}
+                                            disabled={isTesting || isToggling || isReconciling}
+                                            className="flex-1 gap-1.5 border-border text-xs"
+                                        >
+                                            {isTesting
+                                                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Testing...</>
+                                                : <><Activity className="w-3.5 h-3.5" /> Test</>}
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => confirmReconcile(device)}
+                                            disabled={isTesting || isToggling || isReconciling}
+                                            className="flex-1 gap-1.5 border-border text-xs text-primary hover:bg-primary/10 border-primary/20"
+                                        >
+                                            {isReconciling
+                                                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Queuing...</>
+                                                : <><RefreshCw className="w-3.5 h-3.5" /> Reconcile</>}
+                                        </Button>
+                                    </div>
 
                                     <div className="flex gap-2">
                                         {/* Edit */}
@@ -579,6 +705,50 @@ export default function DevicesPage() {
                                 {saving
                                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</>
                                     : <><Check className="w-4 h-4" /> {editingDevice ? 'Save Changes' : 'Add Device'}</>}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Reconcile Modal */}
+            {reconcileTarget && (
+                <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                    <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+                        <div className="flex flex-col items-center text-center px-6 pt-8 pb-6 border-b border-border bg-secondary/20">
+                            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4 ring-8 ring-primary/5">
+                                <RefreshCw className="w-6 h-6 text-primary" />
+                            </div>
+                            <h3 className="text-xl font-bold text-foreground">Confirm Device Reconcile</h3>
+                            <p className="text-sm text-muted-foreground mt-2">
+                                You are about to reconcile <strong className="text-foreground">{reconcileTarget.name}</strong>.
+                            </p>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="bg-secondary/40 border border-border rounded-xl p-4 text-sm text-foreground space-y-2 text-left">
+                                <p><strong>This action will dynamically queue:</strong></p>
+                                <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+                                    <li>Push tasks for missing employees</li>
+                                    <li>Delete tasks for ghost users</li>
+                                    <li>Fingerprint pull tasks to resync missing templates from other terminals</li>
+                                </ul>
+                            </div>
+                            <p className="text-xs text-muted-foreground text-center">
+                                All tasks run asynchronously in the background. Operations are fail-safe and retry automatically if the connection is interrupted.
+                            </p>
+                        </div>
+                        <div className="px-6 pb-6 flex gap-3">
+                            <Button variant="outline" onClick={() => setReconcileTarget(null)} className="flex-1 border-border">
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleReconcile}
+                                disabled={reconcilingId === reconcileTarget.id}
+                                className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
+                            >
+                                {reconcilingId === reconcileTarget.id 
+                                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Queueing...</>
+                                    : <><Check className="w-4 h-4" /> Start Reconcile</>}
                             </Button>
                         </div>
                     </div>

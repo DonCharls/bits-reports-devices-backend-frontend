@@ -24,27 +24,23 @@ export interface SyncZkDataResult {
     newLogs: number;
 }
 
-// Protected device UIDs that cannot be overwritten (e.g., 1 is reserved for SUPER ADMIN).
+// UIDs reserved for specific roles (e.g., 1 for SUPER ADMIN).
 const PROTECTED_DEVICE_UIDS = [1];
 
 // Starting zkId for regular employees.
 const MIN_EMPLOYEE_ZK_ID = 2;
 
 // Mutex to prevent race conditions during concurrent employee registrations.
-// Ensures atomic assignment of unique zkIds by forcing read-then-write sequences to queue.
 let _registrationMutexBusy = false;
 const _registrationMutexQueue: Array<() => void> = [];
 
 /**
- * Acquires the registration mutex.
- * Returns a release function that MUST be called in a finally block.
- * Queues the caller if the mutex is already held — callers are served
- * in FIFO order so no request starves.
+ * Acquires the registration mutex. Caller must release in a finally block.
+ * Uses FIFO queue to prevent starvation.
  */
 export async function acquireRegistrationMutex(): Promise<() => void> {
     return new Promise((resolve) => {
         const release = () => {
-            // Hand off to the next queued caller, if any.
             const next = _registrationMutexQueue.shift();
             if (next) {
                 setTimeout(next, 50);
@@ -57,8 +53,6 @@ export async function acquireRegistrationMutex(): Promise<() => void> {
             _registrationMutexBusy = true;
             resolve(release);
         } else {
-            // FIFO: push to end of queue so registrations are processed
-            // in the order they arrived
             _registrationMutexQueue.push(() => {
                 _registrationMutexBusy = true;
                 resolve(release);
@@ -68,26 +62,12 @@ export async function acquireRegistrationMutex(): Promise<() => void> {
 }
 
 /**
- * Finds the lowest safe zkId to assign to a new employee.
- *
- * Queries BOTH the database (to avoid duplicate `Employee.zkId` values) AND
- * every active biometric device (to avoid colliding with ghost users whose
- * device UIDs are not present in the DB). Walks integers starting from
- * `MIN_EMPLOYEE_ZK_ID` (2) and returns the first value not in either set.
- *
- * If a device is offline, its UIDs cannot be verified. A warning is logged and
- * the function falls back to the DB-only check for that device — the caller's
- * downstream write guards (`addUserToDevice` visibleId conflict check) provide
- * a second layer of protection in that scenario.
- *
- * This function does NOT acquire the device lock because it is called before
- * the employee record exists, making it a read-only pre-flight check. Each
- * device connection is opened and closed within its own try/finally block.
- *
+ * Finds the lowest safe zkId not used in the database or on any active device.
+ * Falls back to DB-only check if a device is offline.
  * @returns The next safe integer zkId >= MIN_EMPLOYEE_ZK_ID
  */
 export const findNextSafeZkId = async (): Promise<number> => {
-    // 1. Collect all zkId values already used in the DB.
+    // 1. Collect zkIds from DB.
     const dbEmployees = await prisma.employee.findMany({
         where: { zkId: { not: null } },
         select: { zkId: true },
@@ -98,9 +78,7 @@ export const findNextSafeZkId = async (): Promise<number> => {
         ...PROTECTED_DEVICE_UIDS,
     ]);
 
-    // 2. Collect all UIDs currently occupied on every active device.
-    //    Each device is connected and disconnected independently so one offline
-    //    device does not block the rest.
+    // 2. Collect UIDs used on active devices.
     const activeDevices = await prisma.device.findMany({
         where: { isActive: true },
         orderBy: { id: 'asc' },
@@ -109,7 +87,7 @@ export const findNextSafeZkId = async (): Promise<number> => {
     for (const dbDevice of activeDevices) {
         const zk = getDriver(dbDevice.ip, dbDevice.port);
         try {
-            await connectWithRetry(zk, 1); // 1 retry — this is a non-critical pre-flight
+            await connectWithRetry(zk, 1);
             const deviceUsers = await zk.getUsers();
             // node-zklib does not export its user type, so 'any' is required here
             deviceUsers.forEach((u: any) => {
@@ -117,16 +95,13 @@ export const findNextSafeZkId = async (): Promise<number> => {
             });
             console.log(`[ZK] findNextSafeZkId — scanned ${deviceUsers.length} UIDs from "${dbDevice.name}".`);
         } catch (err: any) {
-            // Device is offline — log a warning but continue. The DB check still
-            // prevents duplicates; the addUserToDevice write guards provide the
-            // second layer of protection if the device comes back online.
-            console.warn(`[ZK] findNextSafeZkId — could not reach "${dbDevice.name}" (${zkErrMsg(err)}). Device UIDs not verified for this device.`);
+            console.warn(`[ZK] findNextSafeZkId — could not reach "${dbDevice.name}" (${zkErrMsg(err)}).`);
         } finally {
             try { await zk.disconnect(); } catch { /* ignore disconnect errors */ }
         }
     }
 
-    // 3. Find the first integer >= MIN_EMPLOYEE_ZK_ID that is not in the used set.
+    // 3. Find first available candidate.
     let candidate = MIN_EMPLOYEE_ZK_ID;
     while (usedIds.has(candidate)) {
         candidate++;
@@ -137,10 +112,7 @@ export const findNextSafeZkId = async (): Promise<number> => {
 };
 
 /**
- * Convert Philippine Time to UTC reliably
- * ZKTeco device returns timestamps in Philippine Time (UTC+8)
- * node-zklib creates a completely local Date object. This guarantees we use
- * the raw PHT hour components to compute true UTC without subtracting 8 hours twice.
+ * Converts Philippine Time (UTC+8) from the device to UTC.
  */
 const convertPHTtoUTC = (deviceDate: Date): Date => {
     // Extract what the device screen actually printed (which was mapped blindly to local OS components)
@@ -156,10 +128,7 @@ const convertPHTtoUTC = (deviceDate: Date): Date => {
     return new Date(rawUTC.getTime() - (8 * 60 * 60 * 1000));
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FIX 1: Increased timeout (10 s instead of 5 s)
-// ─────────────────────────────────────────────────────────────────────────────
-/** Create a ZKDriver for a specific device IP+port. Falls back to env vars if not provided. */
+/** Create a ZKDriver for a specific device. */
 export const getDriver = (ip?: string, port?: number): ZKDriver => {
     const resolvedIp = ip ?? process.env.ZK_HOST ?? '192.168.1.201';
     const resolvedPort = port ?? parseInt(process.env.ZK_PORT || '4370');
@@ -167,12 +136,7 @@ export const getDriver = (ip?: string, port?: number): ZKDriver => {
     return new ZKDriver(resolvedIp, resolvedPort, timeout);
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Per-device lock system
-// Each ZKTeco device only accepts ONE TCP connection at a time.
-// This Map-based mutex ensures that concurrent API calls to the SAME device
-// are queued, while operations targeting DIFFERENT devices run in parallel.
-// ─────────────────────────────────────────────────────────────────────────────
+// Per-device lock system to manage concurrent TCP connections.
 
 interface DeviceLockState {
     busy: boolean;
@@ -181,7 +145,7 @@ interface DeviceLockState {
     timeoutHandle: ReturnType<typeof setTimeout> | null;
 }
 
-// Key = device database ID (number). Created on first use.
+// Key = device database ID.
 const _deviceLocks = new Map<number, DeviceLockState>();
 
 function getDeviceLockState(deviceId: number): DeviceLockState {
@@ -196,15 +160,12 @@ function getDeviceLockState(deviceId: number): DeviceLockState {
     return _deviceLocks.get(deviceId)!;
 }
 
-// Safety timeout: if the lock is held for more than 90 seconds,
-// auto-release it. This prevents permanent deadlock if a request
-// crashes before reaching its finally{} block.
+// Safety timeout to prevent permanent deadlocks.
 const LOCK_TIMEOUT_MS = 90_000;
 
 /**
- * Blocking lock for interactive UI operations (enrollment, addUser).
- * Jumps to the FRONT of the queue so it is not delayed by already-queued cron syncs.
- * Sets interactivePending so subsequent cron ticks skip while this is pending/held.
+ * Acquires an interactive device lock (enrollment, addUser).
+ * Bypasses background queue for priority handling.
  */
 function acquireInteractiveDeviceLock(deviceId: number): Promise<void> {
     const state = getDeviceLockState(deviceId);
@@ -216,7 +177,6 @@ function acquireInteractiveDeviceLock(deviceId: number): Promise<void> {
             resolve();
         } else {
             console.log(`[ZK] Device ${deviceId} busy — interactive request jumping to front of queue...`);
-            // Unshift = front of queue, so this resolves before any already-queued cron syncs
             state.queue.unshift(() => {
                 state.busy = true;
                 resolve();
@@ -226,8 +186,7 @@ function acquireInteractiveDeviceLock(deviceId: number): Promise<void> {
 }
 
 /**
- * Blocking lock for background operations (syncEmployeesToDevice, deleteUserFromDevice, etc.).
- * Queues at the BACK — waits its turn behind any interactive operations.
+ * Acquires a background device lock.
  */
 export function acquireDeviceLock(deviceId: number): Promise<void> {
     const state = getDeviceLockState(deviceId);
@@ -254,8 +213,7 @@ export function acquireDeviceLock(deviceId: number): Promise<void> {
 }
 
 /**
- * Release the device lock and hand off to the next queued operation.
- * Always call this in a finally block.
+ * Releases the device lock and proceeds to the next queued operation.
  */
 export function releaseDeviceLock(deviceId: number): void {
     const state = getDeviceLockState(deviceId);
@@ -265,12 +223,9 @@ export function releaseDeviceLock(deviceId: number): void {
     }
     const next = state.queue.shift();
     if (next) {
-        // Small delay so the device can fully close the previous TCP socket
         setTimeout(next, 500);
     } else {
         state.busy = false;
-        // Only clear the interactive flag when the queue is fully drained —
-        // if another interactive op is queued, it will set the flag again when it resolves.
         state.interactivePending = false;
     }
 }
@@ -281,22 +236,14 @@ export function releaseDeviceLock(deviceId: number): void {
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * Non-blocking lock attempt for the cron job.
- * Returns false (skip this tick) if:
- *   - The device is already busy with any operation, OR
- *   - An interactive operation is pending in the queue
- * This ensures cron ticks never block or delay UI-triggered operations.
+ * Returns false if the device is busy or an interactive operation is pending.
  */
-function tryAcquireDeviceLock(deviceId: number): boolean {
+export function tryAcquireDeviceLock(deviceId: number): boolean {
     const state = getDeviceLockState(deviceId);
-    // Skip if device is busy OR if an interactive operation is pending/active.
-    // interactivePending ensures a queued enrollment/addUser is never
-    // pushed back by a cron tick that sneaks in before it resolves.
     if (state.busy || state.interactivePending) {
         return false;
     }
     state.busy = true;
-    // Apply the same safety timeout as interactive and background locks so a
-    // crashed cron tick never leaves the device permanently locked.
     state.timeoutHandle = setTimeout(() => {
         console.warn(`[ZK] ⚠ Cron lock auto-released after timeout (90s) for device ${deviceId}.`);
         releaseDeviceLock(deviceId);
@@ -305,9 +252,8 @@ function tryAcquireDeviceLock(deviceId: number): boolean {
 }
 
 /**
- * Global Deletion: Removes a specific fingerprint across ALL active devices.
- * If a device is offline, flags the DB row as pendingDeletion=true so the 
- * auto-reconciler sweeps it when the device reconnects.
+ * Removes a fingerprint across all active devices.
+ * If a device is offline, it is flagged for later reconciliation.
  */
 export const deleteFingerprintGlobally = async (
     employeeId: number,
@@ -337,10 +283,9 @@ export const deleteFingerprintGlobally = async (
 
     const { enqueueGlobalDeleteFinger, processDeviceSyncQueue } = require('./deviceSyncQueue.service');
 
-    // Queue the deletion for all relevant devices and strip from DB
     await enqueueGlobalDeleteFinger(employee.id, employee.zkId, fingerIndex, fingerLabel);
 
-    // Try to process immediately on active devices for fast UI feedback
+    // Immediate processing for active devices.
     setImmediate(async () => {
         for (const enr of enrollments) {
             if (enr.device.isActive) {
@@ -359,8 +304,7 @@ export const deleteFingerprintGlobally = async (
     };
 };
 
-// Force-release the lock from an external endpoint (e.g. POST /api/devices/unlock)
-// If deviceId is provided, releases only that device. Otherwise releases ALL devices (emergency).
+// Releases device lock(s) via API. releases all if deviceId is omitted.
 export function forceReleaseLock(deviceId?: number): void {
     if (deviceId !== undefined) {
         console.warn(`[ZK] Force-releasing device lock for device ${deviceId} via API.`);
@@ -370,7 +314,6 @@ export function forceReleaseLock(deviceId?: number): void {
         state.busy = false;
         state.interactivePending = false;
     } else {
-        // No specific device — release all (emergency fallback)
         console.warn(`[ZK] Force-releasing ALL device locks via API.`);
         _deviceLocks.forEach((state, id) => {
             state.queue.length = 0;
@@ -381,14 +324,10 @@ export function forceReleaseLock(deviceId?: number): void {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ZKError unwrapper — node-zklib throws { err: Error, ip, command } objects
-// which don't have a .message property, so we extract it manually.
-// ─────────────────────────────────────────────────────────────────────────────
+// Extract error message from ZKDriver error objects.
 export function zkErrMsg(err: any): string {
     if (!err) return 'Unknown error';
     if (typeof err === 'string') return err;
-    // ZKError shape: { err: Error, ip, command }
     if (err.err instanceof Error) return `${err.command || 'ZK'}: ${err.err.message}`;
     if (err.message) return err.message;
     return JSON.stringify(err);
@@ -413,11 +352,7 @@ export async function connectWithRetry(zk: ZKDriver, maxRetries: number = 2): Pr
     throw lastError;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Private helper: fire a background queue flush when a device reconnects.
-// No cooldown needed — processDeviceSyncQueue only touches PENDING rows
-// and is a no-op if none exist (O(1) check).
-// ─────────────────────────────────────────────────────────────────────────────
+// Triggers background queue flush when a device reconnects.
 
 export async function triggerAutoReconcile(deviceId: number, deviceName: string): Promise<void> {
     try {
@@ -445,17 +380,13 @@ export async function triggerAutoReconcile(deviceId: number, deviceName: string)
         });
 
     } catch (err: unknown) {
-        // Errors in triggerAutoReconcile itself must not propagate up
         console.error(
             `[ZK] triggerAutoReconcile error for "${deviceName}": ${zkErrMsg(err)}`
         );
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Private helper: sync a single device (connect → getLogs → insert → disconnect).
-// Manages its own per-device lock. NOT exported — only called by syncZkData().
-// ─────────────────────────────────────────────────────────────────────────────
+// Syncs a single device (logs download and DB persistence).
 async function syncSingleDevice(dbDevice: {
     id: number;
     name: string;
@@ -469,29 +400,19 @@ async function syncSingleDevice(dbDevice: {
         return { deviceId: dbDevice.id, newLogs: 0, skipped: true };
     }
 
-    // Non-blocking lock: skip this device if it is already being used
     if (!tryAcquireDeviceLock(dbDevice.id)) {
         console.debug(`[ZK] Cron sync skipped for "${dbDevice.name}" — device is busy.`);
         return { deviceId: dbDevice.id, newLogs: 0, skipped: true };
     }
 
-    // ── Read the sync watermark for this device ───────────────────────────
-    // We re-query the device record here (not trusting the stale snapshot passed
-    // in from syncZkData's findMany) to ensure we have the absolute latest
-    // lastSyncedAt value, even if a previous tick updated it mid-cycle.
+    // 1. Read the latest sync watermark for this device.
     const deviceRecord = await prisma.device.findUnique({
         where: { id: dbDevice.id },
         select: { lastSyncedAt: true },
     });
 
-    // Determine the watermark: use lastSyncedAt if it exists, otherwise fall back
-    // to 48 hours ago. The 48-hour window is deliberately wide to:
-    //   1. Catch logs that span the midnight boundary (preventing the "today only" gap)
-    //   2. Recover logs from any server downtime up to 48 hours
-    // The @@unique([timestamp, employeeId]) constraint on AttendanceLog guarantees
-    // that any log already in the DB will be silently skipped on insert — so fetching
-    // a wide window is safe and never creates duplicates.
-    const FALLBACK_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
+    // 2. Set watermark fallback (48 hours) to prevent gaps.
+    const FALLBACK_WINDOW_MS = 48 * 60 * 60 * 1000;
     const watermark: Date = deviceRecord?.lastSyncedAt ?? new Date(Date.now() - FALLBACK_WINDOW_MS);
 
     console.log(`[ZK] "${dbDevice.name}" watermark: ${watermark.toISOString()} (${deviceRecord?.lastSyncedAt ? 'from DB' : '48h fallback'})`);
@@ -499,11 +420,10 @@ async function syncSingleDevice(dbDevice: {
     const zk = getDriver(dbDevice.ip, dbDevice.port);
     try {
         console.log(`[ZK] Syncing device "${dbDevice.name}" at ${dbDevice.ip}:${dbDevice.port}...`);
-        // Single attempt — the 30s cron IS the retry loop. No need to waste
-        // 5+ seconds retrying within a tick when the next tick is 30s away.
+        // Use 30s cron interval as the retry mechanism.
         await connectWithRetry(zk, 0);
 
-        // getInfo() uses UDP — non-fatal if it fails (device still works via TCP)
+        // Optional: Get serial info (UDP).
         try {
             const info = await zk.getInfo();
             if (!info?.serialNumber || info.serialNumber === 'N/A') {
@@ -517,11 +437,7 @@ async function syncSingleDevice(dbDevice: {
 
         const allLogs = await zk.getLogs();
 
-        // ── Filter logs using the watermark ──────────────────────────────────
-        // Convert each device log's recordTime to UTC using convertPHTtoUTC before
-        // comparing against the watermark (which is already stored in UTC).
-        // This ensures the comparison is timezone-safe regardless of how node-zklib
-        // represents the device's local time internally.
+        // 3. Filter and sort logs by watermark.
         const logs = allLogs
             .filter((log: any) => {
                 const logUTC = convertPHTtoUTC(log.recordTime);
@@ -534,9 +450,7 @@ async function syncSingleDevice(dbDevice: {
 
         console.log(`[ZK] Fetched ${allLogs.length} total logs, filtered to ${logs.length} logs newer than watermark.`);
 
-        // Track the timestamp of the most recently inserted log so we can
-        // advance the watermark after the loop. We only advance on successful
-        // inserts — a failed insert does not move the watermark forward.
+        // Track insertion progress to advance the watermark.
         let latestInsertedTimestamp: Date | null = null;
         let newCount = 0;
         for (const log of logs) {
@@ -570,9 +484,7 @@ async function syncSingleDevice(dbDevice: {
                     const diffMs = Math.abs(utcTime.getTime() - lastLog.timestamp.getTime());
                     const diffMinutes = diffMs / (1000 * 60);
 
-                    // Only skip if it's within 1 minute (likely accidental double-scan)
                     if (diffMinutes < 1) {
-                        // Log duplicate punch detection
                         void audit({
                             action: 'DUPLICATE_PUNCH',
                             level: 'WARN',
@@ -622,12 +534,7 @@ async function syncSingleDevice(dbDevice: {
                 });
                 newCount++;
 
-                // ── Advance the in-memory watermark tracker ───────────
-                // We track the maximum UTC timestamp across all successfully
-                // inserted logs so that after the loop we can persist the new
-                // high-water mark. Using a null-check + comparison ensures we
-                // always end up with the latest timestamp even if logs arrive
-                // out of order.
+                // Update watermark tracker.
                 if (latestInsertedTimestamp === null || utcTime > latestInsertedTimestamp) {
                     latestInsertedTimestamp = utcTime;
                 }
@@ -636,10 +543,7 @@ async function syncSingleDevice(dbDevice: {
             }
         }
 
-        // ── Persist the watermark if any new logs were inserted ──────────────
-        // Only update lastSyncedAt when at least one log was successfully written.
-        // This ensures that a sync cycle that finds no new logs does not
-        // accidentally reset the watermark to null or move it backwards.
+        // 4. Persist the new watermark.
         if (latestInsertedTimestamp !== null) {
             // Advance by 1ms so the next sync's strict '>' filter excludes this
             // exact timestamp and never re-processes the same log.
@@ -656,11 +560,8 @@ async function syncSingleDevice(dbDevice: {
             }).catch(() => { /* ignore */ });
         }
 
-        // Log buffer clearing has been moved to a scheduled off-hours maintenance
-        // job (logBufferMaintenanceScheduler) to eliminate the data-loss race
-        // condition that existed when clearing was done inline during every sync.
-        // The DB watermark (lastSyncedAt) prevents duplicate imports regardless
-        // of how many logs remain on the device.
+        // Log buffer clearing is handled by a separate maintenance job.
+        // The DB watermark prevents duplicate imports.
 
         deviceEmitter.emit('device-sync-result', {
             id: dbDevice.id,
@@ -686,7 +587,7 @@ async function syncSingleDevice(dbDevice: {
     } catch (deviceErr: any) {
         console.error(`[ZK] Error syncing "${dbDevice.name}" (${dbDevice.ip}): ${zkErrMsg(deviceErr)}`);
 
-        // Record only the sync failure — do NOT mutate isActive (Control Plane rules)
+        // Record sync failure.
         await prisma.device.update({
             where: { id: dbDevice.id },
             data: { 
@@ -723,7 +624,7 @@ async function syncSingleDevice(dbDevice: {
 
 export const syncZkData = async (): Promise<SyncZkDataResult> => {
     try {
-        // Load ALL devices from the DB — this way IP changes via Configure take effect immediately
+        // Load all devices from DB.
         const dbDevices = await prisma.device.findMany({ orderBy: { id: 'asc' } });
 
         if (dbDevices.length === 0) {
@@ -739,7 +640,7 @@ export const syncZkData = async (): Promise<SyncZkDataResult> => {
             };
         }
 
-        // Run all device syncs in PARALLEL — each device manages its own lock
+        // Run all device syncs in parallel.
         const results = await Promise.allSettled(
             dbDevices.map(dbDevice => syncSingleDevice(dbDevice))
         );
@@ -764,7 +665,7 @@ export const syncZkData = async (): Promise<SyncZkDataResult> => {
             }
         });
 
-        // Process all new logs into Attendance records once, after all devices are done
+        // Process new logs into Attendance records.
         if (totalNewLogs > 0) {
             console.log(`[ZK] Processing ${totalNewLogs} total new logs across all devices...`);
             await processAttendanceLogs();
@@ -817,7 +718,7 @@ export const addUserToDevice = async (zkId: number, name: string, role: string =
             card: cardNumber
         });
 
-        // Attempt inline execution for currently-online devices
+        // Inline execution for online devices.
         const onlineDevices = await prisma.device.findMany({
             where: { isActive: true, syncEnabled: true },
             select: { id: true, name: true },
@@ -850,7 +751,7 @@ export const deleteUserFromDevice = async (zkId: number): Promise<SyncResult> =>
         const { enqueueGlobalDeleteUser, processDeviceSyncQueue } = require('./deviceSyncQueue.service');
         await enqueueGlobalDeleteUser(zkId);
 
-        // Attempt inline execution for any currently-online devices
+        // Inline execution for online devices.
         const onlineDevices = await prisma.device.findMany({
             where: { isActive: true, syncEnabled: true },
             select: { id: true, name: true },
@@ -878,7 +779,7 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
         console.log(`[ZK] syncEmployeesToDevice — fetching DB employees...`);
         const employees = await prisma.employee.findMany({
             where: {
-                zkId: { not: null, gt: 1 }, // Skip Admin (zkId = 1)
+                zkId: { not: null, gt: 1 },
                 employmentStatus: 'ACTIVE',
             },
             select: { zkId: true, firstName: true, lastName: true, role: true, cardNumber: true }
@@ -907,10 +808,7 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
                 console.log(`[ZK] Connecting to "${dbDevice.name}"...`);
                 await connectWithRetry(zk);
 
-                // ── Fetch device users ONCE before the employee loop ──────────
-                // WHY: Calling getUsers() inside the loop would hammer the device
-                // with one TCP round-trip per employee. The user list does not
-                // change mid-loop so fetching it once is both correct and efficient.
+                // Fetch all device users once to avoid redundant network requests.
                 const deviceUsers = await zk.getUsers();
 
                 for (const employee of employees) {
@@ -918,7 +816,7 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
                     const zkId = employee.zkId!;
                     const visibleId = zkId.toString();
                     const deviceRole = employee.role === 'ADMIN' ? 14 : 0;
-                    const deviceUid = zkId; // UID ≡ zkId — deterministic, no collisions
+                    const deviceUid = zkId;
 
                     if (PROTECTED_DEVICE_UIDS.includes(deviceUid)) {
                         console.warn(`[ZK]   ⚠ SKIP ${fullName} — zkId=${zkId} is a protected UID.`);
@@ -926,11 +824,7 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
                     }
 
                     try {
-                        // ── Pre-write occupancy check ─────────────────────────
-                        // WHY: Before touching any slot, verify who currently
-                        // occupies it. If a different user is there, skip this
-                        // employee and continue — do NOT abort the entire sync.
-                        // node-zklib does not export its user type, so 'any' is required here
+                        // Pre-write slot occupancy check. Skip if slot is held by a different user.
                         const occupant = deviceUsers.find((u: any) => u.uid === deviceUid);
 
                         if (occupant) {
@@ -989,15 +883,7 @@ const FINGER_MAP: { [key: number]: string } = {
 
 /**
  * Enroll fingerprint for an employee.
- *
- * Uses a SINGLE lock-protected connection to:
- *   1. Verify/add the user on the device (inline, no second connect)
- *   2. Send CMD_STARTENROLL with the correct visible userId string
- *
- * This fixes three previous bugs:
- *   a) Two separate connections racing each other
- *   b) Wrong user ID (internal UID) sent in CMD_STARTENROLL packet
- *   c) Enrollment service connecting outside the device-busy lock
+ * Verifies/adds user on device and starts enrollment.
  */
 export const enrollEmployeeFingerprint = async (
     employeeId: number,
@@ -1024,13 +910,13 @@ export const enrollEmployeeFingerprint = async (
     let dbDevice;
 
     if (deviceId) {
-        // Use the specific device HR selected from the UI
+        // Use specific device.
         dbDevice = await prisma.device.findUnique({ where: { id: deviceId } });
         if (!dbDevice) {
             return { success: false, message: `Device ${deviceId} not found in database.` };
         }
     } else {
-        // Fallback: use the first active device (legacy behaviour)
+        // Use first active device.
         dbDevice = await prisma.device.findFirst({
             where: { isActive: true },
             orderBy: { id: 'asc' },
@@ -1040,9 +926,7 @@ export const enrollEmployeeFingerprint = async (
         }
     }
 
-    // Guard: refuse enrollment immediately if the device is known to be offline.
-    // This avoids a 5-10 second wait for connectWithRetry to fail and gives
-    // the user instant feedback.
+    // Refuse enrollment if device is offline.
     if (!dbDevice.isActive) {
         return {
             success: false,
@@ -1052,31 +936,20 @@ export const enrollEmployeeFingerprint = async (
 
     const fullName = `${employee.firstName} ${employee.lastName}`;
     const visibleId = employee.zkId.toString();
-    // UID = zkId — deterministic 1-to-1 mapping (matches addUserToDevice strategy)
     const deviceUid = employee.zkId;
 
-    // 3. Acquire interactive device lock — enrollment is UI-triggered and time-sensitive.
-    // acquireInteractiveDeviceLock() places this at the FRONT of the queue so cron syncs
-    // can never delay fingerprint capture.
+    // Acquire interactive device lock for priority handling.
     await acquireInteractiveDeviceLock(dbDevice.id);
     const zk = getDriver(dbDevice.ip, dbDevice.port);
 
 
     try {
         console.log(`[Enrollment] Connecting to "${dbDevice.name}" (${dbDevice.ip}:${dbDevice.port})...`);
-        // 1 retry for enrollment — user is actively waiting, so one quick
-        // retry is acceptable but 3 attempts is too slow for an interactive flow.
+        // Connect with 1 retry for interactive flow.
         await connectWithRetry(zk, 1);
 
-        // 3. Ensure user exists on this specific device
         const deviceUsers = await zk.getUsers();
-        // ── Pre-write occupancy check (uid-based) ───────────────────────────
-        // WHY: The previous code searched ONLY by visible userId string, which
-        // meant that if the target UID slot was held by a DIFFERENT user whose
-        // userId didn't match visibleId, existingUser would be null and the code
-        // would silently force-delete and overwrite that user's fingerprints.
-        // We now check the SLOT first (by uid), then fall back to userId lookup.
-        // node-zklib does not export its user type, so 'any' is required here.
+        // Slot occupancy check.
         const slotOccupant = deviceUsers.find((u: any) => u.uid === deviceUid);
         const userByVisibleId = deviceUsers.find((u: any) => String(u.userId).trim() === visibleId.trim());
 
@@ -1120,12 +993,12 @@ export const enrollEmployeeFingerprint = async (
         console.log(`[Enrollment] Sending CMD_STARTENROLL for "${fullName}" (${fingerName}) on "${dbDevice.name}"...`);
         await zk.startEnrollment(visibleId, fingerIndex);
 
-        // Fire & Forget background polling for template extraction and distribution
+        // Extract template in background.
         extractAndDistributeTemplate(dbDevice.id, employee.id, fingerIndex).catch(err => {
             console.error('[BiometricSync] Background task error:', err);
         });
 
-        // 5. Record enrollment in DB (device-level)
+        // Record enrollment in DB.
         await prisma.employeeDeviceEnrollment.upsert({
             where: {
                 employeeId_deviceId: {
@@ -1142,7 +1015,7 @@ export const enrollEmployeeFingerprint = async (
             },
         });
 
-        // Record fingerprint-level metadata (finger × device)
+        // Record fingerprint metadata.
         const fingerLabel = FINGER_MAP[fingerIndex] || `Finger ${fingerIndex}`;
         await prisma.employeeFingerprintEnrollment.upsert({
             where: {
@@ -1182,19 +1055,8 @@ export const enrollEmployeeFingerprint = async (
 };
 
 /**
- * Read fingerprint templates from the enrollment device and write them
- * to every other active, sync-enabled device in the network.
- *
- * SECURITY CONTRACT:
- * - Templates exist in heap memory only for the duration of this function.
- * - They are never written to any database column, log line, or HTTP body.
- * - All template buffers are explicitly zeroed before the function returns.
- * - This honours the no-database-storage rule in BITS_Fingerprint_Propagation_Plan.md §2.
- *
- * @param employeeId     DB id of the newly enrolled employee
- * @param sourceDeviceId DB id of the device on which enrollment was performed
- * @param fingerIndex    If provided, propagate only this finger slot.
- *                       If omitted, propagate all occupied slots.
+ * Reads fingerprint templates from source device and distributes to all active devices.
+ * Templates are held in memory only and never stored in the database.
  */
 export const propagateFingerprintToAllDevices = async (
     employeeId: number,
@@ -1222,7 +1084,7 @@ export const propagateFingerprintToAllDevices = async (
             errors: ['Source device not found'] };
     }
 
-    // 2. Find all other active, sync-enabled devices
+    // 1. Find all other active, sync-enabled devices.
     const targetDevices = await prisma.device.findMany({
         where: { isActive: true, syncEnabled: true, id: { not: sourceDeviceId } }
     });
@@ -1234,7 +1096,7 @@ export const propagateFingerprintToAllDevices = async (
 
     const fullName = `${employee.firstName} ${employee.lastName}`;
 
-    // 3. Read templates from source device
+    // 2. Read templates from source device.
     await acquireInteractiveDeviceLock(sourceDeviceId);
     let templates: { finger: number; data: Buffer }[] = [];
     const srcZk = getDriver(sourceDevice.ip, sourceDevice.port);
@@ -1260,13 +1122,13 @@ export const propagateFingerprintToAllDevices = async (
         releaseDeviceLock(sourceDeviceId);
     }
 
-    // 4. Guard: no templates means enrollment is not yet complete
+    // Guard: ensure templates were read successfully.
     if (templates.length === 0) {
         return { success: false, pushed: 0,
             errors: ['No templates on source device — enrollment may not be complete yet'] };
     }
 
-    // 5. Write to each target device sequentially
+    // 3. Write templates to each target device sequentially.
     let pushed = 0;
     const errors: string[] = [];
 
@@ -1277,7 +1139,7 @@ export const propagateFingerprintToAllDevices = async (
         try {
             await connectWithRetry(tgtZk, 2);
 
-            // Ensure user record exists before writing template
+            // Ensure user record exists.
             const deviceUsers = await tgtZk.getUsers();
             const exists = deviceUsers.find(
                 (u: any) => String(u.userId).trim() === String(employee.zkId)
@@ -1294,9 +1156,7 @@ export const propagateFingerprintToAllDevices = async (
             }
 
             for (const { finger, data } of templates) {
-                // Guard: check if this specific slot already has a template on the target.
-                // ZKTeco binary reads are lossy — overwriting an existing template with
-                // a re-serialized copy degrades it. Only write to genuinely empty slots.
+                // Write to empty slots only to prevent degradation.
                 const existing = await tgtZk.getFingerTemplate(employee.zkId, finger);
                 if (existing && existing.length > 0) {
                     console.log(
@@ -1333,7 +1193,7 @@ export const propagateFingerprintToAllDevices = async (
                 );
             }
 
-            // Record device-level enrollment in DB
+            // Record device enrollment in DB.
             await prisma.employeeDeviceEnrollment.upsert({
                 where: {
                     employeeId_deviceId: {
@@ -1344,7 +1204,7 @@ export const propagateFingerprintToAllDevices = async (
                 create: { employeeId, deviceId: targetDevice.id }
             });
 
-            // Record fingerprint-level metadata for each propagated template
+            // Record fingerprint metadata.
             for (const { finger } of templates) {
                 const fingerLabel = FINGER_MAP[finger] || `Finger ${finger}`;
                 await prisma.employeeFingerprintEnrollment.upsert({
@@ -1377,7 +1237,7 @@ export const propagateFingerprintToAllDevices = async (
         }
     }
 
-    // 6. Zero template buffers — biometric data must not linger in memory
+    // 4. Zero template buffers for security.
     for (const tmpl of templates) {
         tmpl.data.fill(0);
     }
@@ -1387,16 +1247,8 @@ export const propagateFingerprintToAllDevices = async (
 };
 
 /**
- * Background worker to detect a newly enrolled fingerprint template on the
- * source device and propagate it to all other active devices.
- *
- * Polls the source device every 4 seconds for up to 60 seconds waiting for
- * the user to complete the 3-scan enrollment sequence. Once detected, calls
- * propagateFingerprintToAllDevices() for in-memory cross-device distribution.
- *
- * SECURITY: No template data is stored in the database. The previous DB
- * storage code is commented out below — kept as a reference per the team's
- * decision to retain the BiometricTemplate table as an untouched fallback.
+ * Background worker to detect and propagate newly enrolled templates.
+ * Polls source device for up to 60 seconds (15 attempts).
  */
 async function extractAndDistributeTemplate(deviceId: number, employeeId: number, fingerIndex: number) {
     const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
@@ -1409,7 +1261,7 @@ async function extractAndDistributeTemplate(deviceId: number, employeeId: number
 
     console.log(`[BiometricSync] Waiting for user to scan finger... started polling device "${dbDevice.name}".`);
 
-    // Poll up to 15 times (60 seconds) waiting for the user to finish the 3 scans
+    // Poll 15 times (60s) for enrollment completion.
     for (let attempts = 0; attempts < 15; attempts++) {
         await new Promise(r => setTimeout(r, 4000)); // wait 4 seconds
         
@@ -1442,12 +1294,7 @@ async function extractAndDistributeTemplate(deviceId: number, employeeId: number
     }
 
 
-    // ─── DB-driven propagation ─────────────────────────────────────────────
-    // Use the same DB-driven per-slot sync as manual sync. By this point the
-    // enrollment record for this finger already exists in the DB, so
-    // syncEmployeeFingerprints will identify exactly which devices are missing
-    // this fingerIndex and push only that specific slot — never touching
-    // existing templates on devices that already have them.
+    // Distribute via DB-driven propagation.
     console.log(`[BiometricSync] Starting in-memory propagation for ${employee.firstName}...`);
 
     const result = await syncEmployeeFingerprints(employeeId);
@@ -1509,7 +1356,7 @@ export const enrollEmployeeCard = async (
         };
     }
 
-    // 3. Queue the update for target device (or globally)
+    // 1. Queue update for target device or globally.
     const fullName = `${employee.firstName} ${employee.lastName}`;
     const deviceRole = employee.role === 'ADMIN' ? 14 : 0;
     const { enqueueGlobalUpsertUser, enqueueUpsertUser, processDeviceSyncQueue } = require('./deviceSyncQueue.service');
@@ -1522,7 +1369,7 @@ export const enrollEmployeeCard = async (
                 role: deviceRole,
                 card: cardNumber
             });
-            // Try inline execution
+            // Inline execution.
             setImmediate(async () => {
                 const dev = await prisma.device.findUnique({ where: { id: targetDeviceId } });
                 if (dev?.isActive && dev?.syncEnabled) {
@@ -1536,7 +1383,7 @@ export const enrollEmployeeCard = async (
                 role: deviceRole,
                 card: cardNumber
             });
-            // Try inline execution for all active
+            // Inline execution for active devices.
             setImmediate(async () => {
                 const onlineDevices = await prisma.device.findMany({
                     where: { isActive: true, syncEnabled: true },
@@ -1548,7 +1395,7 @@ export const enrollEmployeeCard = async (
             });
         }
 
-        // 4. Persist to DB
+        // 2. Persist to DB.
         await prisma.employee.update({
             where: { id: employeeId },
             data: { cardNumber, updatedAt: new Date() },
@@ -1565,11 +1412,7 @@ export const enrollEmployeeCard = async (
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// RFID BADGE CARD DELETION
-// Clears card data from the user record on ALL active devices, then removes
-// it from the Employee DB row.
-// ─────────────────────────────────────────────────────────────────────────────
+// Removes card data from devices and database.
 export const deleteEmployeeCard = async (
     employeeId: number,
     targetDeviceId?: number,
@@ -1595,12 +1438,12 @@ export const deleteEmployeeCard = async (
                 zkId: employee.zkId,
                 name: fullName,
                 role: deviceRole,
-                card: 0 // Clear the card value
+                card: 0
             });
             await prisma.employeeCardEnrollment.deleteMany({
                 where: { employeeId, deviceId: targetDeviceId }
             });
-            // Try inline execution
+            // Inline execution.
             setImmediate(async () => {
                 const dev = await prisma.device.findUnique({ where: { id: targetDeviceId } });
                 if (dev?.isActive && dev?.syncEnabled) {
@@ -1626,7 +1469,7 @@ export const deleteEmployeeCard = async (
             });
         }
 
-        // Drop global configuration state
+        // Drop global configuration state.
         if (!targetDeviceId) {
             await prisma.employee.update({
                 where: { id: employeeId },
@@ -1651,8 +1494,7 @@ export const deleteEmployeeCard = async (
 
 export const testDeviceConnection = async (): Promise<SyncResult> => {
     const zk = getDriver();
-    // Sentinel device ID 0 — testDeviceConnection uses env-var defaults, not a DB device,
-    // so it gets its own lock slot that never conflicts with real DB device IDs (which start at 1).
+    // Uses sentinel device ID 0 for the lock.
     await acquireDeviceLock(0);
     try {
         await connectWithRetry(zk);
@@ -1733,8 +1575,7 @@ export const syncEmployeesFromDevice = async (): Promise<SyncResult> => {
                         }
                         updateCount++;
                     } else {
-                        // Unknown device user — do NOT auto-create in DB.
-                        // Ghost users are handled by reconcileDeviceWithDB, not this function.
+                        // Skip users not present in the database.
                         console.log(`[ZK] Skipping unknown zkId ${zkId} — not in database`);
                         skippedCount++;
                     }
@@ -1763,15 +1604,13 @@ export const syncEmployeesFromDevice = async (): Promise<SyncResult> => {
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// RECONCILE: Two-way sync between a specific device and the database.
-//
-// Safety rules:
-//   1. NEVER delete device users with role > 0 (device admins).
-//   2. NEVER delete device users in PROTECTED_DEVICE_UIDS list.
-//   3. Use UID = zkId for all writes (deterministic, no collisions).
-//   4. Force-clear slot before each write (prevents stale fingerprint data).
-// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Two-way sync between a specific device and the database.
+ * Safety rules:
+ * 1. Protected/Admin users are never deleted.
+ * 2. UID matches zkId.
+ * 3. Slots are cleared before writing.
+ */
 
 export interface ReconcileReport {
     deviceId: number;
@@ -1786,23 +1625,9 @@ export interface ReconcileReport {
 
 /**
  * Two-way sync between a specific device and the database.
- *
- * Safety rules enforced on every run:
- *   1. NEVER delete device users with role > 0 (device admins).
- *   2. NEVER delete device users in PROTECTED_DEVICE_UIDS list.
- *   3. Use UID = zkId for all writes (deterministic, no collisions).
- *   4. Force-clear slot before each write (prevents stale fingerprint data).
- *
- * @param deviceId  DB id of the device to reconcile.
- * @param dryRun    When true, the report shows what WOULD change but no writes
- *                  are made to the device. Use this for a safe preview before
- *                  committing to a potentially destructive operation in production.
- *                  Defaults to false.
- * @param pushOnly  When true, ONLY push DB-only employees to the device —
- *                  never delete ghost users. This is used by auto-reconcile
- *                  on device reconnect to safely push missing employees without
- *                  risking deletion of pre-existing data on shared or newly
- *                  added devices. Defaults to false.
+ * @param deviceId  Device ID to reconcile.
+ * @param dryRun    If true, reports changes without writing.
+ * @param pushOnly  If true, only pushes missing users without deleting ghosts.
  */
 export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = false, pushOnly: boolean = false): Promise<ReconcileReport> => {
     const report: ReconcileReport = {
@@ -1819,6 +1644,9 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
     if (dryRun) {
         console.log(`[Reconcile] 🔍 DRY RUN — no writes will be made to the device.`);
     }
+
+    // Dynamically import Queue methods to avoid circular dependencies
+    const { enqueueUpsertUser, enqueueDeleteUser, enqueueFingerprintPull, processDeviceSyncQueue } = await import('./deviceSyncQueue.service');
 
     // 1. Load device config from DB
     const dbDevice = await prisma.device.findUnique({ where: { id: deviceId } });
@@ -1842,24 +1670,18 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
         console.log(`[Reconcile] Connecting to "${dbDevice.name}" (${dbDevice.ip}:${dbDevice.port})...`);
         await connectWithRetry(zk, 2);
 
-        // ── PRE-RECONCILE: Sweep Pending Global Deletions ───────────────────
-        // (Moved to DeviceSyncTask queue. Manual reconcile no longer handles this natively)
+        // ── PRE-RECONCILE: Global Deletions Sweep (Handled by Queue) ───────
 
         // 3. Get all users currently on device
         const deviceUsers = await zk.getUsers();
         console.log(`[Reconcile] Device has ${deviceUsers.length} users. DB has ${dbEmployees.length} active employees.`);
 
-        // CRITICAL: Trim userId strings — ZKTeco devices often store userId with
-        // trailing whitespace (e.g., "2 " instead of "2"). Without trimming,
-        // every Map.has() lookup fails and ALL users get re-pushed destructively.
+        // Convert userId to trimmed format for accurate comparison.
         const deviceByVisibleId = new Map(deviceUsers.map((u: any) => [String(u.userId).trim(), u]));
         // Also build a UID-based lookup for secondary matching
         const deviceByUid = new Map(deviceUsers.map((u: any) => [u.uid as number, u]));
 
-        // ── STEP A: Delete device-only ghost users ──────────────────────────
-        // Skipped entirely in pushOnly mode (auto-reconcile) to prevent
-        // accidental deletion of pre-existing users on shared or newly added
-        // devices. Ghost deletion is only performed during manual reconcile.
+        // ── STEP B: Delete device-only ghost users ──────────────────────────
         if (pushOnly) {
             console.log(`[Reconcile] ⏩ Push-only mode — skipping ghost user deletion.`);
         } else {
@@ -1873,14 +1695,14 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
                 continue;
             }
 
-            // Skip device admins (role > 0) — never auto-delete admin accounts
+            // Skip device admins.
             if ((dUser.role ?? 0) > 0) {
                 report.protected.push({ uid, name: dUser.name });
                 console.log(`[Reconcile] ⛔ Skipping admin UID=${uid} ("${dUser.name}") — protected.`);
                 continue;
             }
 
-            // Check if this user maps to an active DB employee (trimmed comparison)
+            // Check if user is active in DB.
             if (!dbByZkId.has(visibleId)) {
                 // Ghost user — not in DB.
                 if (dryRun) {
@@ -1889,14 +1711,13 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
                     console.log(`[Reconcile] 🔍 Would delete ghost UID=${uid} visibleId="${visibleId}" ("${dUser.name}").`);
                 } else {
                     // Live run: delete the ghost from the device.
-                    console.log(`[Reconcile] 🗑 Deleting ghost user UID=${uid} visibleId="${visibleId}" ("${dUser.name}")...`);
+                    console.log(`[Reconcile] 🗑 Queuing deletion of ghost user UID=${uid} visibleId="${visibleId}" ("${dUser.name}")...`);
                     try {
-                        await zk.clearUserFingerprints(uid);
-                        await zk.deleteUser(uid);
+                        await enqueueDeleteUser(deviceId, uid);
                         report.deleted.push({ uid, userId: visibleId, name: dUser.name });
-                        console.log(`[Reconcile] ✓ Deleted ghost UID=${uid}.`);
+                        console.log(`[Reconcile] ✓ Queued deletion of ghost UID=${uid}.`);
                     } catch (err: any) {
-                        const msg = `Failed to delete UID=${uid}: ${zkErrMsg(err)}`;
+                        const msg = `Failed to queue delete for UID=${uid}: ${err.message}`;
                         report.errors.push(msg);
                         console.error(`[Reconcile] ✗ ${msg}`);
                     }
@@ -1905,7 +1726,7 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
         }
         } // end if (!pushOnly)
 
-        // ── STEP B: Push DB-only employees to device ────────────────────────
+        // ── STEP C: Push DB-only employees to device ────────────────────────
         for (const emp of dbEmployees) {
             const zkId = emp.zkId!;
             const visibleId = zkId.toString();
@@ -1930,15 +1751,15 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
                     report.needsEnrollment.push({ zkId, name: fullName });
                     console.log(`[Reconcile] 🔍 Would push "${fullName}" (zkId=${zkId}) [Card: ${expectedCard}] to device.`);
                 } else {
-                    console.log(`[Reconcile] ➕ Pushing "${fullName}" (zkId=${zkId}) [Card: ${expectedCard}] to device...`);
+                    console.log(`[Reconcile] ➕ Queuing push for "${fullName}" (zkId=${zkId}) [Card: ${expectedCard}] to device...`);
                     try {
-                        await zk.setUser(zkId, fullName, "", deviceRole, expectedCard, visibleId);
+                        await enqueueUpsertUser(deviceId, { zkId, name: fullName, card: expectedCard, role: deviceRole });
                         report.pushed.push({ zkId, name: fullName });
                         // Newly pushed user has no fingerprints yet
                         report.needsEnrollment.push({ zkId, name: fullName });
-                        console.log(`[Reconcile] ✓ Pushed "${fullName}" to UID=${zkId}.`);
+                        console.log(`[Reconcile] ✓ Queued push of "${fullName}" to UID=${zkId}.`);
                     } catch (err: any) {
-                        const msg = `Failed to push "${fullName}": ${zkErrMsg(err)}`;
+                        const msg = `Failed to queue push for "${fullName}": ${err.message}`;
                         report.errors.push(msg);
                         console.error(`[Reconcile] ✗ ${msg}`);
                     }
@@ -1949,13 +1770,13 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
                 const actualCard = Number(dUser.cardno || 0);
 
                 if (actualCard !== expectedCard && !dryRun) {
-                    console.log(`[Reconcile] 🔄 Fixing card for "${fullName}" (UID=${zkId}): Device has ${actualCard}, expected ${expectedCard}...`);
+                    console.log(`[Reconcile] 🔄 Queuing card fix for "${fullName}" (UID=${zkId}): Device has ${actualCard}, expected ${expectedCard}...`);
                     try {
-                        await zk.setUser(zkId, fullName, "", deviceRole, expectedCard, visibleId);
-                        console.log(`[Reconcile] ✓ Updated card for "${fullName}".`);
+                        await enqueueUpsertUser(deviceId, { zkId, name: fullName, card: expectedCard, role: deviceRole });
+                        console.log(`[Reconcile] ✓ Queued card update for "${fullName}".`);
                     } catch (err: any) {
-                        console.error(`[Reconcile] ✗ Failed to update card for "${fullName}": ${zkErrMsg(err)}`);
-                        report.errors.push(`Failed to update card for ${fullName}`);
+                        console.error(`[Reconcile] ✗ Failed to queue card update for "${fullName}": ${err.message}`);
+                        report.errors.push(`Failed to queue card update for ${fullName}`);
                     }
                 } else if (actualCard !== expectedCard && dryRun) {
                      console.log(`[Reconcile] 🔍 Would update card for "${fullName}" (UID=${zkId}): Device has ${actualCard}, expected ${expectedCard}...`);
@@ -1975,24 +1796,36 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
 
         // Skip refresh and isActive update in dry-run — the device state was not changed
         if (!dryRun) {
-            await zk.refreshData();
             await prisma.device.update({ where: { id: deviceId }, data: { isActive: true, updatedAt: new Date() } });
 
-            // Fire async fingerprint sync for users that were newly pushed or found missing fingerprints
+            // Fire async fingerprint queueing for users that were newly pushed or found missing fingerprints
             if (report.needsEnrollment.length > 0) {
-                console.log(`[Reconcile] 🔄 Spawning background fingerprint sync for ${report.needsEnrollment.length} user(s)...`);
-                setImmediate(async () => {
-                    for (const { zkId } of report.needsEnrollment) {
-                        try {
-                            const emp = await prisma.employee.findUnique({ where: { zkId }, select: { id: true } });
-                            // Await sequentially to avoid overwhelming the device locks
-                            if (emp) await syncEmployeeFingerprints(emp.id);
-                        } catch (err: any) {
-                            console.error(`[Reconcile] Background sync failed for zkId ${zkId}:`, err.message);
+                console.log(`[Reconcile] 🔄 Queuing fingerprint pulls for ${report.needsEnrollment.length} user(s)...`);
+                for (const { zkId } of report.needsEnrollment) {
+                    try {
+                        const emp = await prisma.employee.findUnique({ where: { zkId }, select: { id: true } });
+                        if (!emp) continue;
+
+                        const enrollments = await prisma.employeeFingerprintEnrollment.findMany({
+                            where: { employeeId: emp.id },
+                            distinct: ['fingerIndex']
+                        });
+
+                        for (const { fingerIndex } of enrollments) {
+                            await enqueueFingerprintPull(deviceId, { zkId, employeeId: emp.id, fingerIndex });
                         }
+                    } catch (err: any) {
+                        console.error(`[Reconcile] Failed to queue fingerprint for zkId ${zkId}:`, err.message);
                     }
-                });
+                }
             }
+
+            // Immediately trigger queue execution in the background
+            setImmediate(() => {
+                processDeviceSyncQueue(deviceId).catch(err => {
+                    console.error('[Reconcile] Background queue runner failed:', err.message);
+                });
+            });
         }
 
         const mode = dryRun ? 'DRY RUN preview' : 'Live run';
@@ -2013,8 +1846,7 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
 };
 
 /**
- * Sync the clock of ALL active devices to the server's PHT time.
- * Called by the cron job every hour — no attendance data is touched.
+ * Syncs the clock of all active devices to server time.
  */
 export const syncAllDeviceClocks = async (): Promise<void> => {
     const activeDevices = await prisma.device.findMany({
@@ -2055,13 +1887,7 @@ export const syncAllDeviceClocks = async (): Promise<void> => {
 };
 
 /**
- * Clears the attendance log buffer from every active, sync-enabled device.
- * Executes sequentially (never in parallel) to avoid overloading devices.
- *
- * Called exclusively by the LogBufferMaintenanceScheduler — never inline
- * during the 30s attendance sync cycle.
- *
- * Returns a report of which devices were cleared and which failed.
+ * Clears attendance log buffers from all active devices.
  */
 export const clearAllDeviceLogBuffers = async (): Promise<{
     clearedDevices: number;
@@ -2111,14 +1937,7 @@ export const clearAllDeviceLogBuffers = async (): Promise<{
 };
 
 /**
- * Delete a specific fingerprint from a specific device.
- *
- * 1. Connects to the target device
- * 2. Clears the finger template slot (preserving other slots)
- * 3. Removes the EmployeeFingerprintEnrollment metadata row
- * 4. Verifies deletion succeeded on the device
- *
- * Does NOT affect other devices or other fingers.
+ * Deletes a specific fingerprint from a specific device.
  */
 export const deleteFingerprintFromDevice = async (
     employeeId: number,
@@ -2202,16 +2021,6 @@ export const deleteFingerprintFromDevice = async (
 
 /**
  * DB-driven per-slot fingerprint sync.
- *
- * Instead of reading ALL templates and comparing unreliable device slot numbers,
- * this function uses the database (EmployeeFingerprintEnrollment) as the source
- * of truth. For each target device it:
- *   1. Identifies which fingerIndices are MISSING from that device's DB records.
- *   2. Reads ONLY the missing fingerIndex from a source device that has it.
- *   3. Pushes ONLY that individual slot — never touching existing templates.
- *
- * This prevents the lossy read-write cycle from corrupting existing templates
- * and avoids ZKTeco's non-deterministic slot numbering entirely.
  */
 export const syncEmployeeFingerprints = async (
     employeeId: number
@@ -2270,7 +2079,7 @@ export const syncEmployeeFingerprints = async (
         `[${allFingerIndices.join(', ')}] enrolled in DB.`
     );
 
-    // ── STEP 2: Per-device, per-slot sync ──────────────────────────────────
+    // ── STEP 2: Enumerate finger slots ───────────────────────────────────
     const results: Array<{ deviceId: number; deviceName: string; status: 'synced' | 'skipped' | 'failed' | 'offline'; error?: string }> = [];
 
     for (const targetDevice of allDevices) {
@@ -2294,7 +2103,7 @@ export const syncEmployeeFingerprints = async (
             `[SyncFingers] "${targetDevice.name}": missing finger(s) [${missingFingers.join(', ')}] — syncing.`
         );
 
-        // ── STEP 3: Read each missing finger from a source, push to target ──
+        // ── STEP 3: Sync missing templates ──────────────────────────────────
         let pushed = 0;
         const slotErrors: string[] = [];
 
