@@ -325,6 +325,17 @@ export const updateAttendance = async (req: Request, res: Response) => {
                     reason: reason || null,
                 })),
             });
+
+            void audit({
+                action: 'ATTENDANCE_OVERRIDE',
+                entityType: 'Attendance',
+                entityId: recordId,
+                performedBy: adjustedById,
+                source: 'admin-panel',
+                level: 'WARN',
+                details: `Admin performed an immediate override on attendance record #${recordId}`,
+                metadata: { category: 'attendance', fieldsChanged: auditEntries.map(e => e.field), reason }
+            });
         }
 
         attendanceEmitter.emit('new-record', { type: 'update', record: updated });
