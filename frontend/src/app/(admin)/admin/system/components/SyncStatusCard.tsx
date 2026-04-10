@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Server, Activity, Clock, Play, AlertTriangle, XCircle, HeartPulse } from 'lucide-react';
+import { Server, Activity, Clock, Play, AlertTriangle, XCircle, HeartPulse, Trash2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { format } from 'date-fns';
 import {
@@ -56,6 +56,7 @@ interface SyncStatusCardProps {
 export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusCardProps) {
     const [syncing, setSyncing] = useState(false);
     const [syncingTime, setSyncingTime] = useState(false);
+    const [clearingLogs, setClearingLogs] = useState(false);
     const [toggling, setToggling] = useState(false);
     const [syncResult, setSyncResult] = useState<SyncResultData | null>(null);
     const [showResultModal, setShowResultModal] = useState(false);
@@ -145,6 +146,32 @@ export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusC
             });
         } finally {
             setSyncingTime(false);
+        }
+    };
+
+    const handleManualClearLogs = async () => {
+        if (!confirm('Are you sure you want to clear the log buffers on all active devices right now?\nThis is normally done automatically during off-hours to prevent data loss races.')) {
+            return;
+        }
+        
+        setClearingLogs(true);
+        try {
+            const res = await axios.post('/api/system/clear-device-logs', {}, { withCredentials: true });
+            
+            toast({
+                title: res.data.success ? 'Logs Cleared' : 'Clear Logs Issue',
+                description: res.data.message,
+                variant: res.data.success ? 'default' : 'destructive',
+            });
+        } catch (error: unknown) {
+            const axiosErr = error as { response?: { data?: { message?: string } } };
+            toast({
+                title: 'Clear Logs Failed',
+                description: axiosErr.response?.data?.message || 'Server error occurred.',
+                variant: 'destructive',
+            });
+        } finally {
+            setClearingLogs(false);
         }
     };
 
@@ -243,13 +270,26 @@ export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusC
                             </Button>
                             <Button 
                                 onClick={handleManualTimeSync} 
-                                disabled={syncingTime || syncing || !status.globalSyncEnabled}
+                                disabled={syncingTime || syncing || clearingLogs || !status.globalSyncEnabled}
                                 variant="outline"
                                 className="w-full"
                             >
                                 {syncingTime ? 'Aligning Clocks...' : (
                                     <>
                                         <Clock className="h-4 w-4 mr-2" /> Sync Time Now
+                                    </>
+                                )}
+                            </Button>
+                            
+                            <Button 
+                                onClick={handleManualClearLogs} 
+                                disabled={clearingLogs || syncing || syncingTime}
+                                variant="outline"
+                                className="w-full border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                            >
+                                {clearingLogs ? 'Clearing Logs...' : (
+                                    <>
+                                        <Trash2 className="h-4 w-4 mr-2" /> Clear Logs Now
                                     </>
                                 )}
                             </Button>

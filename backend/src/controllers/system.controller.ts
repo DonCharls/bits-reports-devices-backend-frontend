@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import { syncScheduler } from '../services/system/syncScheduler';
 import { timeSyncScheduler } from '../services/system/timeSyncScheduler';
 import { healthCheckScheduler } from '../services/system/healthCheckScheduler';
+import { logBufferMaintenanceScheduler } from '../services/system/logBufferMaintenanceScheduler';
 import { audit } from '../lib/auditLogger';
 import { z } from 'zod';
 import deviceEmitter from '../lib/deviceEmitter';
@@ -18,6 +19,9 @@ const updateSyncConfigSchema = z.object({
     healthCheckEnabled: z.boolean().optional(),
     healthCheckIntervalSec: z.number().min(15, "Health check interval must be at least 15s").optional(),
     globalMinCheckoutMinutes: z.number().min(15, "Global Minimum Checkout must be at least 15 minutes").optional(),
+    logBufferMaintenanceEnabled: z.boolean().optional(),
+    logBufferMaintenanceSchedule: z.enum(['daily', 'weekly', 'monthly']).optional(),
+    logBufferMaintenanceHour: z.number().int().min(0).max(23, "Hour must be 0-23").optional(),
 });
 
 // ─── GET /api/system/sync-status ──────────────────────────────────────────────
@@ -105,6 +109,9 @@ export const updateSyncConfig = async (req: Request, res: Response) => {
             { key: 'globalMinCheckoutMinutes', label: 'Global Minimum Checkout', suffix: ' mins'},
             { key: 'healthCheckEnabled', label: 'Health check' },
             { key: 'healthCheckIntervalSec', label: 'Health check interval', suffix: 's' },
+            { key: 'logBufferMaintenanceEnabled', label: 'Log buffer maintenance' },
+            { key: 'logBufferMaintenanceSchedule', label: 'Log buffer maintenance schedule' },
+            { key: 'logBufferMaintenanceHour', label: 'Log buffer maintenance hour' },
         ];
 
         for (const field of trackableFields) {
@@ -142,6 +149,7 @@ export const updateSyncConfig = async (req: Request, res: Response) => {
         syncScheduler.reloadConfigAndReset().catch(err => console.error('[System] Error resetting scheduler timer:', err));
         timeSyncScheduler.reloadConfigAndReset().catch(err => console.error('[System] Error resetting time sync scheduler timer:', err));
         healthCheckScheduler.reloadConfigAndReset().catch(err => console.error('[System] Error resetting health check scheduler timer:', err));
+        logBufferMaintenanceScheduler.reloadConfigAndReset().catch(err => console.error('[System] Error resetting log buffer maintenance scheduler:', err));
 
         deviceEmitter.emit('config-update');
 
@@ -277,3 +285,36 @@ export const getSystemLogs = async (req: Request, res: Response) => {
     }
 };
 
+// ─── POST /api/system/clear-device-logs ──────────────────────────────────────
+/**
+ * Manually trigger an immediate device log buffer clear on all active devices.
+ * Useful when a device is approaching capacity before the scheduled window.
+ */
+export const triggerManualLogBufferClear = async (req: Request, res: Response) => {
+    try {
+        console.log(`[System] Manual log buffer clear triggered by user ${req.user?.employeeId || 'unknown'}`);
+
+        const result = await logBufferMaintenanceScheduler.triggerNow();
+
+        await audit({
+            action: 'DEVICE_LOG_BUFFER_CLEAR',
+            entityType: 'System',
+            source: 'admin-panel',
+            level: result.success ? 'INFO' : 'ERROR',
+            performedBy: req.user?.employeeId,
+            details: result.success
+                ? `Manual log buffer clear completed: ${result.message}`
+                : `Manual log buffer clear failed: ${result.message}`,
+        });
+
+        if (result.success) {
+            res.json({ success: true, message: result.message });
+        } else {
+            res.status(500).json({ success: false, message: result.message });
+        }
+    } catch (error: unknown) {
+        const errMsg = error instanceof Error ? error.message : 'Unknown error';
+        console.error('[System] Error triggering manual log buffer clear:', error);
+        res.status(500).json({ success: false, message: 'Failed to trigger log buffer clear', error: errMsg });
+    }
+};

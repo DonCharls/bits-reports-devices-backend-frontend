@@ -6,6 +6,7 @@ import {
     toggleGlobalSync,
     triggerManualSync,
     triggerManualTimeSync,
+    triggerManualLogBufferClear,
     getSystemLogs
 } from '../controllers/system.controller';
 import { authenticate } from '../middleware/auth.middleware';
@@ -33,6 +34,9 @@ router.post('/time-sync-now', triggerManualTimeSync);
 
 // Fetch system audit logs
 router.get('/logs', getSystemLogs);
+
+// Manually trigger device log buffer clear
+router.post('/clear-device-logs', triggerManualLogBufferClear);
 
 export default router;
 

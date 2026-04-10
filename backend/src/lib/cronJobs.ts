@@ -3,6 +3,7 @@ import { syncZkData, syncAllDeviceClocks } from '../services/zkServices';
 import { syncScheduler } from '../services/system/syncScheduler';
 import { timeSyncScheduler } from '../services/system/timeSyncScheduler';
 import { healthCheckScheduler } from '../services/system/healthCheckScheduler';
+import { logBufferMaintenanceScheduler } from '../services/system/logBufferMaintenanceScheduler';
 import { autoCloseIncompleteAttendance, autoCheckoutEmployees } from '../services/attendance.service';
 
 /**
@@ -38,8 +39,14 @@ export const startCronJobs = () => {
     // Runs on its own timer, completely independent of data sync
     healthCheckScheduler.start();
 
+    // Job 6: Scheduled device log buffer maintenance (daily / weekly / monthly)
+    // Prevents device flash memory from filling up without the data-loss race
+    // condition of wiping inline during every 30s sync cycle.
+    void logBufferMaintenanceScheduler.start();
+
     console.log('[CronJobs] ✓ Periodic sync scheduled (every 30 seconds, skips when device is busy)');
     console.log('[CronJobs] ✓ Midnight cleanup scheduled (00:00 daily)');
     console.log('[CronJobs] ✓ Hourly device clock sync scheduled (top of every hour)');
     console.log('[CronJobs] ✓ Device health monitor started (configurable interval)');
+    console.log('[CronJobs] ✓ Log buffer maintenance scheduler started (configurable schedule)');
 };

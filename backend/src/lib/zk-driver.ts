@@ -35,7 +35,7 @@ export class ZKDriver {
     private timeout: number;
     private zkInstance: any;
 
-    constructor(ip: string = '192.168.1.201', port: number = 4370, timeout: number = 5000) {
+    constructor(ip: string = '192.168.1.201', port: number = 4370, timeout: number = 30000) {
         this.ip = ip;
         this.port = port;
         this.timeout = timeout;

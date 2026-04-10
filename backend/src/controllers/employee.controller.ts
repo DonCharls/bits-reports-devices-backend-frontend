@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { syncEmployeesToDevice, enrollEmployeeFingerprint, enrollEmployeeCard, deleteEmployeeCard, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex, deleteFingerprintGlobally, syncEmployeeFingerprints } from '../services/zkServices';
+import { enqueueGlobalUpsertUser, enqueueGlobalDeleteUser, processDeviceSyncQueue } from '../services/deviceSyncQueue.service';
 import { audit } from '../lib/auditLogger';
 import bcrypt from 'bcryptjs';
 import { generateRandomPassword } from '../utils/password.utils';
@@ -124,14 +125,24 @@ export const deleteEmployee = async (req: Request, res: Response) => {
             });
         }
 
-        // Delete from ZK Device if zkId exists
+        // Delete from ZK Device if zkId exists — queue-based, non-blocking
         if (employee.zkId) {
-            try {
-                await deleteUserFromDevice(employee.zkId);
-            } catch (err) {
-                console.error(`[API] Failed to delete user ${employee.zkId} from device:`, err);
-                // Continue with soft delete even if device delete fails
-            }
+            setImmediate(async () => {
+                try {
+                    await enqueueGlobalDeleteUser(employee.zkId!);
+                    // Flush queue inline for online devices
+                    const devices = await prisma.device.findMany({
+                        where: { isActive: true, syncEnabled: true },
+                        select: { id: true },
+                    });
+                    for (const d of devices) {
+                        try { await processDeviceSyncQueue(d.id); } catch { /* retry later */ }
+                    }
+                    console.log(`[API] (background) Queued DELETE_USER for zkId=${employee.zkId}`);
+                } catch (err: unknown) {
+                    console.error(`[API] (background) Failed to queue device deletion:`, err);
+                }
+            });
         }
 
         // Soft delete: Mark as INACTIVE instead of actually deleting
@@ -884,6 +895,37 @@ export const updateEmployee = async (req: Request, res: Response) => {
             employee: updatedEmployee,
         });
 
+        // ── Queue device sync if employee details changed and they're on devices ──
+        if (updatedEmployee.zkId && updatedEmployee.employmentStatus === 'ACTIVE') {
+            const nameChanged = firstName !== undefined || lastName !== undefined;
+            const roleChanged = req.body.role !== undefined;
+            if (nameChanged || roleChanged) {
+                const fullName = `${updatedEmployee.firstName} ${updatedEmployee.lastName}`;
+                const deviceRole = updatedEmployee.role === 'ADMIN' ? 14 : 0;
+                setImmediate(async () => {
+                    try {
+                        await enqueueGlobalUpsertUser({
+                            zkId: updatedEmployee.zkId!,
+                            name: fullName,
+                            card: existingEmployee.cardNumber ?? 0,
+                            role: deviceRole,
+                        });
+                        // Flush queue inline for online devices
+                        const devices = await prisma.device.findMany({
+                            where: { isActive: true, syncEnabled: true },
+                            select: { id: true },
+                        });
+                        for (const d of devices) {
+                            try { await processDeviceSyncQueue(d.id); } catch { /* retry later */ }
+                        }
+                        console.log(`[API] (background) Queued UPSERT_USER for zkId=${updatedEmployee.zkId}`);
+                    } catch (err: unknown) {
+                        console.error(`[API] (background) Failed to queue device update:`, err);
+                    }
+                });
+            }
+        }
+
     } catch (error: any) {
         console.error('Error updating employee:', error);
         res.status(500).json({
@@ -961,14 +1003,22 @@ export const permanentDeleteEmployee = async (req: Request, res: Response) => {
             message: `User "${employee.firstName} ${employee.lastName}" permanently deleted`,
         });
 
-        // Fire-and-forget: remove from biometric device after DB is clean
+        // Fire-and-forget: queue deletion from biometric devices
         if (employee.zkId) {
             setImmediate(async () => {
                 try {
-                    await deleteUserFromDevice(employee.zkId!);
-                    console.log(`[API] (background) Removed zkId ${employee.zkId} from device.`);
-                } catch (devErr: any) {
-                    console.error(`[API] (background) Could not remove zkId ${employee.zkId} from device (user already removed from DB):`, devErr?.message || devErr);
+                    await enqueueGlobalDeleteUser(employee.zkId!);
+                    // Flush queue inline for online devices
+                    const devices = await prisma.device.findMany({
+                        where: { isActive: true, syncEnabled: true },
+                        select: { id: true },
+                    });
+                    for (const d of devices) {
+                        try { await processDeviceSyncQueue(d.id); } catch { /* retry later */ }
+                    }
+                    console.log(`[API] (background) Queued DELETE_USER for zkId=${employee.zkId}`);
+                } catch (devErr: unknown) {
+                    console.error(`[API] (background) Could not queue zkId ${employee.zkId} for deletion:`, devErr);
                 }
             });
         }
@@ -1151,7 +1201,7 @@ export const getEmployeeFingerprintStatus = async (req: Request, res: Response) 
                 enrolledAt: enrollment.enrolledAt.toISOString(),
                 isActive: enrollment.device.isActive,
                 syncEnabled: enrollment.device.syncEnabled,
-                pendingDeletion: enrollment.pendingDeletion,
+                pendingDeletion: false,
             });
         }
 
@@ -1351,11 +1401,11 @@ export const getEmployeeCardStatus = async (req: Request, res: Response) => {
             return {
                 deviceId: device.id,
                 deviceName: device.name,
-                enrolled: !!enroll && !enroll.pendingDeletion,
+                enrolled: !!enroll,
                 enrolledAt: enroll ? enroll.enrolledAt.toISOString() : undefined,
                 isActive: device.isActive,
                 syncEnabled: device.syncEnabled,
-                pendingDeletion: enroll ? enroll.pendingDeletion : false,
+                pendingDeletion: false,
             };
         });
 

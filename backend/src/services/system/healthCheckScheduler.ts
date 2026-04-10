@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma';
 import deviceEmitter from '../../lib/deviceEmitter';
 import { audit } from '../../lib/auditLogger';
+import { triggerAutoReconcile } from '../zkServices';
 
 /** Returns a formatted timestamp string for console logging (e.g. "11:15:30") */
 function ts(): string {
@@ -50,18 +51,24 @@ export interface HealthCheckStatus {
  * Total time: typically <100ms for reachable devices, up to timeout for unreachable ones.
  */
 async function tcpProbe(ip: string, port: number, timeoutMs: number): Promise<boolean> {
-    let zkInstance: any = null;
-    try {
-        const ZKLibTCP = require('node-zklib/zklibtcp');
-        zkInstance = new ZKLibTCP(ip, port, timeoutMs);
-        await zkInstance.createSocket();
-        await zkInstance.connect();
-        return true;
-    } catch {
-        return false;
-    } finally {
-        try { await zkInstance?.disconnect(); } catch { /* ignore */ }
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        let zkInstance: any = null;
+        try {
+            const ZKLibTCP = require('node-zklib/zklibtcp');
+            zkInstance = new ZKLibTCP(ip, port, timeoutMs);
+            await zkInstance.createSocket();
+            await zkInstance.connect();
+            return true;
+        } catch {
+            if (attempt === 1) {
+                // Wait 3 seconds before the retry to absorb transient network drops
+                await new Promise(r => setTimeout(r, 3000));
+            }
+        } finally {
+            try { await zkInstance?.disconnect(); } catch { /* ignore */ }
+        }
     }
+    return false;
 }
 
 class HealthCheckScheduler {
@@ -224,6 +231,11 @@ class HealthCheckScheduler {
                             updatedAt: new Date(),
                         },
                     });
+
+                    // If the device transitioned from offline to online, trigger background reconciliation
+                    if (reachable) {
+                        void triggerAutoReconcile(device.id, device.name);
+                    }
 
                     // Emit SSE status-change event
                     deviceEmitter.emit('status-change', {
