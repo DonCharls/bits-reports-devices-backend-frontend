@@ -1,0 +1,638 @@
+import { Request, Response } from 'express';
+import ExcelJS from 'exceljs';
+import { prisma } from '../../shared/lib/prisma';
+import { syncEmployeesToDevice, enrollEmployeeFingerprint, enrollEmployeeCard, deleteEmployeeCard, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex, deleteFingerprintGlobally, syncEmployeeFingerprints } from '../devices/zk';
+import { enqueueGlobalUpsertUser, enqueueGlobalDeleteUser, processDeviceSyncQueue } from '../devices/deviceSyncQueue.service';
+import { audit } from '../../shared/lib/auditLogger';
+import bcrypt from 'bcryptjs';
+import { generateRandomPassword } from '../../shared/utils/password.utils';
+import { sendWelcomeEmail, sendPasswordResetEmail } from '../../shared/lib/email.service';
+import { validateEmployeeId } from './employee.validator';
+
+// GET /api/employees/export - Export employees to .xlsx
+export const exportEmployees = async (req: Request, res: Response) => {
+    try {
+        const { department, branch } = req.query;
+
+        const where: any = {
+            employmentStatus: 'ACTIVE',
+            role: 'USER',
+        };
+        if (department && department !== 'all') where.department = department as string;
+        if (branch && branch !== 'all') where.branch = branch as string;
+
+        const employees = await prisma.employee.findMany({
+            where,
+            select: {
+                employeeNumber: true,
+                firstName: true,
+                middleName: true,
+                lastName: true,
+                suffix: true,
+                gender: true,
+                dateOfBirth: true,
+                email: true,
+                contactNumber: true,
+                department: true,
+                branch: true,
+                hireDate: true,
+                Shift: { select: { shiftCode: true } },
+                employmentStatus: true,
+            },
+            orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+        });
+
+        const workbook = new ExcelJS.Workbook();
+        const sheet = workbook.addWorksheet('Employees');
+
+        const columns = [
+            { header: 'Employee Number', key: 'employeeNumber', width: 18 },
+            { header: 'First Name', key: 'firstName', width: 16 },
+            { header: 'Middle Name', key: 'middleName', width: 16 },
+            { header: 'Last Name', key: 'lastName', width: 16 },
+            { header: 'Suffix', key: 'suffix', width: 10 },
+            { header: 'Gender', key: 'gender', width: 12 },
+            { header: 'Date of Birth', key: 'dateOfBirth', width: 16 },
+            { header: 'Email', key: 'email', width: 28 },
+            { header: 'Contact Number', key: 'contactNumber', width: 18 },
+            { header: 'Department', key: 'department', width: 18 },
+            { header: 'Branch', key: 'branch', width: 16 },
+            { header: 'Hire Date', key: 'hireDate', width: 16 },
+            { header: 'Shift Code', key: 'shiftCode', width: 14 },
+            { header: 'Status', key: 'employmentStatus', width: 14 },
+        ];
+        sheet.columns = columns;
+
+        // Style header row
+        const headerRow = sheet.getRow(1);
+        headerRow.eachCell((cell) => {
+            cell.font = { bold: true, color: { argb: 'FF000000' } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+            cell.border = {
+                bottom: { style: 'thin', color: { argb: 'FF999999' } },
+            };
+        });
+        headerRow.commit();
+
+        // Add data rows
+        for (const emp of employees) {
+            sheet.addRow({
+                employeeNumber: emp.employeeNumber || '',
+                firstName: emp.firstName || '',
+                middleName: emp.middleName || '',
+                lastName: emp.lastName || '',
+                suffix: emp.suffix || '',
+                gender: emp.gender || '',
+                dateOfBirth: emp.dateOfBirth ? new Date(emp.dateOfBirth).toISOString().split('T')[0] : '',
+                email: emp.email || '',
+                contactNumber: emp.contactNumber || '',
+                department: emp.department || '',
+                branch: emp.branch || '',
+                hireDate: emp.hireDate ? new Date(emp.hireDate).toISOString().split('T')[0] : '',
+                shiftCode: emp.Shift?.shiftCode || '',
+                employmentStatus: emp.employmentStatus || '',
+            });
+        }
+
+        const today = new Date().toISOString().split('T')[0];
+        const filename = `employees_export_${today}.xlsx`;
+
+        const buffer = await workbook.xlsx.writeBuffer();
+
+        void audit({
+            action: 'EXPORT',
+            entityType: 'Employee',
+            performedBy: req.user?.employeeId,
+            details: `Exported ${employees.length} employee(s) to Excel`,
+            metadata: {
+                count: employees.length,
+                filters: { department: department || 'all', branch: branch || 'all' },
+                filename,
+            },
+            correlationId: req.correlationId
+        });
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(Buffer.from(buffer as ArrayBuffer));
+    } catch (error: any) {
+        console.error('Error exporting employees:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to export employees',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+        });
+    }
+};
+// GET /api/employees/export-template - Download blank import template
+export const exportTemplate = async (req: Request, res: Response) => {
+    try {
+        const workbook = new ExcelJS.Workbook();
+
+        // ── Fetch reference data first (needed for dropdown ranges) ───────────
+        const [departments, branches, shifts] = await Promise.all([
+            prisma.department.findMany({ select: { name: true }, orderBy: { name: 'asc' } }),
+            prisma.branch.findMany({ select: { name: true }, orderBy: { name: 'asc' } }),
+            prisma.shift.findMany({ select: { shiftCode: true, name: true }, orderBy: { shiftCode: 'asc' } }),
+        ]);
+
+        // ── Sheet 1: Employee Import ──────────────────────────────────────────
+        const sheet1 = workbook.addWorksheet('Employee Import');
+
+        const templateColumns = [
+            { header: 'Employee Number', key: 'employeeNumber', width: 20, required: true, hint: 'Unique ID (e.g. 10001)' },
+            { header: 'First Name', key: 'firstName', width: 18, required: true, hint: 'Legal first name' },
+            { header: 'Middle Name', key: 'middleName', width: 18, required: false, hint: 'Optional middle name' },
+            { header: 'Last Name', key: 'lastName', width: 18, required: true, hint: 'Legal last name' },
+            { header: 'Suffix', key: 'suffix', width: 12, required: false, hint: 'Jr., Sr., II, III, etc.' },
+            { header: 'Gender', key: 'gender', width: 14, required: false, hint: 'Male / Female / Prefer not to say' },
+            { header: 'Date of Birth', key: 'dateOfBirth', width: 18, required: false, hint: 'YYYY-MM-DD format' },
+            { header: 'Email', key: 'email', width: 28, required: true, hint: 'Valid email (login credentials sent here)' },
+            { header: 'Contact Number', key: 'contactNumber', width: 20, required: true, hint: '11 digits (e.g. 09171234567)' },
+            { header: 'Department', key: 'department', width: 20, required: true, hint: 'Select from dropdown (see Reference Lists)' },
+            { header: 'Branch', key: 'branch', width: 18, required: true, hint: 'Select from dropdown (see Reference Lists)' },
+            { header: 'Hire Date', key: 'hireDate', width: 16, required: false, hint: 'YYYY-MM-DD format' },
+            { header: 'Shift Code', key: 'shiftCode', width: 16, required: false, hint: 'Select from dropdown (see Reference Lists)' },
+            { header: 'Status', key: 'employmentStatus', width: 14, required: false, hint: 'ACTIVE (default) / INACTIVE' },
+        ];
+
+        // Column key → 1-based column index map
+        const colIndex: Record<string, number> = {};
+        templateColumns.forEach((col, idx) => { colIndex[col.key] = idx + 1; });
+
+        sheet1.columns = templateColumns.map(c => ({ header: c.header, key: c.key, width: c.width }));
+
+        // ── Row 1: Color legend ───────────────────────────────────────────────
+        const legendRow = sheet1.getRow(1);
+        // Clear auto-set headers from .columns assignment (they go to row 1)
+        for (let c = 1; c <= templateColumns.length; c++) {
+            legendRow.getCell(c).value = null;
+        }
+        const legendA = legendRow.getCell(1);
+        legendA.value = 'Color guide:';
+        legendA.font = { bold: true, size: 10 };
+
+        const legendB = legendRow.getCell(2);
+        legendB.value = 'Required field';
+        legendB.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        legendB.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDC2626' } };
+
+        const legendC = legendRow.getCell(3);
+        legendC.value = 'Optional field';
+        legendC.font = { bold: true, color: { argb: 'FF000000' } };
+        legendC.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF59E0B' } };
+        legendRow.commit();
+
+        // ── Row 2: Header row ─────────────────────────────────────────────────
+        const headerRow = sheet1.getRow(2);
+        templateColumns.forEach((col, idx) => {
+            const cell = headerRow.getCell(idx + 1);
+            cell.value = col.header;
+            if (col.required) {
+                cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDC2626' } };
+            } else {
+                cell.font = { bold: true, color: { argb: 'FF000000' } };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF59E0B' } };
+            }
+            cell.border = { bottom: { style: 'thin', color: { argb: 'FF999999' } } };
+        });
+        headerRow.commit();
+
+        // ── Row 3: Hint row ───────────────────────────────────────────────────
+        const hintRow = sheet1.getRow(3);
+        templateColumns.forEach((col, idx) => {
+            const cell = hintRow.getCell(idx + 1);
+            cell.value = col.hint;
+            cell.font = { italic: true, size: 9, color: { argb: 'FF666666' } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8F8F8' } };
+        });
+        hintRow.commit();
+
+        // ── Rows 4–203: 200 blank alternating rows ───────────────────────────
+        const DATA_START_ROW = 4;
+        const DATA_ROW_COUNT = 200;
+        for (let i = 0; i < DATA_ROW_COUNT; i++) {
+            const row = sheet1.getRow(DATA_START_ROW + i);
+            if (i % 2 === 1) {
+                for (let c = 1; c <= templateColumns.length; c++) {
+                    const cell = row.getCell(c);
+                    if (!cell.value) cell.value = null;
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+                }
+            }
+            row.commit();
+        }
+
+        // ── Dropdown validations (rows 4–203) ────────────────────────────────
+        const DATA_END_ROW = DATA_START_ROW + DATA_ROW_COUNT - 1; // 203
+        const validationBase = {
+            showDropDown: false, // false = show the arrow in Excel (counterintuitive)
+            showErrorMessage: true,
+            errorTitle: 'Invalid value',
+            error: 'Please select a value from the dropdown list',
+        };
+
+        // Helper: convert 1-based column index to Excel letter
+        const colLetter = (n: number): string => {
+            let result = '';
+            while (n > 0) {
+                n--;
+                result = String.fromCharCode(65 + (n % 26)) + result;
+                n = Math.floor(n / 26);
+            }
+            return result;
+        };
+
+        // Department dropdown — references 'Reference Lists' sheet column A
+        // Sheet 2 row 1 = header, row 2 = first header label, data starts row 3
+        if (departments.length > 0) {
+            const deptLastRow = 2 + departments.length; // header row is 2 now (after our changes to sheet 2)
+            const deptCol = colLetter(colIndex['department']);
+            for (let r = DATA_START_ROW; r <= DATA_END_ROW; r++) {
+                sheet1.getCell(`${deptCol}${r}`).dataValidation = {
+                    type: 'list',
+                    formulae: [`='Reference Lists'!$A$3:$A$${deptLastRow}`],
+                    ...validationBase,
+                };
+            }
+        }
+
+        // Branch dropdown — references 'Reference Lists' sheet column B
+        if (branches.length > 0) {
+            const branchLastRow = 2 + branches.length;
+            const branchCol = colLetter(colIndex['branch']);
+            for (let r = DATA_START_ROW; r <= DATA_END_ROW; r++) {
+                sheet1.getCell(`${branchCol}${r}`).dataValidation = {
+                    type: 'list',
+                    formulae: [`='Reference Lists'!$B$3:$B$${branchLastRow}`],
+                    ...validationBase,
+                };
+            }
+        }
+
+        // Shift Code dropdown — references 'Reference Lists' sheet column C
+        if (shifts.length > 0) {
+            const shiftLastRow = 2 + shifts.length;
+            const shiftCol = colLetter(colIndex['shiftCode']);
+            for (let r = DATA_START_ROW; r <= DATA_END_ROW; r++) {
+                sheet1.getCell(`${shiftCol}${r}`).dataValidation = {
+                    type: 'list',
+                    formulae: [`='Reference Lists'!$C$3:$C$${shiftLastRow}`],
+                    ...validationBase,
+                };
+            }
+        }
+
+        // Gender dropdown — inline list
+        const genderCol = colLetter(colIndex['gender']);
+        for (let r = DATA_START_ROW; r <= DATA_END_ROW; r++) {
+            sheet1.getCell(`${genderCol}${r}`).dataValidation = {
+                type: 'list',
+                formulae: ['"Male,Female,Prefer not to say"'],
+                ...validationBase,
+            };
+        }
+
+        // Suffix dropdown — inline list
+        const suffixCol = colLetter(colIndex['suffix']);
+        for (let r = DATA_START_ROW; r <= DATA_END_ROW; r++) {
+            sheet1.getCell(`${suffixCol}${r}`).dataValidation = {
+                type: 'list',
+                formulae: ['"Jr.,Sr.,II,III,IV,V"'],
+                ...validationBase,
+            };
+        }
+
+        // ── Sheet 2: Reference Lists ──────────────────────────────────────────
+        const sheet2 = workbook.addWorksheet('Reference Lists');
+
+        sheet2.columns = [
+            { key: 'department', width: 30 },
+            { key: 'branch', width: 30 },
+            { key: 'shiftCode', width: 24 },
+            { key: 'shiftName', width: 28 },
+        ];
+
+        // Row 1: Section title
+        const refTitleRow = sheet2.getRow(1);
+        refTitleRow.getCell(1).value = 'REFERENCE DATA — DO NOT MODIFY THIS SHEET';
+        refTitleRow.getCell(1).font = { bold: true, size: 11, color: { argb: 'FFDC2626' } };
+        refTitleRow.commit();
+
+        // Row 2: Column headers with descriptive names
+        const refHeaderRow = sheet2.getRow(2);
+        const refHeaders = ['Departments (copy exactly)', 'Branches (copy exactly)', 'Shift Codes (copy exactly)', 'Shift Name (for reference)'];
+        refHeaders.forEach((h, idx) => {
+            const cell = refHeaderRow.getCell(idx + 1);
+            cell.value = h;
+            cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } };
+            cell.border = { bottom: { style: 'thin', color: { argb: 'FF999999' } } };
+        });
+        refHeaderRow.commit();
+
+        // Row 3+: Fill data
+        const maxRefRows = Math.max(departments.length, branches.length, shifts.length);
+        for (let i = 0; i < maxRefRows; i++) {
+            const row = sheet2.getRow(i + 3);
+            row.getCell(1).value = departments[i]?.name || '';
+            row.getCell(2).value = branches[i]?.name || '';
+            row.getCell(3).value = shifts[i]?.shiftCode || '';
+            row.getCell(4).value = shifts[i]?.name || '';
+            row.commit();
+        }
+
+        // ── Sheet 3: Instructions ─────────────────────────────────────────────
+        const sheet3 = workbook.addWorksheet('Instructions');
+        sheet3.getColumn(1).width = 80;
+
+        const instructions = [
+            'EMPLOYEE IMPORT INSTRUCTIONS',
+            '',
+            '⚠️  ALWAYS DOWNLOAD A FRESH TEMPLATE BEFORE EACH IMPORT',
+            'This template is generated live from the database. The dropdown lists for',
+            'Department, Branch, and Shift Code reflect what is currently in the system.',
+            '',
+            'If new departments, branches, or shifts have been added since you last',
+            'downloaded this template, your old copy will NOT include them in the dropdowns.',
+            '',
+            'Rule: Never reuse an old template. Always click "Download Template"',
+            'in the system before starting a new import.',
+            '',
+            'COLUMN COLOR GUIDE',
+            'Red header   = Required field. The import will fail for this row if left empty.',
+            'Orange header = Optional field. Can be left blank.',
+            '',
+            '1. REQUIRED FIELDS (red headers on Sheet 1):',
+            '   • Employee Number — Must be unique across all employees',
+            '   • First Name — Legal first name of the employee',
+            '   • Last Name — Legal last name of the employee',
+            '   • Email — Valid email address (login credentials will be sent here)',
+            '   • Contact Number — 11-digit Philippine mobile number (e.g. 09171234567)',
+            '   • Department — Select from the dropdown (values from Reference Lists)',
+            '   • Branch — Select from the dropdown (values from Reference Lists)',
+            '',
+            '2. OPTIONAL FIELDS (orange headers on Sheet 1):',
+            '   • Middle Name, Suffix, Gender, Date of Birth, Hire Date, Shift Code, Status',
+            '',
+            '3. DATE FORMAT:',
+            '   • Use YYYY-MM-DD format (e.g. 2025-01-15)',
+            '   • Both Date of Birth and Hire Date follow this format',
+            '',
+            '4. PHONE NUMBER FORMAT:',
+            '   • Must be exactly 11 digits',
+            '   • Example: 09171234567',
+            '   • Do not include spaces, dashes, or country code',
+            '',
+            '5. GENDER OPTIONS:',
+            '   • Male',
+            '   • Female',
+            '   • Prefer not to say',
+            '',
+            '6. SUFFIX OPTIONS:',
+            '   • Jr., Sr., II, III, IV, V (or leave blank)',
+            '',
+            '7. DROPDOWNS:',
+            '   • Department, Branch, Shift Code, Gender, and Suffix columns have dropdown lists',
+            '   • Click a cell in those columns to see the arrow and select a value',
+            '   • Typing an invalid value will show an error — use the dropdown instead',
+            '',
+            '8. WHAT HAPPENS AFTER IMPORT:',
+            '   • Each employee will be created with ACTIVE status and USER role',
+            '   • A random password will be generated and emailed to each employee',
+            '   • Employees will be prompted to change their password on first login',
+            '   • The employee will be synced to biometric devices automatically',
+            '',
+            '9. TIPS:',
+            '   • The hint row (row 3) will be automatically skipped during import',
+            '   • Duplicate employee numbers or emails will be rejected',
+            '   • Row 1 is a color legend — leave it as-is, the system ignores it',
+        ];
+
+        // Title row — bold red
+        const titleCell = sheet3.getCell('A1');
+        titleCell.value = instructions[0];
+        titleCell.font = { bold: true, size: 14, color: { argb: 'FFDC2626' } };
+
+        // Freshness warning section (rows 3–11) — highlight with background
+        for (let i = 1; i < instructions.length; i++) {
+            const cell = sheet3.getCell(`A${i + 1}`);
+            cell.value = instructions[i];
+
+            if (instructions[i].startsWith('⚠️') || instructions[i] === 'COLUMN COLOR GUIDE') {
+                cell.font = { bold: true, size: 12, color: { argb: 'FFDC2626' } };
+            } else if (instructions[i].match(/^\d+\./)) {
+                cell.font = { bold: true, size: 11 };
+            } else if (instructions[i].startsWith('Rule:')) {
+                cell.font = { bold: true, size: 10, color: { argb: 'FFDC2626' } };
+            } else if (instructions[i].startsWith('Red header')) {
+                cell.font = { bold: true, size: 10, color: { argb: 'FFDC2626' } };
+            } else if (instructions[i].startsWith('Orange header')) {
+                cell.font = { bold: true, size: 10, color: { argb: 'FFB45309' } };
+            } else {
+                cell.font = { size: 10 };
+            }
+        }
+
+        const filename = 'employee_import_template.xlsx';
+        const buffer = await workbook.xlsx.writeBuffer();
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(Buffer.from(buffer as ArrayBuffer));
+    } catch (error: any) {
+        console.error('Error generating import template:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to generate import template',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+        });
+    }
+};
+// POST /api/employees/bulk - Bulk create employees from import
+export const bulkCreateEmployees = async (req: Request, res: Response) => {
+    try {
+        const { employees } = req.body;
+
+        if (!Array.isArray(employees) || employees.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Request body must contain a non-empty "employees" array',
+            });
+        }
+
+        if (employees.length > 200) {
+            return res.status(400).json({
+                success: false,
+                message: 'Maximum 200 employees per bulk import',
+            });
+        }
+
+        const results: { row: number; employeeNumber: string; status: 'success' | 'failed'; reason?: string }[] = [];
+
+        for (let i = 0; i < employees.length; i++) {
+            const emp = employees[i];
+            const rowNum = emp._rowNumber ?? (i + 1);
+            const empNum = (emp.employeeNumber || '').toString().trim();
+
+            try {
+                // ── Basic validation ─────────────────────────────────────────
+                const empIdValidation = validateEmployeeId(empNum);
+                if (!empIdValidation.isValid) {
+                    results.push({ row: rowNum, employeeNumber: empNum, status: 'failed', reason: empIdValidation.error || 'Invalid employee number' });
+                    continue;
+                }
+
+                if (!emp.firstName || !emp.lastName) {
+                    results.push({ row: rowNum, employeeNumber: empNum, status: 'failed', reason: 'First name and last name are required' });
+                    continue;
+                }
+
+                if (!emp.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emp.email)) {
+                    results.push({ row: rowNum, employeeNumber: empNum, status: 'failed', reason: 'A valid email is required' });
+                    continue;
+                }
+
+                // ── Check DB for duplicates ──────────────────────────────────
+                const existingByNumber = await prisma.employee.findUnique({
+                    where: { employeeNumber: empNum },
+                    select: { id: true },
+                });
+                if (existingByNumber) {
+                    results.push({ row: rowNum, employeeNumber: empNum, status: 'failed', reason: 'Employee number already in use' });
+                    continue;
+                }
+
+                const existingByEmail = await prisma.employee.findFirst({
+                    where: { email: emp.email.trim().toLowerCase() },
+                    select: { id: true },
+                });
+                if (existingByEmail) {
+                    results.push({ row: rowNum, employeeNumber: empNum, status: 'failed', reason: 'Email already in use' });
+                    continue;
+                }
+
+                // ── Acquire mutex, assign zkId, create employee ──────────────
+                const generatedPassword = generateRandomPassword(10);
+                const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+
+                const release = await acquireRegistrationMutex();
+                let newEmployee;
+
+                try {
+                    const nextZkId = await findNextSafeZkId();
+
+                    newEmployee = await prisma.employee.create({
+                        data: {
+                            employeeNumber: empNum,
+                            firstName: emp.firstName,
+                            lastName: emp.lastName,
+                            middleName: emp.middleName || null,
+                            suffix: emp.suffix || null,
+                            gender: emp.gender || null,
+                            dateOfBirth: emp.dateOfBirth ? new Date(emp.dateOfBirth) : null,
+                            email: emp.email,
+                            password: hashedPassword,
+                            role: 'USER',
+                            department: emp.department || null,
+                            position: null,
+                            branch: emp.branch || null,
+                            contactNumber: emp.contactNumber || null,
+                            hireDate: emp.hireDate ? new Date(emp.hireDate) : undefined,
+                            employmentStatus: 'ACTIVE',
+                            zkId: nextZkId,
+                            shiftId: emp.shiftId ? parseInt(emp.shiftId, 10) : null,
+                            needsPasswordChange: true,
+                            updatedAt: new Date(),
+                        },
+                        select: {
+                            id: true,
+                            zkId: true,
+                            employeeNumber: true,
+                            firstName: true,
+                            lastName: true,
+                            email: true,
+                            role: true,
+                        },
+                    });
+                } finally {
+                    release();
+                }
+
+                if (!newEmployee) {
+                    results.push({ row: rowNum, employeeNumber: empNum, status: 'failed', reason: 'Unexpected state after registration' });
+                    continue;
+                }
+
+                results.push({ row: rowNum, employeeNumber: empNum, status: 'success' });
+
+                console.log(`[BULK] Created employee: ${newEmployee.firstName} ${newEmployee.lastName} (zkId: ${newEmployee.zkId})`);
+
+                void audit({
+                    action: 'CREATE',
+                    entityType: 'Employee',
+                    entityId: newEmployee.id,
+                    performedBy: req.user?.employeeId,
+                    details: `Bulk import: created employee ${newEmployee.firstName} ${newEmployee.lastName}`,
+                    metadata: { email: emp.email, employeeNumber: empNum, source: 'bulk_import' },
+                    correlationId: req.correlationId
+                });
+
+                // Fire-and-forget: email + device sync (same pattern as single create)
+                const capturedEmployee = newEmployee;
+                const capturedPassword = generatedPassword;
+                setImmediate(async () => {
+                    if (capturedEmployee.email) {
+                        try {
+                            await sendWelcomeEmail(capturedEmployee.email, `${capturedEmployee.firstName} ${capturedEmployee.lastName}`, capturedPassword);
+                        } catch (emailErr) {
+                            console.error(`[BULK] (background) Failed to send welcome email to ${capturedEmployee.email}:`, emailErr);
+                        }
+                    }
+                    if (capturedEmployee.zkId) {
+                        try {
+                            const displayName = `${capturedEmployee.firstName} ${capturedEmployee.lastName}`;
+                            await addUserToDevice(capturedEmployee.zkId!, displayName, capturedEmployee.role);
+                        } catch (syncErr: any) {
+                            console.error(`[BULK] (background) Device sync failed for zkId ${capturedEmployee.zkId}:`, syncErr?.message || syncErr);
+                        }
+                    }
+                });
+
+            } catch (rowError: any) {
+                console.error(`[BULK] Error processing row ${rowNum}:`, rowError?.message || rowError);
+                results.push({ row: rowNum, employeeNumber: empNum, status: 'failed', reason: rowError?.message || 'Unexpected server error' });
+            }
+        }
+
+        const succeeded = results.filter(r => r.status === 'success').length;
+        const failed = results.filter(r => r.status === 'failed').length;
+
+        void audit({
+            action: 'CREATE',
+            entityType: 'Employee',
+            performedBy: req.user?.employeeId,
+            details: `Bulk import completed: ${succeeded} succeeded, ${failed} failed out of ${employees.length} rows`,
+            metadata: { source: 'bulk_import', succeeded, failed, total: employees.length },
+            correlationId: req.correlationId
+        });
+
+        res.status(200).json({
+            success: true,
+            results,
+        });
+
+    } catch (error: any) {
+        console.error('[BULK] Bulk import error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to process bulk import',
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+        });
+    }
+};
+
+
+
+

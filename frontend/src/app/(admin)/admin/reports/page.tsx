@@ -1,13 +1,13 @@
 "use client";
 import React, { useState } from 'react';
 import { Download } from 'lucide-react';
-import { useReportData } from '@/hooks/reports/useReportData';
+import { useReportData } from '@/features/reports/hooks/useReportData';
 import { useTableSort } from '@/hooks/useTableSort';
-import { ReportFilters } from '@/components/reports/ReportFilters';
-import { ReportTable } from '@/components/reports/ReportTable';
-import { EmployeeModal } from '@/components/reports/EmployeeModal';
-import { handleExport, handleExportIndividual } from '@/lib/reports/exportReport';
-import { formatDateShort } from '@/lib/reports/formatters';
+import { ReportFilters } from '@/features/reports/components/ReportFilters';
+import { ReportTable } from '@/features/reports/components/ReportTable';
+import { EmployeeModal } from '@/features/reports/components/EmployeeModal';
+import { handleExport, handleExportIndividual } from '@/features/reports/lib/exportReport';
+import { formatDateShort } from '@/features/reports/lib/formatters';
 import { ReportRow } from '@/types/reports';
 
 export default function ReportsPage() {

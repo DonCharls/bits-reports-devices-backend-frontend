@@ -11,8 +11,8 @@ import * as XLSX from 'xlsx';
 import { validateEmployeeId } from '@/lib/employeeValidation';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/ui/SortableHeader';
-import RFIDCardEnrollmentModal from '@/components/biometrics/RFIDCardEnrollmentModal';
-import FingerprintDashboardModal from '@/components/biometrics/FingerprintDashboardModal';
+import RFIDCardEnrollmentModal from '@/features/biometrics/components/RFIDCardEnrollmentModal';
+import FingerprintDashboardModal from '@/features/biometrics/components/FingerprintDashboardModal';
 
 
 

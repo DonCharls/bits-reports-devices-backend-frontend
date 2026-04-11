@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { LogIn, LogOut, Timer, CalendarDays, Clock } from 'lucide-react'
 
 import { employeeSelfApi } from '@/lib/api'
-import { useAttendanceStream, AttendanceStreamPayload } from '@/hooks/useAttendanceStream'
+import { useAttendanceStream, AttendanceStreamPayload } from '@/features/attendance/hooks/useAttendanceStream'
 
 interface AttendanceRecord {
   id: number

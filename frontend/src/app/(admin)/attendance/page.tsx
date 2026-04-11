@@ -3,7 +3,7 @@
 import { useSearchParams } from 'next/navigation'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { useAttendanceStream, AttendanceStreamPayload } from '@/hooks/useAttendanceStream'
+import { useAttendanceStream, AttendanceStreamPayload } from '@/features/attendance/hooks/useAttendanceStream'
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll'
 import * as XLSX from 'xlsx'
 import { Card } from '@/components/ui/card'

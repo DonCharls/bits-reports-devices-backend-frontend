@@ -1,0 +1,860 @@
+import { Request, Response } from 'express';
+import ExcelJS from 'exceljs';
+import { prisma } from '../../shared/lib/prisma';
+import { syncEmployeesToDevice, enrollEmployeeFingerprint, enrollEmployeeCard, deleteEmployeeCard, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex, deleteFingerprintGlobally, syncEmployeeFingerprints } from '../devices/zk';
+import { enqueueGlobalUpsertUser, enqueueGlobalDeleteUser, processDeviceSyncQueue } from '../devices/deviceSyncQueue.service';
+import { audit } from '../../shared/lib/auditLogger';
+import bcrypt from 'bcryptjs';
+import { generateRandomPassword } from '../../shared/utils/password.utils';
+import { sendWelcomeEmail, sendPasswordResetEmail } from '../../shared/lib/email.service';
+import { validateEmployeeId } from './employee.validator';
+
+// GET /api/employees - Get all employees
+export const getAllEmployees = async (req: Request, res: Response) => {
+    try {
+        const employees = await prisma.employee.findMany({
+            select: {
+                id: true,
+                zkId: true,
+                cardNumber: true,
+                employeeNumber: true,
+                firstName: true,
+                lastName: true,
+                middleName: true,
+                suffix: true,
+                gender: true,
+                dateOfBirth: true,
+                email: true,
+                role: true,
+                department: true,
+                departmentId: true,
+                Department: { select: { name: true } },
+                position: true,
+                branch: true,
+                contactNumber: true,
+                hireDate: true,
+                employmentStatus: true,
+                shiftId: true,
+                Shift: { select: { id: true, name: true, shiftCode: true, startTime: true, endTime: true, workDays: true, halfDays: true, graceMinutes: true, breakMinutes: true } },
+                createdAt: true, EmployeeDeviceEnrollment: {
+                    select: {
+                        enrolledAt: true,
+                        device: {
+                            select: {
+                                id: true,
+                                name: true,
+                                location: true,
+                                isActive: true,
+                            },
+                        },
+                    },
+                },
+            },
+            orderBy: [
+                { role: 'asc' },
+                { zkId: 'asc' },
+            ],
+        });
+
+
+
+        res.json({
+            success: true,
+            employees: employees,
+        });
+    } catch (error) {
+        console.error('Error fetching employees:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch employees',
+        });
+    }
+};
+// DELETE /api/employees/:id - Soft delete employee
+export const deleteEmployee = async (req: Request, res: Response) => {
+    try {
+        const id = req.params.id as string;
+        const employeeId = parseInt(id);
+
+        if (isNaN(employeeId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid employee ID',
+            });
+        }
+
+        // Check if employee exists
+        const employee = await prisma.employee.findUnique({
+            where: { id: employeeId },
+            select: { id: true, firstName: true, lastName: true, employmentStatus: true, zkId: true },
+        });
+
+        if (!employee) {
+            return res.status(404).json({
+                success: false,
+                message: 'Employee not found',
+            });
+        }
+
+        // Delete from ZK Device if zkId exists — queue-based, non-blocking
+        if (employee.zkId) {
+            setImmediate(async () => {
+                try {
+                    await enqueueGlobalDeleteUser(employee.zkId!);
+                    // Flush queue inline for online devices
+                    const devices = await prisma.device.findMany({
+                        where: { isActive: true, syncEnabled: true },
+                        select: { id: true },
+                    });
+                    for (const d of devices) {
+                        try { await processDeviceSyncQueue(d.id); } catch { /* retry later */ }
+                    }
+                    console.log(`[API] (background) Queued DELETE_USER for zkId=${employee.zkId}`);
+                } catch (err: unknown) {
+                    console.error(`[API] (background) Failed to queue device deletion:`, err);
+                }
+            });
+        }
+
+        // Soft delete: Mark as INACTIVE instead of actually deleting
+        const updatedEmployee = await prisma.employee.update({
+            where: { id: employeeId },
+            data: {
+                employmentStatus: 'INACTIVE',
+            },
+            select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                employmentStatus: true,
+            },
+        });
+
+        void audit({
+            action: 'STATUS_CHANGE',
+            entityType: 'Employee',
+            entityId: employeeId,
+            performedBy: req.user?.employeeId,
+            details: `Employee ${employee.firstName} ${employee.lastName} deactivated`,
+            metadata: { previousStatus: employee.employmentStatus, newStatus: 'INACTIVE' },
+            correlationId: req.correlationId
+        });
+
+        res.json({
+            success: true,
+            message: `Employee "${employee.firstName} ${employee.lastName}" marked as inactive`,
+            employee: updatedEmployee,
+        });
+    } catch (error) {
+        console.error('Error deleting employee:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete employee',
+        });
+    }
+};
+// PATCH /api/employees/:id/reactivate - Reactivate inactive employee
+export const reactivateEmployee = async (req: Request, res: Response) => {
+    try {
+        const id = req.params.id as string;
+        const employeeId = parseInt(id);
+
+        if (isNaN(employeeId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid employee ID',
+            });
+        }
+
+        // Check if employee exists
+        const existingEmployee = await prisma.employee.findUnique({
+            where: { id: employeeId },
+            select: { id: true, firstName: true, lastName: true, employmentStatus: true },
+        });
+
+        if (!existingEmployee) {
+            return res.status(404).json({
+                success: false,
+                message: 'Employee not found',
+            });
+        }
+
+        if (existingEmployee.employmentStatus === 'ACTIVE') {
+            return res.status(400).json({
+                success: false,
+                message: 'Employee is already active',
+            });
+        }
+
+        const updatedEmployee = await prisma.employee.update({
+            where: { id: employeeId },
+            data: {
+                employmentStatus: 'ACTIVE',
+            },
+            select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                employmentStatus: true,
+            },
+        });
+
+        void audit({
+            action: 'STATUS_CHANGE',
+            entityType: 'Employee',
+            entityId: employeeId,
+            performedBy: req.user?.employeeId,
+            details: `Employee ${updatedEmployee.firstName} ${updatedEmployee.lastName} reactivated`,
+            metadata: { previousStatus: existingEmployee.employmentStatus, newStatus: 'ACTIVE' },
+            correlationId: req.correlationId
+        });
+
+        res.json({
+            success: true,
+            message: `Employee "${updatedEmployee.firstName} ${updatedEmployee.lastName}" reactivated`,
+            employee: updatedEmployee,
+        });
+    } catch (error: any) {
+        console.error('Error reactivating employee:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to reactivate employee',
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+        });
+    }
+};
+// POST /api/employees - Create new employee
+export const createEmployee = async (req: Request, res: Response) => {
+    try {
+        const {
+            employeeNumber,
+            firstName,
+            lastName,
+            middleName,
+            suffix,
+            gender,
+            dateOfBirth,
+            email,
+            role,
+            department,
+            position,
+            branch,
+            contactNumber,
+            hireDate,
+            employmentStatus,
+            shiftId
+        } = req.body;
+
+        // Validate Employee ID
+        const empIdValidation = validateEmployeeId(employeeNumber);
+        if (!empIdValidation.isValid) {
+            return res.status(400).json({
+                success: false,
+                message: empIdValidation.error
+            });
+        }
+
+        // Validate required fields
+        if (!firstName || !lastName) {
+            return res.status(400).json({
+                success: false,
+                message: 'First name and Last name are required'
+            });
+        }
+
+        // Validate email format and require it
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({
+                success: false,
+                message: 'A valid email is required to receive login credentials'
+            });
+        }
+
+        // Validate role
+        if (role && !['USER', 'ADMIN', 'HR'].includes(role)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid role. Must be USER, ADMIN, or HR'
+            });
+        }
+
+        // Validate employment status
+        if (employmentStatus && !['ACTIVE', 'INACTIVE', 'TERMINATED'].includes(employmentStatus)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid employment status. Must be ACTIVE, INACTIVE, or TERMINATED'
+            });
+        }
+
+        // Check for existing employee with same email, employee number
+        const existingEmployee = await prisma.employee.findFirst({
+            where: {
+                OR: [
+                    { email: email || undefined },
+                    { employeeNumber: employeeNumber || undefined },
+                ]
+            }
+        });
+
+        if (existingEmployee) {
+            const duplicateField = existingEmployee.email === email ? 'email address' : 'employee number';
+            void audit({
+                action: 'CREATE',
+                level: 'WARN',
+                entityType: 'Employee',
+                performedBy: req.user?.employeeId,
+                details: `Failed to create employee: duplicate ${duplicateField}`,
+                metadata: { email, employeeNumber },
+                correlationId: req.correlationId
+            });
+
+            return res.status(400).json({
+                success: false,
+                message: `This ${duplicateField} is already in use by another employee`
+            });
+        }
+
+        // ── Acquire registration mutex before zkId assignment ─────────────────────
+        // findNextSafeZkId() + prisma.employee.create() must run as an atomic unit.
+        // Without this mutex, two simultaneous POST /api/employees requests both call
+        // findNextSafeZkId() before either has written to the DB, both receive the
+        // same integer, and one of the prisma.employee.create() calls fails with a
+        // P2002 unique constraint violation on Employee.zkId.
+        const release = await acquireRegistrationMutex();
+        let newEmployee;
+        const generatedPassword = generateRandomPassword(10);
+        const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+
+        try {
+            const nextZkId = await findNextSafeZkId();
+
+            newEmployee = await prisma.employee.create({
+                data: {
+                    employeeNumber: employeeNumber.trim(),
+                    firstName,
+                    lastName,
+                    middleName: middleName || null,
+                    suffix: suffix || null,
+                    gender: gender || null,
+                    dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+                    email,
+                    password: hashedPassword,
+                    role: role || 'USER',
+                    department,
+                    position,
+                    branch,
+                    contactNumber,
+                    hireDate: hireDate ? new Date(hireDate) : undefined,
+                    employmentStatus: employmentStatus || 'ACTIVE',
+                    zkId: nextZkId,
+                    shiftId: shiftId ? parseInt(shiftId, 10) : null,
+                    needsPasswordChange: true,
+                    updatedAt: new Date()
+                },
+                select: {
+                    id: true,
+                    zkId: true,
+                    employeeNumber: true,
+                    firstName: true,
+                    lastName: true,
+                    middleName: true,
+                    suffix: true,
+                    gender: true,
+                    dateOfBirth: true,
+                    email: true,
+                    role: true,
+                    department: true,
+                    position: true,
+                    branch: true,
+                    contactNumber: true,
+                    hireDate: true,
+                    employmentStatus: true,
+                    createdAt: true,
+                }
+            });
+        } finally {
+            // Always release — even on error — to prevent deadlocking future registrations
+            release();
+        }
+
+        // Guard: if the mutex block threw, the outer try/catch handles it
+        if (!newEmployee) {
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to create employee — unexpected state after registration.',
+            });
+        }
+
+        console.log(`[API] Created employee: ${newEmployee.firstName} ${newEmployee.lastName} (zkId: ${newEmployee.zkId})`);
+
+        void audit({
+            action: 'CREATE',
+            entityType: 'Employee',
+            entityId: newEmployee.id,
+            performedBy: req.user?.employeeId,
+            details: `Created employee ${newEmployee.firstName} ${newEmployee.lastName}`,
+            metadata: { email, role: newEmployee.role, department, employeeNumber },
+            correlationId: req.correlationId
+        });
+
+        // ── Respond immediately — device sync happens in the background ──────
+        // We do NOT await the device call here. The ZKTeco device may take up to
+        // 25 s to time out (3 retries × ~8 s each). Holding the HTTP response
+        // open that long causes the success toast to never appear on the frontend.
+        // Instead, we respond with 201 right away and let the sync run in the
+        // background. If it fails, the admin can use the Fingerprint button later.
+        res.status(201).json({
+            success: true,
+            message: 'Employee created and credentials sent via email.',
+            employee: newEmployee,
+            deviceSync: { success: null, message: 'Device sync running in background' },
+        });
+
+        // Fire-and-forget: sync to biometric device and send email
+        setImmediate(async () => {
+            // Send welcome email
+            if (email) {
+                try {
+                    await sendWelcomeEmail(email, `${firstName} ${lastName}`, generatedPassword);
+                } catch (emailErr) {
+                    console.error(`[API] (background) Failed to send welcome email to ${email}:`, emailErr);
+                }
+            }
+
+            // Sync device
+            if (newEmployee.zkId) {
+                try {
+                    console.log(`[API] (background) Syncing ${newEmployee.firstName} ${newEmployee.lastName} to device...`);
+                    const displayName = `${newEmployee.firstName} ${newEmployee.lastName}`;
+                    await addUserToDevice(newEmployee.zkId!, displayName, newEmployee.role);
+                    console.log(`[API] (background) Device sync OK: ${displayName} (zkId: ${newEmployee.zkId})`);
+                } catch (syncErr: any) {
+                    console.error(`[API] (background) Device sync failed for zkId ${newEmployee.zkId}:`, syncErr?.message || syncErr);
+                }
+            }
+        });
+
+    } catch (error: any) {
+        console.error('Error creating employee:', error);
+
+        void audit({
+            action: 'CREATE',
+            level: 'ERROR',
+            entityType: 'Employee',
+            performedBy: req.user?.employeeId,
+            details: `Failed to create employee due to server error: ${error.message}`,
+            metadata: { error: error.message },
+            correlationId: req.correlationId
+        });
+
+        res.status(500).json({
+            success: false,
+            message: 'Failed to create employee',
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+        });
+    }
+};
+// PUT /api/employees/:id - Update an employee's details
+export const updateEmployee = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const employeeId = parseInt(id as string, 10);
+
+        if (isNaN(employeeId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid employee ID format',
+            });
+        }
+
+        const {
+            employeeNumber,
+            firstName,
+            lastName,
+            middleName,
+            suffix,
+            gender,
+            dateOfBirth,
+            email,
+            contactNumber,
+            position,
+            department,
+            departmentId,
+            branch,
+            hireDate,
+            shiftId,
+            employmentStatus
+        } = req.body;
+
+        // Check if employee exists
+        const existingEmployee = await prisma.employee.findUnique({
+            where: { id: employeeId },
+        });
+
+        if (!existingEmployee) {
+            return res.status(404).json({
+                success: false,
+                message: 'Employee not found',
+            });
+        }
+
+        if (employeeNumber !== undefined) {
+            const empIdValidation = validateEmployeeId(employeeNumber);
+            if (!empIdValidation.isValid) {
+                return res.status(400).json({
+                    success: false,
+                    message: empIdValidation.error
+                });
+            }
+
+            if (employeeNumber && employeeNumber !== existingEmployee.employeeNumber) {
+                const dup = await prisma.employee.findUnique({ where: { employeeNumber: employeeNumber.trim() } });
+                if (dup) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Employee ID is already in use by another employee'
+                    });
+                }
+            }
+        }
+
+        // Validate email uniqueness (exclude the current employee)
+        if (email !== undefined && email !== '' && email !== existingEmployee.email) {
+            const emailDup = await prisma.employee.findFirst({
+                where: { email, id: { not: employeeId } }
+            });
+            if (emailDup) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'This email address is already in use by another employee'
+                });
+            }
+        }
+
+        // Prepare data for update
+        const updateData: any = {};
+        if (employeeNumber !== undefined) updateData.employeeNumber = employeeNumber.trim();
+        if (firstName !== undefined) updateData.firstName = firstName;
+        if (lastName !== undefined) updateData.lastName = lastName;
+        if (middleName !== undefined) updateData.middleName = middleName || null;
+        if (suffix !== undefined) updateData.suffix = suffix || null;
+        if (gender !== undefined) updateData.gender = gender || null;
+        if (dateOfBirth !== undefined) updateData.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+        if (email !== undefined) updateData.email = email === '' ? null : email;
+        if (contactNumber !== undefined) updateData.contactNumber = contactNumber;
+        if (position !== undefined) updateData.position = position;
+        if (department !== undefined) updateData.department = department || null;
+        if (departmentId !== undefined) {
+            updateData.departmentId = departmentId ? parseInt(departmentId, 10) : null;
+        }
+        if (branch !== undefined) updateData.branch = branch || null;
+        if (hireDate !== undefined) updateData.hireDate = hireDate ? new Date(hireDate) : null;
+        if (shiftId !== undefined) updateData.shiftId = shiftId ? parseInt(shiftId, 10) : null;
+        if (employmentStatus !== undefined && ['ACTIVE', 'INACTIVE', 'TERMINATED'].includes(employmentStatus)) {
+            updateData.employmentStatus = employmentStatus;
+        }
+
+        updateData.updatedAt = new Date();
+
+        // Update the employee
+        const updatedEmployee = await prisma.employee.update({
+            where: { id: employeeId },
+            data: updateData,
+            select: {
+                id: true,
+                zkId: true,
+                employeeNumber: true,
+                firstName: true,
+                lastName: true,
+                middleName: true,
+                suffix: true,
+                gender: true,
+                dateOfBirth: true,
+                email: true,
+                role: true,
+                department: true,
+                Department: { select: { name: true } },
+                departmentId: true,
+                position: true,
+                branch: true,
+                contactNumber: true,
+                hireDate: true,
+                employmentStatus: true,
+                shiftId: true,
+                Shift: { select: { id: true, name: true, shiftCode: true, startTime: true, endTime: true, workDays: true, halfDays: true, graceMinutes: true, breakMinutes: true } },
+                createdAt: true,
+                updatedAt: true
+            },
+        });
+
+        const changes: string[] = [];
+        for (const [key, newValue] of Object.entries(updateData)) {
+            if (key === 'updatedAt' || key === 'password') continue;
+            const oldValue = (existingEmployee as any)[key];
+            if (oldValue !== newValue) {
+                const oldValStr = oldValue instanceof Date ? oldValue.toISOString().split('T')[0] : (oldValue || 'empty');
+                const newValStr = newValue instanceof Date ? newValue.toISOString().split('T')[0] : (newValue || 'empty');
+                if (oldValStr !== newValStr) {
+                    changes.push(`Updated ${key.replace(/([A-Z])/g, ' $1').toLowerCase().trim()} from "${oldValStr}" to "${newValStr}"`);
+                }
+            }
+        }
+
+        void audit({
+            action: 'UPDATE',
+            entityType: 'Employee',
+            entityId: employeeId,
+            performedBy: req.user?.employeeId,
+            details: `Updated employee ${updatedEmployee.firstName} ${updatedEmployee.lastName}`,
+            metadata: changes.length > 0 ? { updates: changes } : undefined,
+            correlationId: req.correlationId
+        });
+
+        res.json({
+            success: true,
+            message: 'Employee updated successfully',
+            employee: updatedEmployee,
+        });
+
+        // ── Queue device sync if employee details changed and they're on devices ──
+        if (updatedEmployee.zkId && updatedEmployee.employmentStatus === 'ACTIVE') {
+            const nameChanged = firstName !== undefined || lastName !== undefined;
+            const roleChanged = req.body.role !== undefined;
+            if (nameChanged || roleChanged) {
+                const fullName = `${updatedEmployee.firstName} ${updatedEmployee.lastName}`;
+                const deviceRole = updatedEmployee.role === 'ADMIN' ? 14 : 0;
+                setImmediate(async () => {
+                    try {
+                        await enqueueGlobalUpsertUser({
+                            zkId: updatedEmployee.zkId!,
+                            name: fullName,
+                            card: existingEmployee.cardNumber ?? 0,
+                            role: deviceRole,
+                        });
+                        // Flush queue inline for online devices
+                        const devices = await prisma.device.findMany({
+                            where: { isActive: true, syncEnabled: true },
+                            select: { id: true },
+                        });
+                        for (const d of devices) {
+                            try { await processDeviceSyncQueue(d.id); } catch { /* retry later */ }
+                        }
+                        console.log(`[API] (background) Queued UPSERT_USER for zkId=${updatedEmployee.zkId}`);
+                    } catch (err: unknown) {
+                        console.error(`[API] (background) Failed to queue device update:`, err);
+                    }
+                });
+            }
+        }
+
+    } catch (error: any) {
+        console.error('Error updating employee:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update employee',
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
+    }
+};
+// DELETE /api/employees/:id/permanent - Permanently delete an inactive employee
+export const permanentDeleteEmployee = async (req: Request, res: Response) => {
+    try {
+        const id = req.params.id as string;
+        const employeeId = parseInt(id);
+
+        if (isNaN(employeeId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid employee ID',
+            });
+        }
+
+        // Check if employee exists
+        const employee = await prisma.employee.findUnique({
+            where: { id: employeeId },
+            select: { id: true, firstName: true, lastName: true, employmentStatus: true, zkId: true, role: true, email: true },
+        });
+
+        if (!employee) {
+            return res.status(404).json({
+                success: false,
+                message: 'Employee not found',
+            });
+        }
+
+        // Prevent deleting the main admin account
+        if (employee.email === 'admin@avegabros.com') {
+            return res.status(403).json({
+                success: false,
+                message: 'Permanent deletion of the main admin account is protected.',
+            });
+        }
+
+        // Only allow permanent deletion of inactive users
+        if (employee.employmentStatus === 'ACTIVE') {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot permanently delete an active user. Please deactivate them first.',
+            });
+        }
+
+        // ── DB delete first — device removal is fire-and-forget ────────────
+        // We must NOT await deleteUserFromDevice before the transaction.
+        // If the device is offline it retries for up to 25 s, causing the
+        // permanent delete to appear to fail. The DB is the source of truth.
+        // Delete from DB unconditionally; remove from device in the background.
+        await prisma.$transaction(async (tx) => {
+            await tx.attendanceLog.deleteMany({ where: { employeeId } });
+            await tx.attendance.deleteMany({ where: { employeeId } });
+            await tx.employee.delete({ where: { id: employeeId } });
+        });
+
+        void audit({
+            action: 'DELETE',
+            entityType: 'Employee',
+            entityId: employeeId,
+            performedBy: req.user?.employeeId,
+            level: 'WARN',
+            details: `Permanently deleted employee ${employee.firstName} ${employee.lastName}`,
+            metadata: { email: employee.email, role: employee.role },
+            correlationId: req.correlationId
+        });
+
+        res.json({
+            success: true,
+            message: `User "${employee.firstName} ${employee.lastName}" permanently deleted`,
+        });
+
+        // Fire-and-forget: queue deletion from biometric devices
+        if (employee.zkId) {
+            setImmediate(async () => {
+                try {
+                    await enqueueGlobalDeleteUser(employee.zkId!);
+                    // Flush queue inline for online devices
+                    const devices = await prisma.device.findMany({
+                        where: { isActive: true, syncEnabled: true },
+                        select: { id: true },
+                    });
+                    for (const d of devices) {
+                        try { await processDeviceSyncQueue(d.id); } catch { /* retry later */ }
+                    }
+                    console.log(`[API] (background) Queued DELETE_USER for zkId=${employee.zkId}`);
+                } catch (devErr: unknown) {
+                    console.error(`[API] (background) Could not queue zkId ${employee.zkId} for deletion:`, devErr);
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Error permanently deleting employee:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to permanently delete employee',
+        });
+    }
+};
+// POST /api/employees/:id/reset-password - HR/Admin initiated password reset
+export const resetEmployeePassword = async (req: Request, res: Response) => {
+    try {
+        const id = req.params.id as string;
+        const employeeId = parseInt(id);
+
+        if (isNaN(employeeId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid employee ID',
+            });
+        }
+
+        // Check if employee exists and has an email
+        const employee = await prisma.employee.findUnique({
+            where: { id: employeeId },
+            select: { id: true, firstName: true, lastName: true, email: true },
+        });
+
+        if (!employee) {
+            return res.status(404).json({
+                success: false,
+                message: 'Employee not found',
+            });
+        }
+
+        if (!employee.email) {
+            return res.status(400).json({
+                success: false,
+                message: 'Employee does not have an email address configured',
+            });
+        }
+
+        const generatedPassword = generateRandomPassword(10);
+        const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+
+        // Update DB
+        await prisma.employee.update({
+            where: { id: employeeId },
+            data: {
+                password: hashedPassword,
+                needsPasswordChange: true,
+                updatedAt: new Date()
+            }
+        });
+
+        // Send email
+        const emailSent = await sendPasswordResetEmail(
+            employee.email,
+            `${employee.firstName} ${employee.lastName}`,
+            generatedPassword
+        );
+
+        if (!emailSent) {
+            return res.status(200).json({
+                success: true,
+                message: "Password reset in database, but failed to send email. The temporary password is: " + generatedPassword,
+            });
+        }
+
+        res.json({
+            success: true,
+            message: `Password reset successfully. Email sent to ${employee.email}.`,
+        });
+
+    } catch (error: any) {
+        console.error('Error resetting password:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to reset password',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+        });
+    }
+};
+// GET /api/employees/check-email?email=...&excludeId=...
+export const checkEmailAvailability = async (req: Request, res: Response) => {
+    try {
+        const { email, excludeId } = req.query;
+
+        if (!email || typeof email !== 'string') {
+            return res.status(400).json({ success: false, message: 'Email is required' });
+        }
+
+        const where: any = { email: email.trim().toLowerCase() };
+        if (excludeId) {
+            where.id = { not: parseInt(excludeId as string, 10) };
+        }
+
+        const existing = await prisma.employee.findFirst({ where });
+
+        res.json({
+            success: true,
+            available: !existing,
+        });
+    } catch (error: any) {
+        console.error('Error checking email:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to check email availability',
+        });
+    }
+};
+
+
+
+
