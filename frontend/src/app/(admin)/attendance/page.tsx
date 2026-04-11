@@ -30,6 +30,8 @@ import {
   Loader2,
   X,
 } from 'lucide-react'
+import { useToast } from '@/hooks/useToast'
+import ToastContainer from '@/components/ui/ToastContainer'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useTableSort } from '@/hooks/useTableSort'
 import { SortableHeader } from '@/components/ui/SortableHeader'
@@ -52,6 +54,16 @@ export default function BiometricPage() {
   const [records, setRecords] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Edit state
+  const [editingLog, setEditingLog] = useState<any | null>(null)
+  const [editCheckIn, setEditCheckIn] = useState('')
+  const [editCheckOut, setEditCheckOut] = useState('')
+  const [editReason, setEditReason] = useState('')
+  const [actionLoading, setActionLoading] = useState(false)
+  const [showCancelModal, setShowCancelModal] = useState(false)
+  const [showSuccessToast, setShowSuccessToast] = useState(false)
+  const { toasts, showToast, dismissToast } = useToast()
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('')
@@ -77,14 +89,6 @@ export default function BiometricPage() {
   const dragScrollRef = useHorizontalDragScroll()
 
   // Stats
-  const [editingLog, setEditingLog] = useState<any | null>(null)
-  const [showCancelModal, setShowCancelModal] = useState(false)
-  const [showSuccessToast, setShowSuccessToast] = useState(false)
-  const [actionLoading, setActionLoading] = useState(false)
-  const [editCheckIn, setEditCheckIn] = useState('')
-  const [editCheckOut, setEditCheckOut] = useState('')
-  const [editReason, setEditReason] = useState('')
-
   const [stats, setStats] = useState({
     totalPresent: 0,
     totalLate: 0,
@@ -124,55 +128,6 @@ export default function BiometricPage() {
     if (h === 0) return `${m}m`
     if (m === 0) return `${h}h`
     return `${h}h ${m}m`
-  }
-
-  const toTimeInput = (str: string): string => {
-    if (!str || str === '—') return ''
-    try {
-      const d = new Date(`1970-01-01 ${str}`)
-      if (isNaN(d.getTime())) return ''
-      return d.toTimeString().slice(0, 5)
-    } catch { return '' }
-  }
-
-  const handleEditClick = (row: any) => {
-    setEditingLog(row)
-    setEditCheckIn(toTimeInput(row.checkIn))
-    setEditCheckOut(toTimeInput(row.checkOut))
-    setEditReason('')
-  }
-
-  const handleApplyChanges = async () => {
-    if (!editingLog) return
-    if (String(editingLog.id).startsWith('absent-')) {
-      alert('Cannot edit an absent record — the employee has no clock-in/out entry for this day.')
-      return
-    }
-    setActionLoading(true)
-    try {
-      const body: any = { reason: editReason }
-      if (editCheckIn) body.checkInTime = `${editingLog.date}T${editCheckIn}:00+08:00`
-      if (editCheckOut) body.checkOutTime = `${editingLog.date}T${editCheckOut}:00+08:00`
-
-      const res = await fetch(`/api/attendance/${editingLog.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(body),
-      })
-      const data = await res.json()
-      if (data.success) {
-        setShowSuccessToast(true)
-        setEditingLog(null)
-        fetchRecords()
-      } else {
-        alert(data.message || 'Update failed')
-      }
-    } catch (e: any) {
-      alert(e.message || 'Network error')
-    } finally {
-      setActionLoading(false)
-    }
   }
 
   /* ── Effects ── */
@@ -389,6 +344,56 @@ export default function BiometricPage() {
   })
 
   useEffect(() => { fetchRecords() }, [fetchRecords])
+
+  // Convert "07:45 AM" → "07:45" for time input
+  const toTimeInput = (str: string): string => {
+    if (!str || str === '—') return ''
+    try {
+      const d = new Date(`1970-01-01 ${str}`)
+      if (isNaN(d.getTime())) return ''
+      return d.toTimeString().slice(0, 5)
+    } catch { return '' }
+  }
+
+  const handleEditClick = (row: any) => {
+    setEditingLog(row)
+    setEditCheckIn(toTimeInput(row.checkIn))
+    setEditCheckOut(toTimeInput(row.checkOut))
+    setEditReason('')
+  }
+
+  const handleApplyChanges = async () => {
+    if (!editingLog) return
+    if (String(editingLog.id).startsWith('absent-')) {
+      showToast('error', 'Cannot Edit', 'Cannot edit an absent record — the employee has no clock-in/out entry for this day.')
+      return
+    }
+    setActionLoading(true)
+    try {
+      const body: any = { reason: editReason }
+      if (editCheckIn) body.checkInTime = `${editingLog.date}T${editCheckIn}:00+08:00`
+      if (editCheckOut) body.checkOutTime = `${editingLog.date}T${editCheckOut}:00+08:00`
+
+      const res = await fetch(`/api/attendance/${editingLog.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (data.success) {
+        showToast('success', 'Record Updated', 'Attendance record successfully updated!')
+        setEditingLog(null)
+        fetchRecords()
+      } else {
+        showToast('error', 'Update Failed', data.message || 'Update failed')
+      }
+    } catch (e: any) {
+      showToast('error', 'Network Error', e.message || 'Network error')
+    } finally {
+      setActionLoading(false)
+    }
+  }
 
   const handleExport = () => {
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']

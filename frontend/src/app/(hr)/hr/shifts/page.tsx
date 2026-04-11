@@ -7,6 +7,8 @@ import {
     Clock, Plus, Search, Edit2, Trash2, ToggleLeft, ToggleRight,
     AlertTriangle, Moon, Sun, X as XIcon, Users, Shield, Coffee
 } from 'lucide-react'
+import { useToast } from '@/hooks/useToast'
+import ToastContainer from '@/components/ui/ToastContainer'
 import { useTableSort } from '@/hooks/useTableSort'
 import { SortableHeader } from '@/components/ui/SortableHeader'
 
@@ -95,12 +97,7 @@ export default function HRShiftsPage() {
     const [formError, setFormError] = useState('')
     const [deleteTarget, setDeleteTarget] = useState<Shift | null>(null)
     const [deleteLoading, setDeleteLoading] = useState(false)
-    const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
-
-    const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
-        setToast({ msg, type })
-        setTimeout(() => setToast(null), 3500)
-    }
+    const { toasts, showToast, dismissToast } = useToast()
 
     const fetchShifts = useCallback(async () => {
         try {
@@ -147,7 +144,7 @@ export default function HRShiftsPage() {
             const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(form) })
             const data = await res.json()
             if (!data.success) { setFormError(data.message || 'An error occurred'); return }
-            showToast(editingShift ? 'Shift updated!' : 'Shift created!')
+            showToast('success', editingShift ? 'Shift Updated' : 'Shift Created', editingShift ? 'Shift updated successfully!' : 'Shift created successfully!')
             setIsFormOpen(false); fetchShifts()
         } catch { setFormError('Failed to save shift.') }
         finally { setFormLoading(false) }
@@ -157,8 +154,8 @@ export default function HRShiftsPage() {
         try {
             const res = await fetch(`/api/shifts/${s.id}/toggle`, { method: 'PATCH', credentials: 'include' })
             const data = await res.json()
-            if (data.success) { showToast(data.message); fetchShifts() }
-        } catch { showToast('Failed to toggle shift', 'error') }
+            if (data.success) { showToast('success', 'Status Changed', data.message); fetchShifts() }
+        } catch { showToast('error', 'Toggle Failed', 'Failed to toggle shift') }
     }
 
     const handleDelete = async () => {
@@ -167,9 +164,9 @@ export default function HRShiftsPage() {
         try {
             const res = await fetch(`/api/shifts/${deleteTarget.id}`, { method: 'DELETE', credentials: 'include' })
             const data = await res.json()
-            if (data.success) { showToast('Shift deleted'); setDeleteTarget(null); fetchShifts() }
-            else showToast(data.message || 'Delete failed', 'error')
-        } catch { showToast('Failed to delete', 'error') }
+            if (data.success) { showToast('success', 'Shift Deleted', 'Shift deleted successfully'); setDeleteTarget(null); fetchShifts() }
+            else showToast('error', 'Delete Failed', data.message || 'Delete failed')
+        } catch { showToast('error', 'Delete Failed', 'Failed to delete') }
         finally { setDeleteLoading(false) }
     }
 
@@ -193,11 +190,6 @@ export default function HRShiftsPage() {
 
     return (
         <div className="space-y-6 relative">
-            {toast && (
-                <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-4 rounded-2xl shadow-2xl z-[200] text-white text-sm font-bold tracking-tight animate-in fade-in slide-in-from-bottom-4 duration-300 ${toast.type === 'success' ? 'bg-slate-700' : 'bg-red-600'}`}>
-                    {toast.msg}
-                </div>
-            )}
 
             {deleteTarget && (
                 <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
@@ -488,6 +480,7 @@ export default function HRShiftsPage() {
                     </tbody>
                 </table>
             </div>
+            <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         </div>
     )
 }

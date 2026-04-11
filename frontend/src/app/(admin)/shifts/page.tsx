@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useToast } from '@/hooks/useToast'
+import ToastContainer from '@/components/ui/ToastContainer'
 import {
     Clock, Plus, Search, Edit2, Trash2, ToggleLeft, ToggleRight,
     AlertTriangle, Moon, Sun, X as XIcon, Users, Shield, Coffee
@@ -104,12 +106,7 @@ export default function AdminShiftsPage() {
     const [deleteTarget, setDeleteTarget] = useState<Shift | null>(null)
     const [deleteLoading, setDeleteLoading] = useState(false)
 
-    const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
-
-    const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
-        setToast({ msg, type })
-        setTimeout(() => setToast(null), 3500)
-    }
+    const { toasts, showToast, dismissToast } = useToast()
 
     const fetchShifts = useCallback(async () => {
         try {
@@ -190,7 +187,7 @@ export default function AdminShiftsPage() {
             })
             const data = await res.json()
             if (!data.success) { setFormError(data.message || 'An error occurred'); return }
-            showToast(editingShift ? 'Shift updated successfully!' : 'Shift created successfully!')
+            showToast('success', editingShift ? 'Shift Updated' : 'Shift Created', editingShift ? 'Shift updated successfully!' : 'Shift created successfully!')
             setIsFormOpen(false)
             fetchShifts()
         } catch { setFormError('Failed to save shift. Please try again.') }
@@ -203,8 +200,8 @@ export default function AdminShiftsPage() {
                 method: 'PATCH', credentials: 'include'
             })
             const data = await res.json()
-            if (data.success) { showToast(data.message); fetchShifts() }
-        } catch { showToast('Failed to toggle shift', 'error') }
+            if (data.success) { showToast('success', 'Shift Toggled', data.message); fetchShifts() }
+        } catch { showToast('error', 'Toggle Failed', 'Failed to toggle shift') }
     }
 
     const handleDelete = async () => {
@@ -215,9 +212,9 @@ export default function AdminShiftsPage() {
                 method: 'DELETE', credentials: 'include'
             })
             const data = await res.json()
-            if (data.success) { showToast('Shift deleted'); setDeleteTarget(null); fetchShifts() }
-            else showToast(data.message || 'Delete failed', 'error')
-        } catch { showToast('Failed to delete shift', 'error') }
+            if (data.success) { showToast('success', 'Shift Deleted', 'Shift deleted'); setDeleteTarget(null); fetchShifts() }
+            else showToast('error', 'Delete Failed', data.message || 'Delete failed')
+        } catch { showToast('error', 'Delete Failed', 'Failed to delete shift') }
         finally { setDeleteLoading(false) }
     }
 
@@ -241,12 +238,7 @@ export default function AdminShiftsPage() {
 
     return (
         <div className="space-y-6 relative">
-            {/* Toast */}
-            {toast && (
-                <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-4 rounded-2xl shadow-2xl z-[200] text-white text-sm font-bold tracking-tight animate-in fade-in slide-in-from-bottom-4 duration-300 ${toast.type === 'success' ? 'bg-slate-700' : 'bg-red-600'}`}>
-                    {toast.msg}
-                </div>
-            )}
+            <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
             {/* Delete Confirm Modal */}
             {deleteTarget && (

@@ -1,12 +1,13 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { User, Mail, Shield, MapPin, Calendar, Camera, Check, X, CheckCircle, Trash2, Phone } from 'lucide-react';
+import { useToast } from '@/hooks/useToast';
+import ToastContainer from '@/components/ui/ToastContainer';
 
 export default function ProfilePage() {
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState("Profile updated successfully!");
+  const { toasts, showToast, dismissToast } = useToast();
   const [saving, setSaving] = useState(false);
 
   const [userData, setUserData] = useState({
@@ -21,12 +22,7 @@ export default function ProfilePage() {
     hireDate: "",
   });
 
-  useEffect(() => {
-    if (showToast) {
-      const timer = setTimeout(() => setShowToast(false), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [showToast]);
+
 
   useEffect(() => {
     const savedImage = localStorage.getItem('userProfileImage');
@@ -73,8 +69,7 @@ export default function ProfilePage() {
     setProfileImage(null);
     localStorage.removeItem('userProfileImage');
     window.dispatchEvent(new Event('profileUpdate'));
-    setToastMessage("Profile photo removed!");
-    setShowToast(true);
+    showToast('success', 'Photo Removed', 'Profile photo removed!');
   };
 
   const handleSave = async () => {
@@ -93,16 +88,13 @@ export default function ProfilePage() {
       const data = await res.json();
       if (data.success) {
         setIsEditing(false);
-        setToastMessage("Profile updated successfully!");
-        setShowToast(true);
+        showToast('success', 'Profile Updated', 'Profile updated successfully!');
       } else {
-        setToastMessage(data.message || "Failed to update profile");
-        setShowToast(true);
+        showToast('error', 'Update Failed', data.message || 'Failed to update profile');
       }
     } catch (error) {
       console.error('Error saving profile:', error);
-      setToastMessage("Failed to update profile");
-      setShowToast(true);
+      showToast('error', 'Update Failed', 'Failed to update profile');
     } finally {
       setSaving(false);
     }
@@ -253,15 +245,7 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Toast */}
-      {showToast && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 z-50">
-          <div className="bg-emerald-500 p-1 rounded-full">
-            <CheckCircle size={16} className="text-white" />
-          </div>
-          <span className="text-sm font-bold tracking-tight">{toastMessage}</span>
-        </div>
-      )}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

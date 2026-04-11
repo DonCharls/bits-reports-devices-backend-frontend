@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useToast } from '@/hooks/useToast'
+import ToastContainer from '@/components/ui/ToastContainer'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,6 +26,7 @@ type Employee = {
 }
 
 export default function InactiveEmployeesPage() {
+  const { toasts, showToast, dismissToast } = useToast()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -88,12 +91,13 @@ export default function InactiveEmployeesPage() {
       if (data.success) {
         await fetchInactiveEmployees()
         setConfirmRestore(null)
+        showToast('success', 'Employee Restored', `${confirmRestore.firstName} ${confirmRestore.lastName} restored to active status`)
       } else {
-        alert('Failed to restore employee: ' + (data.message || 'Unknown error'))
+        showToast('error', 'Restore Failed', data.message || 'Unknown error')
       }
     } catch (error) {
       console.error('Error restoring employee:', error)
-      alert('Failed to restore employee')
+      showToast('error', 'Restore Failed', 'Could not reach the server. Please try again.')
     } finally {
       setIsRestoring(false)
     }
@@ -110,12 +114,13 @@ export default function InactiveEmployeesPage() {
       if (data.success) {
         await fetchInactiveEmployees()
         setConfirmDelete(null)
+        showToast('success', 'Employee Deleted', `${confirmDelete.firstName} ${confirmDelete.lastName} permanently deleted`)
       } else {
-        alert('Failed to delete employee: ' + (data.message || 'Unknown error'))
+        showToast('error', 'Delete Failed', data.message || 'Unknown error')
       }
     } catch (error) {
       console.error('Error deleting employee:', error)
-      alert('Failed to delete employee')
+      showToast('error', 'Delete Failed', 'Could not reach the server. Please try again.')
     } finally {
       setIsDeleting(false)
     }
@@ -322,6 +327,7 @@ export default function InactiveEmployeesPage() {
           </div>
         </div>
       </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }

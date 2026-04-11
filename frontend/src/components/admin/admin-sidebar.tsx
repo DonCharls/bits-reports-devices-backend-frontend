@@ -44,7 +44,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
     { href: '/admin/adjustments' },
     { href: '/employees', matchPrefix: '/employees' },
     { href: '/shifts' },
-    { href: '/departments' },
+    { href: '/organization' },
     { href: '/devices' },
     { href: '/admin/reports', matchPrefix: '/admin/reports' }, // Used for index match
     { href: '/admin/logs' },
@@ -253,13 +253,13 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
           {/* Organization */}
           <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
             <Link
-              href="/departments"
+              href="/organization"
               onClick={onClose}
-              className={`flex items-center gap-4 py-3 relative z-10 ${pathname === '/departments' ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              className={`flex items-center gap-4 py-3 relative z-10 ${pathname === '/organization' ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
               style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
               title={collapsed ? 'Organization' : undefined}
             >
-              <Building2 size={22} className={`shrink-0 ${pathname === '/departments' ? 'text-[#E60000]' : 'text-white'}`} />
+              <Building2 size={22} className={`shrink-0 ${pathname === '/organization' ? 'text-[#E60000]' : 'text-white'}`} />
               <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Organization</span>
             </Link>
           </li>

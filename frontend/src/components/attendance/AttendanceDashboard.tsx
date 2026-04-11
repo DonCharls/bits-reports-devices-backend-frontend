@@ -5,6 +5,8 @@ export const dynamic = 'force-dynamic'
 import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
+import { useToast } from '@/hooks/useToast';
+import ToastContainer from '@/components/ui/ToastContainer';
 import * as XLSX from 'xlsx';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/ui/SortableHeader';
@@ -48,6 +50,7 @@ interface AttendanceRecord {
 
 function AttendanceContent({ role }: AttendanceDashboardProps) {
   const searchParams = useSearchParams();
+  const { toasts, showToast, dismissToast } = useToast();
 
   const getTodayDate = () =>
     new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
@@ -67,7 +70,6 @@ function AttendanceContent({ role }: AttendanceDashboardProps) {
   const [departmentsList, setDepartmentsList] = useState<{ id: number; name: string }[]>([]);
   const [editingLog, setEditingLog] = useState<AttendanceRecord | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [editCheckIn, setEditCheckIn] = useState('');
   const [editCheckOut, setEditCheckOut] = useState('');
@@ -133,12 +135,7 @@ function AttendanceContent({ role }: AttendanceDashboardProps) {
   });
   const sortKeyStr = sortKey as string | null;
 
-  useEffect(() => {
-    if (showSuccessToast) {
-      const t = setTimeout(() => setShowSuccessToast(false), 3000);
-      return () => clearTimeout(t);
-    }
-  }, [showSuccessToast]);
+
 
   const formatLate = (mins: number): string => {
     if (!mins || mins <= 0) return '—';
@@ -293,7 +290,7 @@ function AttendanceContent({ role }: AttendanceDashboardProps) {
   const handleApplyChanges = async () => {
     if (!editingLog) return;
     if (String(editingLog.id).startsWith('absent-')) {
-      alert('Cannot edit an absent record — the employee has no clock-in/out entry for this day.');
+      showToast('error', 'Cannot Edit', 'Cannot edit an absent record — the employee has no clock-in/out entry for this day.');
       return;
     }
     setActionLoading(true);
@@ -310,14 +307,14 @@ function AttendanceContent({ role }: AttendanceDashboardProps) {
       });
       const data = await res.json();
       if (data.success) {
-        setShowSuccessToast(true);
+        showToast('success', role === 'admin' ? 'Record Updated' : 'Adjustment Submitted', role === 'admin' ? 'Attendance record successfully updated!' : 'Adjustment submitted for admin approval!');
         setEditingLog(null);
         fetchRecords();
       } else {
-        alert(data.message || 'Update failed');
+        showToast('error', 'Update Failed', data.message || 'Update failed');
       }
     } catch (e: any) {
-      alert(e.message || 'Network error');
+      showToast('error', 'Network Error', e.message || 'Network error');
     } finally {
       setActionLoading(false);
     }
@@ -794,14 +791,7 @@ function AttendanceContent({ role }: AttendanceDashboardProps) {
         </div>
       )}
 
-      {/* Success toast */}
-      {showSuccessToast && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 z-[110]">
-          <span className="text-sm font-bold tracking-tight">
-            {role === 'admin' ? 'Attendance record successfully updated!' : 'Adjustment submitted for admin approval!'}
-          </span>
-        </div>
-      )}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

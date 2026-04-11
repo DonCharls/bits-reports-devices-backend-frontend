@@ -40,7 +40,7 @@ function SidebarInner({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollaps
   const isOnEmployees = pathname === '/hr/employees';
   const isOnReports = pathname.startsWith('/hr/reports');
   const isOnAdjust = pathname === '/hr/adjust';
-  const isOnOrganization = pathname.startsWith('/hr/departments') || pathname.startsWith('/hr/branches');
+  const isOnOrganization = pathname.startsWith('/hr/organization') || pathname.startsWith('/hr/branches');
   const isOnShifts = pathname.startsWith('/hr/shifts');
 
   const [employeesOpen, setEmployeesOpen] = useState(isOnEmployees || isInactivePage);
@@ -51,7 +51,7 @@ function SidebarInner({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollaps
     { href: '/hr/attendance' },
     { href: '/hr/employees', matchPrefix: '/hr/employees' },
     { href: '/hr/shifts', matchPrefix: '/hr/shifts' },
-    { href: '/hr/departments', matchFn: (p: string) => p.startsWith('/hr/departments') || p.startsWith('/hr/branches') },
+    { href: '/hr/organization', matchFn: (p: string) => p.startsWith('/hr/organization') || p.startsWith('/hr/branches') },
     { href: '/hr/reports', matchFn: (p: string) => p.startsWith('/hr/reports') },
     { href: '/hr/adjust' },
   ];
@@ -242,7 +242,7 @@ function SidebarInner({ isMobileOpen, setIsMobileOpen, isCollapsed, setIsCollaps
           {/* Organization */}
           <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
             <Link
-              href="/hr/departments"
+              href="/hr/organization"
               onClick={() => setIsMobileOpen(false)}
               className={`flex items-center gap-4 py-3 relative z-10 ${isOnOrganization ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
               style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
