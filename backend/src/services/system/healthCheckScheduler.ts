@@ -235,6 +235,14 @@ class HealthCheckScheduler {
                     // If the device transitioned from offline to online, trigger background reconciliation
                     if (reachable) {
                         void triggerAutoReconcile(device.id, device.name);
+                        void audit({
+                            action: 'RECONCILE',
+                            entityType: 'Device',
+                            entityId: device.id,
+                            source: 'health-check',
+                            details: `Auto-reconcile triggered for "${device.name}" after coming back online`,
+                            metadata: { deviceName: device.name, ip: device.ip },
+                        });
                     }
 
                     // Emit SSE status-change event
@@ -254,7 +262,7 @@ class HealthCheckScheduler {
                         entityId: device.id,
                         source: 'health-check',
                         details: `Device "${device.name}" (${device.ip}) ${verb}`,
-                        metadata: { category: 'device', deviceName: device.name, ip: device.ip },
+                        metadata: { deviceName: device.name, ip: device.ip },
                     });
 
                     console.log(`[${ts()}] [HealthCheck] "${device.name}" → ${reachable ? 'ONLINE ✓' : 'OFFLINE ✗'}`);

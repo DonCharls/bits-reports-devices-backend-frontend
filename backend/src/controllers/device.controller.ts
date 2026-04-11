@@ -72,14 +72,14 @@ export const createDevice = async (req: Request, res: Response) => {
 
         console.log(`[Devices] Created device "${device.name}" (${device.ip}:${device.port})`);
 
-        await audit({
+        void audit({
             action: 'CREATE',
             entityType: 'Device',
             entityId: device.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Added new device "${device.name}" (${device.ip})`,
-            metadata: { category: 'device' }
+            correlationId: req.correlationId
         });
 
         res.status(201).json({ success: true, message: `Device "${device.name}" added successfully`, device });
@@ -128,14 +128,15 @@ export const updateDevice = async (req: Request, res: Response) => {
 
         console.log(`[Devices] Updated device ID ${id}: "${device.name}" (${device.ip}:${device.port})`);
 
-        await audit({
+        void audit({
             action: 'UPDATE',
             entityType: 'Device',
             entityId: device.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Updated device "${device.name}" (${device.ip})`,
-            metadata: changes.length > 0 ? { category: 'device', updates: changes } : { category: 'device' }
+            metadata: changes.length > 0 ? { updates: changes } : undefined,
+            correlationId: req.correlationId
         });
 
         res.json({ success: true, message: `Device "${device.name}" updated. Please test the connection.`, device });
@@ -157,14 +158,15 @@ export const deleteDevice = async (req: Request, res: Response) => {
 
         await prisma.device.delete({ where: { id } });
 
-        await audit({
+        void audit({
             action: 'DELETE',
             entityType: 'Device',
             entityId: id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
+            level: 'WARN',
             details: `Removed device "${existing.name}"`,
-            metadata: { category: 'device' }
+            correlationId: req.correlationId
         });
 
         console.log(`[Devices] Deleted device ID ${id}: "${existing.name}"`);
@@ -326,14 +328,14 @@ export const reconcileDevice = async (req: Request, res: Response) => {
         const mode = dryRun ? 'Preview (dry run)' : 'Reconcile Queued';
 
         if (!dryRun) {
-            await audit({
+            void audit({
                 action: 'SYNC',
                 entityType: 'Device',
                 entityId: id,
                 performedBy: req.user?.employeeId,
                 source: 'admin-panel',
                 details: `Reconciled device (queued): pushing ${report.pushed.length}, removing ${report.deleted.length}`,
-                metadata: { category: 'device' }
+                correlationId: req.correlationId
             });
         }
 
@@ -373,14 +375,14 @@ export const toggleDevice = async (req: Request, res: Response) => {
         const state = updated.syncEnabled ? 'enabled' : 'disabled';
         console.log(`[Devices] Sync ${state} for "${updated.name}" (${updated.ip})`);
 
-        await audit({
+        void audit({
             action: 'STATUS_CHANGE',
             entityType: 'Device',
             entityId: updated.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Device sync was ${state}`,
-            metadata: { category: 'device' }
+            correlationId: req.correlationId
         });
 
         return res.json({ success: true, message: `Sync ${state} for "${updated.name}"`, device: updated });
@@ -424,14 +426,15 @@ export const syncBiometrics = async (req: Request, res: Response) => {
 
             console.log(`[GlobalSync] Completed. ${successCount} successful, ${failCount} failed.`);
             
-            await audit({
+            void audit({
                 action: 'SYNC',
                 entityType: 'System',
                 entityId: 0,
                 performedBy: req.user?.employeeId,
                 source: 'admin-panel',
                 details: `Global biometric sync completed. ${successCount} success, ${failCount} failed.`,
-                metadata: { category: 'device', successCount, failCount }
+                metadata: { successCount, failCount },
+                correlationId: req.correlationId
             });
         });
 

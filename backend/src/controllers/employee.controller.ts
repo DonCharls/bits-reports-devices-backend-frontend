@@ -160,13 +160,14 @@ export const deleteEmployee = async (req: Request, res: Response) => {
             },
         });
 
-        await audit({
+        void audit({
             action: 'STATUS_CHANGE',
             entityType: 'Employee',
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             details: `Employee ${employee.firstName} ${employee.lastName} deactivated`,
-            metadata: { category: 'employee', previousStatus: employee.employmentStatus, newStatus: 'INACTIVE' }
+            metadata: { previousStatus: employee.employmentStatus, newStatus: 'INACTIVE' },
+            correlationId: req.correlationId
         });
 
         res.json({
@@ -229,13 +230,14 @@ export const reactivateEmployee = async (req: Request, res: Response) => {
             },
         });
 
-        await audit({
+        void audit({
             action: 'STATUS_CHANGE',
             entityType: 'Employee',
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             details: `Employee ${updatedEmployee.firstName} ${updatedEmployee.lastName} reactivated`,
-            metadata: { category: 'employee', previousStatus: existingEmployee.employmentStatus, newStatus: 'ACTIVE' }
+            metadata: { previousStatus: existingEmployee.employmentStatus, newStatus: 'ACTIVE' },
+            correlationId: req.correlationId
         });
 
         res.json({
@@ -328,13 +330,14 @@ export const createEmployee = async (req: Request, res: Response) => {
 
         if (existingEmployee) {
             const duplicateField = existingEmployee.email === email ? 'email address' : 'employee number';
-            await audit({
+            void audit({
                 action: 'CREATE',
                 level: 'WARN',
                 entityType: 'Employee',
                 performedBy: req.user?.employeeId,
                 details: `Failed to create employee: duplicate ${duplicateField}`,
-                metadata: { category: 'employee', email, employeeNumber }
+                metadata: { email, employeeNumber },
+                correlationId: req.correlationId
             });
 
             return res.status(400).json({
@@ -416,13 +419,14 @@ export const createEmployee = async (req: Request, res: Response) => {
 
         console.log(`[API] Created employee: ${newEmployee.firstName} ${newEmployee.lastName} (zkId: ${newEmployee.zkId})`);
 
-        await audit({
+        void audit({
             action: 'CREATE',
             entityType: 'Employee',
             entityId: newEmployee.id,
             performedBy: req.user?.employeeId,
             details: `Created employee ${newEmployee.firstName} ${newEmployee.lastName}`,
-            metadata: { category: 'employee', email, role: newEmployee.role, department, employeeNumber }
+            metadata: { email, role: newEmployee.role, department, employeeNumber },
+            correlationId: req.correlationId
         });
 
         // ── Respond immediately — device sync happens in the background ──────
@@ -465,13 +469,14 @@ export const createEmployee = async (req: Request, res: Response) => {
     } catch (error: any) {
         console.error('Error creating employee:', error);
 
-        await audit({
+        void audit({
             action: 'CREATE',
             level: 'ERROR',
             entityType: 'Employee',
             performedBy: req.user?.employeeId,
             details: `Failed to create employee due to server error: ${error.message}`,
-            metadata: { category: 'employee', error: error.message }
+            metadata: { error: error.message },
+            correlationId: req.correlationId
         });
 
         res.status(500).json({
@@ -534,13 +539,14 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
                 select: { firstName: true, lastName: true, zkId: true }
             });
 
-            await audit({
+            void audit({
                 action: 'UPDATE',
                 entityType: 'Employee',
                 entityId: employeeId,
                 performedBy: req.user?.employeeId,
                 details: `Triggered fingerprint enrollment on device for ${emp?.firstName} ${emp?.lastName} (Finger ${finger})`,
-                metadata: { category: 'employee', deviceId: device, fingerIndex: finger, zkId: emp?.zkId }
+                metadata: { deviceId: device, fingerIndex: finger, zkId: emp?.zkId },
+                correlationId: req.correlationId
             });
 
             return res.status(200).json({
@@ -550,14 +556,15 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
         } else {
             const emp = await prisma.employee.findUnique({ where: { id: employeeId }, select: { firstName: true, lastName: true } });
 
-            await audit({
+            void audit({
                 action: 'UPDATE',
                 level: 'ERROR',
                 entityType: 'Employee',
                 entityId: employeeId,
                 performedBy: req.user?.employeeId,
                 details: `Failed to enroll fingerprint for ${emp?.firstName} ${emp?.lastName} (Finger ${finger}): ${result.message}`,
-                metadata: { category: 'employee', deviceId: device, fingerIndex: finger, error: result.error || result.message }
+                metadata: { deviceId: device, fingerIndex: finger, error: result.error || result.message },
+                correlationId: req.correlationId
             });
 
             return res.status(500).json({
@@ -571,14 +578,15 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
         console.error('[API] Enrollment error:', error);
 
         const empId = req.params.id ? parseInt(req.params.id as string) : undefined;
-        await audit({
+        void audit({
             action: 'UPDATE',
             level: 'ERROR',
             entityType: 'Employee',
             entityId: isNaN(empId as number) ? undefined : empId,
             performedBy: req.user?.employeeId,
             details: `Exception while starting fingerprint enrollment: ${error.message}`,
-            metadata: { category: 'employee', error: error.message, body: req.body }
+            metadata: { error: error.message, body: req.body },
+            correlationId: req.correlationId
         });
 
         return res.status(500).json({
@@ -625,13 +633,14 @@ export const enrollEmployeeCardController = async (req: Request, res: Response) 
                 select: { firstName: true, lastName: true, zkId: true }
             });
 
-            await audit({
+            void audit({
                 action: 'UPDATE',
                 entityType: 'Employee',
                 entityId: employeeId,
                 performedBy: req.user?.employeeId,
                 details: `Enrolled RFID badge #${cardNumber} for ${emp?.firstName} ${emp?.lastName}`,
-                metadata: { cardNumber, zkId: emp?.zkId }
+                metadata: { cardNumber, zkId: emp?.zkId },
+                correlationId: req.correlationId
             });
 
             return res.status(200).json({
@@ -642,14 +651,15 @@ export const enrollEmployeeCardController = async (req: Request, res: Response) 
         } else {
             const statusCode = result.error === 'duplicate_card' ? 409 : 500;
 
-            await audit({
+            void audit({
                 action: 'UPDATE',
                 level: 'ERROR',
                 entityType: 'Employee',
                 entityId: employeeId,
                 performedBy: req.user?.employeeId,
                 details: `Failed to enroll RFID badge #${cardNumber}: ${result.message}`,
-                metadata: { cardNumber, error: result.error || result.message }
+                metadata: { cardNumber, error: result.error || result.message },
+                correlationId: req.correlationId
             });
 
             return res.status(statusCode).json({
@@ -664,14 +674,15 @@ export const enrollEmployeeCardController = async (req: Request, res: Response) 
         console.error('[API] Card enrollment error:', error);
 
         const empId = req.params.id ? parseInt(req.params.id as string) : undefined;
-        await audit({
+        void audit({
             action: 'UPDATE',
             level: 'ERROR',
             entityType: 'Employee',
             entityId: isNaN(empId as number) ? undefined : empId,
             performedBy: req.user?.employeeId,
             details: `Exception while enrolling RFID badge: ${error.message}`,
-            metadata: { error: error.message, body: req.body }
+            metadata: { error: error.message, body: req.body },
+            correlationId: req.correlationId
         });
 
         return res.status(500).json({
@@ -704,13 +715,15 @@ export const deleteEmployeeCardController = async (req: Request, res: Response) 
                 select: { firstName: true, lastName: true, zkId: true }
             });
 
-            await audit({
+            void audit({
                 action: 'DELETE',
                 entityType: 'Employee',
                 entityId: employeeId,
                 performedBy: req.user?.employeeId,
+                level: 'WARN',
                 details: `Removed RFID badge for ${emp?.firstName} ${emp?.lastName}`,
-                metadata: { zkId: emp?.zkId }
+                metadata: { zkId: emp?.zkId },
+                correlationId: req.correlationId
             });
 
             return res.status(200).json({
@@ -881,13 +894,14 @@ export const updateEmployee = async (req: Request, res: Response) => {
             }
         }
 
-        await audit({
+        void audit({
             action: 'UPDATE',
             entityType: 'Employee',
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             details: `Updated employee ${updatedEmployee.firstName} ${updatedEmployee.lastName}`,
-            metadata: changes.length > 0 ? { category: 'employee', updates: changes } : { category: 'employee' }
+            metadata: changes.length > 0 ? { updates: changes } : undefined,
+            correlationId: req.correlationId
         });
 
         res.json({
@@ -990,13 +1004,15 @@ export const permanentDeleteEmployee = async (req: Request, res: Response) => {
             await tx.employee.delete({ where: { id: employeeId } });
         });
 
-        await audit({
+        void audit({
             action: 'DELETE',
             entityType: 'Employee',
             entityId: employeeId,
             performedBy: req.user?.employeeId,
+            level: 'WARN',
             details: `Permanently deleted employee ${employee.firstName} ${employee.lastName}`,
-            metadata: { category: 'employee', email: employee.email, role: employee.role }
+            metadata: { email: employee.email, role: employee.role },
+            correlationId: req.correlationId
         });
 
         res.json({
@@ -1296,13 +1312,15 @@ export const deleteEmployeeFingerprint = async (req: Request, res: Response) => 
         if (result.success) {
             const fingerLabel = `Finger ${fingerIndex + 1}`;
 
-            await audit({
+            void audit({
                 action: 'DELETE',
                 entityType: 'Employee',
                 entityId: employeeId,
                 performedBy: req.user?.employeeId,
+                level: 'WARN',
                 details: `Deleted ${fingerLabel} globally`,
-                metadata: { category: 'employee', fingerIndex, fingerLabel },
+                metadata: { fingerIndex, fingerLabel },
+                correlationId: req.correlationId
             });
 
             return res.status(200).json(result);
@@ -1336,13 +1354,14 @@ export const syncEmployeeFingerprintsController = async (req: Request, res: Resp
                 select: { firstName: true, lastName: true },
             });
 
-            await audit({
+            void audit({
                 action: 'UPDATE',
                 entityType: 'Employee',
                 entityId: employeeId,
                 performedBy: req.user?.employeeId,
-                details: `Synced fingerprints for ${emp?.firstName} ${emp?.lastName}: ${result.results.filter(r => r.status === 'synced').length} device(s)`,
-                metadata: { category: 'employee', results: result.results },
+                details: `Synced fingerprints for ${emp?.firstName} ${emp?.lastName}: ${result.results.filter((r: any) => r.status === 'synced').length} device(s)`,
+                metadata: { results: result.results },
+                correlationId: req.correlationId
             });
 
             return res.status(200).json(result);
@@ -1518,17 +1537,17 @@ export const exportEmployees = async (req: Request, res: Response) => {
 
         const buffer = await workbook.xlsx.writeBuffer();
 
-        await audit({
+        void audit({
             action: 'EXPORT',
             entityType: 'Employee',
             performedBy: req.user?.employeeId,
             details: `Exported ${employees.length} employee(s) to Excel`,
             metadata: {
-                category: 'employee',
                 count: employees.length,
                 filters: { department: department || 'all', branch: branch || 'all' },
                 filename,
             },
+            correlationId: req.correlationId
         });
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -1990,13 +2009,14 @@ export const bulkCreateEmployees = async (req: Request, res: Response) => {
 
                 console.log(`[BULK] Created employee: ${newEmployee.firstName} ${newEmployee.lastName} (zkId: ${newEmployee.zkId})`);
 
-                await audit({
+                void audit({
                     action: 'CREATE',
                     entityType: 'Employee',
                     entityId: newEmployee.id,
                     performedBy: req.user?.employeeId,
                     details: `Bulk import: created employee ${newEmployee.firstName} ${newEmployee.lastName}`,
-                    metadata: { category: 'employee', email: emp.email, employeeNumber: empNum, source: 'bulk_import' },
+                    metadata: { email: emp.email, employeeNumber: empNum, source: 'bulk_import' },
+                    correlationId: req.correlationId
                 });
 
                 // Fire-and-forget: email + device sync (same pattern as single create)
@@ -2029,12 +2049,13 @@ export const bulkCreateEmployees = async (req: Request, res: Response) => {
         const succeeded = results.filter(r => r.status === 'success').length;
         const failed = results.filter(r => r.status === 'failed').length;
 
-        await audit({
+        void audit({
             action: 'CREATE',
             entityType: 'Employee',
             performedBy: req.user?.employeeId,
             details: `Bulk import completed: ${succeeded} succeeded, ${failed} failed out of ${employees.length} rows`,
-            metadata: { category: 'employee', source: 'bulk_import', succeeded, failed, total: employees.length },
+            metadata: { source: 'bulk_import', succeeded, failed, total: employees.length },
+            correlationId: req.correlationId
         });
 
         res.status(200).json({

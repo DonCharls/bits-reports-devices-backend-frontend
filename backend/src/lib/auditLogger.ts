@@ -1,17 +1,32 @@
 import { prisma } from './prisma';
+import { AuditAction, AuditEntity, AuditCategory, AuditSource } from '../types/auditTypes';
 
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR';
 
 export interface AuditLogPayload {
-    action: string;
-    entityType: string;
+    action: string | AuditAction;
+    entityType: string | AuditEntity;
+    category?: string | AuditCategory;
     entityId?: number;
     performedBy?: number;
-    source?: string;
+    source?: string | AuditSource;
     level?: LogLevel;
     details?: string;
     metadata?: Record<string, any>;
+    correlationId?: string;
 }
+
+const ENTITY_TO_CATEGORY: Record<string, AuditCategory> = {
+    'Account': 'auth',
+    'User Account': 'auth',
+    'Attendance': 'attendance',
+    'Device': 'device',
+    'Employee': 'employee',
+    'Shift': 'config',
+    'Department': 'config',
+    'Branch': 'config',
+    'System': 'system',
+};
 
 /**
  * Centralized Audit Logger Utility
@@ -20,6 +35,24 @@ export interface AuditLogPayload {
  */
 export const audit = async (payload: AuditLogPayload): Promise<void> => {
     try {
+        // 1. Derive category if not explicitly provided
+        const category = payload.category
+            || payload.metadata?.category
+            || ENTITY_TO_CATEGORY[payload.entityType as string]
+            || 'system';
+
+        // 2. Clean metadata — remove redundant 'category' key
+        let cleanMeta = payload.metadata
+            ? JSON.parse(JSON.stringify(payload.metadata))
+            : null;
+        if (cleanMeta) {
+            delete cleanMeta.category;
+            // If deleting category leaves it completely empty, let's keep it null instead of {}
+            if (Object.keys(cleanMeta).length === 0) {
+                cleanMeta = null;
+            }
+        }
+
         await prisma.auditLog.create({
             data: {
                 level: payload.level || 'INFO',
@@ -29,7 +62,9 @@ export const audit = async (payload: AuditLogPayload): Promise<void> => {
                 performedBy: payload.performedBy,
                 source: payload.source || 'system',
                 details: payload.details,
-                metadata: payload.metadata ? JSON.parse(JSON.stringify(payload.metadata)) : null,
+                metadata: cleanMeta,
+                category,
+                correlationId: payload.correlationId,
             }
         });
     } catch (error) {

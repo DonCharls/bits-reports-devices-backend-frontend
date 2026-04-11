@@ -37,14 +37,14 @@ export const createDepartment = async (req: Request, res: Response) => {
         }
         const department = await prisma.department.create({ data: { name: trimmedName, updatedAt: new Date() } });
 
-        await audit({
+        void audit({
             action: 'CREATE',
             entityType: 'Department',
             entityId: department.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Created new department "${department.name}"`,
-            metadata: { category: 'config' }
+            correlationId: req.correlationId
         });
 
         res.status(201).json({ success: true, department });
@@ -85,14 +85,15 @@ export const renameDepartment = async (req: Request, res: Response) => {
             changes.push(`Updated name from "${target.name}" to "${trimmedName}"`);
         }
 
-        await audit({
+        void audit({
             action: 'UPDATE',
             entityType: 'Department',
             entityId: department.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Renamed department to "${department.name}"`,
-            metadata: changes.length > 0 ? { category: 'config', updates: changes } : { category: 'config' }
+            metadata: changes.length > 0 ? { updates: changes } : undefined,
+            correlationId: req.correlationId
         });
 
         res.json({ success: true, department });
@@ -133,14 +134,15 @@ export const deleteDepartment = async (req: Request, res: Response) => {
 
         await prisma.department.delete({ where: { id } });
 
-        await audit({
+        void audit({
             action: 'DELETE',
             entityType: 'Department',
             entityId: id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
+            level: 'WARN',
             details: `Deleted department "${existing.name}"`,
-            metadata: { category: 'config' }
+            correlationId: req.correlationId
         });
 
         res.json({ success: true, message: `Department "${existing.name}" deleted` });

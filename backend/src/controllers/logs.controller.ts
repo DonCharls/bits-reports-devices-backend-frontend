@@ -85,28 +85,11 @@ export const getLogs = async (req: Request, res: Response) => {
             baseWhere.level = level;
         }
 
-        // Category filter — uses Prisma's JSON path filtering on metadata.category
-        // For categories, we filter by metadata.category using JSON path query.
-        // We also need to handle legacy logs that don't have metadata.category
-        // by falling back to entityType-based mapping.
-        const categoryEntityTypeMap: Record<string, any> = {
-            auth: { entityType: { in: ['Account', 'User Account'] } },
-            attendance: { entityType: 'Attendance' },
-            device: { entityType: 'Device' },
-            employee: { entityType: 'Employee' },
-            config: { entityType: { in: ['Shift', 'Department', 'Branch'] } },
-            system: { entityType: 'System' },
-        };
-
+        // Category filter directly targets the new DB column.
         const listWhere: any = { ...baseWhere };
 
-        // New category-based filtering takes precedence over legacy type param
         if (category && category !== 'all' && VALID_CATEGORIES.includes(category as LogCategory)) {
-            // Use metadata JSON path if supported, otherwise fall back to entityType mapping
-            const mapping = categoryEntityTypeMap[category];
-            if (mapping) {
-                Object.assign(listWhere, mapping);
-            }
+            listWhere.category = category;
         } else if (type === 'timekeeping') {
             // Legacy backward compat
             listWhere.entityType = 'Attendance';
@@ -115,13 +98,6 @@ export const getLogs = async (req: Request, res: Response) => {
         }
 
         // 2. Fetch the paginated logs and category counts concurrently
-        const countWhereForCategory = (cat: string) => {
-            const w: any = { ...baseWhere };
-            const mapping = categoryEntityTypeMap[cat];
-            if (mapping) Object.assign(w, mapping);
-            return w;
-        };
-
         const [total, rawLogs, ...categoryCounts] = await Promise.all([
             prisma.auditLog.count({ where: listWhere }),
             prisma.auditLog.findMany({
@@ -142,12 +118,12 @@ export const getLogs = async (req: Request, res: Response) => {
                 take: limitNum,
             }),
             // Category counts (without level filter, to show totals in tabs)
-            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, ...categoryEntityTypeMap.auth } }),
-            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, ...categoryEntityTypeMap.attendance } }),
-            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, ...categoryEntityTypeMap.device } }),
-            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, ...categoryEntityTypeMap.employee } }),
-            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, ...categoryEntityTypeMap.config } }),
-            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, ...categoryEntityTypeMap.system } }),
+            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, category: 'auth' } }),
+            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, category: 'attendance' } }),
+            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, category: 'device' } }),
+            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, category: 'employee' } }),
+            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, category: 'config' } }),
+            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, category: 'system' } }),
         ]);
 
         const allCount = categoryCounts.reduce((a, b) => a + b, 0);
@@ -155,8 +131,8 @@ export const getLogs = async (req: Request, res: Response) => {
         // 3. Map to the expected format for the frontend
         const mappedLogs = rawLogs.map((log: any) => {
             const empName = log.performer ? `${log.performer.firstName} ${log.performer.lastName}`.trim() : 'System';
-            const meta = (typeof log.metadata === 'object' && log.metadata !== null) ? log.metadata : {};
-            const logCategory = (meta as any).category || inferCategory(log.entityType, log.action);
+            // Use the explicit category column now Instead of inferring from entityType
+            const logCategory = log.category;
 
             return {
                 id: log.id.toString(),
@@ -170,7 +146,8 @@ export const getLogs = async (req: Request, res: Response) => {
                 details: log.details || `${log.action} on ${log.entityType}`,
                 source: log.source,
                 level: log.level,
-                metadata: log.metadata
+                metadata: log.metadata,
+                correlationId: log.correlationId
             };
         });
 
@@ -230,7 +207,7 @@ export const logExportEvent = async (req: Request, res: Response) => {
             return res.status(400).json({ success: false, message: 'exportType and entityType are required' });
         }
 
-        await audit({
+        void audit({
             action: 'EXPORT',
             entityType: entityType || 'System',
             performedBy,
@@ -238,13 +215,13 @@ export const logExportEvent = async (req: Request, res: Response) => {
             level: 'INFO',
             details: details || `Exported ${exportType} data`,
             metadata: {
-                category: 'system',
                 exportType,
                 filters: filters || {},
                 recordCount: recordCount ?? null,
                 fileFormat: fileFormat || 'xlsx',
                 fileName: fileName || null,
             },
+            correlationId: (req as any).correlationId
         });
 
         return res.json({ success: true, message: 'Export event logged' });

@@ -57,14 +57,15 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
         // Check for existing user with same email
         const existing = await prisma.employee.findFirst({ where: { email } });
         if (existing) {
-            await audit({
+            void audit({
                 action: 'CREATE',
                 level: 'WARN',
                 entityType: 'User Account',
                 performedBy: req.user?.employeeId,
                 source: 'admin-panel',
                 details: `Failed to create admin/HR account: Email already exists`,
-                metadata: { category: 'auth', email, role }
+                metadata: { email, role },
+                correlationId: req.correlationId
             });
             
             res.status(400).json({ success: false, message: 'A user with this email already exists' });
@@ -93,14 +94,14 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
             },
         });
 
-        await audit({
+        void audit({
             action: 'CREATE',
             entityType: 'User Account',
             entityId: newUser.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Created new ${role} account for ${firstName} ${lastName}`,
-            metadata: { category: 'auth' }
+            correlationId: req.correlationId
         });
 
         res.status(201).json({
@@ -114,14 +115,15 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     } catch (error: any) {
         console.error('Create user failed:', error);
         
-        await audit({
+        void audit({
             action: 'CREATE',
             level: 'ERROR',
             entityType: 'User Account',
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Failed to create admin/HR account due to server error: ${error.message}`,
-            metadata: { category: 'auth', error: error.message }
+            metadata: { error: error.message },
+            correlationId: req.correlationId
         });
 
         res.status(500).json({ success: false, message: 'Failed to create user' });
@@ -195,14 +197,15 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
             changes.push('Updated password');
         }
 
-        await audit({
+        void audit({
             action: 'UPDATE',
             entityType: 'User Account',
             entityId: updated.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Updated account details for user ID ${updated.id}`,
-            metadata: changes.length > 0 ? { category: 'auth', updates: changes } : { category: 'auth' }
+            metadata: changes.length > 0 ? { updates: changes } : undefined,
+            correlationId: req.correlationId
         });
 
         res.json({
@@ -243,14 +246,15 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
             data: { employmentStatus: 'INACTIVE' },
         });
 
-        await audit({
+        void audit({
             action: 'DELETE',
             entityType: 'User Account',
             entityId: id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
+            level: 'WARN',
             details: `Deactivated (soft-deleted) user account ID ${id}`,
-            metadata: { category: 'auth' }
+            correlationId: req.correlationId
         });
 
         res.json({ success: true, message: 'User deleted successfully' });
@@ -294,14 +298,14 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
             await prisma.refreshToken.deleteMany({ where: { employeeId: id } });
         }
 
-        await audit({
+        void audit({
             action: 'STATUS_CHANGE',
             entityType: 'User Account',
             entityId: updated.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Changed user account status to ${newStatus}`,
-            metadata: { category: 'auth' }
+            correlationId: req.correlationId
         });
 
         const selfDeactivated = newStatus === 'INACTIVE' && req.user?.employeeId === id;
@@ -346,14 +350,14 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
             },
         });
 
-        await audit({
+        void audit({
             action: 'UPDATE',
             entityType: 'User Account',
             entityId: updated.id,
             performedBy: employeeId,
             source: 'admin-panel',
             details: `User updated their own profile`,
-            metadata: { category: 'auth' }
+            correlationId: req.correlationId
         });
 
         res.json({
@@ -403,14 +407,14 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
             data: { password: hashedPassword, needsPasswordChange: false },
         });
 
-        await audit({
+        void audit({
             action: 'UPDATE',
             entityType: 'User Account',
             entityId: employeeId,
             performedBy: employeeId,
             source: 'admin-panel',
             details: `User changed their own password`,
-            metadata: { category: 'auth' }
+            correlationId: req.correlationId
         });
 
         res.json({ success: true, message: 'Password changed successfully' });

@@ -127,7 +127,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                     });
                     created++;
 
-                    await audit({
+                    void audit({
                         action: 'CHECK_IN',
                         entityType: 'Attendance',
                         entityId: createdRecord.id,
@@ -202,7 +202,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         });
                         updated++;
 
-                        await audit({
+                        void audit({
                             action: 'CHECK_OUT',
                             entityType: 'Attendance',
                             entityId: updatedRecord.id,
@@ -253,7 +253,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                     });
                     updated++;
 
-                    await audit({
+                    void audit({
                         action: 'CHECK_OUT',
                         entityType: 'Attendance',
                         entityId: updatedRecord2.id,
@@ -426,7 +426,7 @@ export const autoCheckoutEmployees = async (): Promise<number> => {
         }
 
         if (count > 0) {
-            await audit({
+            void audit({
                 action: 'AUTO_CHECKOUT',
                 entityType: 'System',
                 source: 'cron',
@@ -490,7 +490,7 @@ export const repairMissingCheckouts = async (): Promise<number> => {
         }
 
         if (flaggedCount > 0) {
-            await audit({
+            void audit({
                 action: 'FLAG_MISSING_CHECKOUT',
                 entityType: 'System',
                 source: 'startup-repair',

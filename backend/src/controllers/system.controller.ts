@@ -129,7 +129,7 @@ export const updateSyncConfig = async (req: Request, res: Response) => {
 
         // Only log if something actually changed
         if (changes.length > 0) {
-            await audit({
+            void audit({
                 action: 'CONFIG_UPDATE',
                 entityType: 'System',
                 entityId: 1,
@@ -140,7 +140,8 @@ export const updateSyncConfig = async (req: Request, res: Response) => {
                 metadata: {
                     updates: changes,
                     ...(warningMessage ? { warning: warningMessage } : {}),
-                }
+                },
+                correlationId: req.correlationId
             });
         }
 
@@ -183,13 +184,14 @@ export const toggleGlobalSync = async (req: Request, res: Response) => {
         const state = enabled ? 'enabled' : 'disabled';
         console.log(`[System] Global sync has been ${state}`);
 
-        await audit({
+        void audit({
             action: 'STATUS_CHANGE',
             entityType: 'System',
             entityId: 1,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Global sync was ${state}`
+            details: `Global sync was ${state}`,
+            correlationId: req.correlationId
         });
 
         res.json({ success: true, message: `Global sync has been ${state}`, config });
@@ -213,7 +215,7 @@ export const triggerManualSync = async (req: Request, res: Response) => {
 
         const level = syncResult?.status === 'SUCCESS' ? 'INFO' : (syncResult?.status === 'PARTIAL' ? 'WARN' : 'ERROR');
 
-        await audit({
+        void audit({
             action: 'MANUAL_SYNC',
             entityType: 'System',
             source: 'admin-panel',
@@ -225,7 +227,8 @@ export const triggerManualSync = async (req: Request, res: Response) => {
                 totalDevices: syncResult.totalDevices,
                 successfulDevices: syncResult.successfulDevices,
                 newLogsCount: syncResult.newLogs,
-            } : undefined
+            } : undefined,
+            correlationId: req.correlationId
         });
 
         if (result.success) {
@@ -247,14 +250,15 @@ export const triggerManualTimeSync = async (req: Request, res: Response) => {
         
         const result = await timeSyncScheduler.triggerNow();
 
-        await audit({
+        void audit({
             action: 'MANUAL_SYNC',
             entityType: 'System',
             source: 'admin-panel',
             level: result.success ? 'INFO' : 'ERROR',
             performedBy: req.user?.employeeId,
             details: result.success ? 'Manual device clock sync completed' : 'Manual device clock sync failed',
-            metadata: { target: 'time_sync', message: result.message }
+            metadata: { target: 'time_sync', message: result.message },
+            correlationId: req.correlationId
         });
 
         if (result.success) {
@@ -296,7 +300,7 @@ export const triggerManualLogBufferClear = async (req: Request, res: Response) =
 
         const result = await logBufferMaintenanceScheduler.triggerNow();
 
-        await audit({
+        void audit({
             action: 'DEVICE_LOG_BUFFER_CLEAR',
             entityType: 'System',
             source: 'admin-panel',
@@ -305,6 +309,7 @@ export const triggerManualLogBufferClear = async (req: Request, res: Response) =
             details: result.success
                 ? `Manual log buffer clear completed: ${result.message}`
                 : `Manual log buffer clear failed: ${result.message}`,
+            correlationId: req.correlationId
         });
 
         if (result.success) {

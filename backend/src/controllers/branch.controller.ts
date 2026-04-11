@@ -41,14 +41,14 @@ export const createBranch = async (req: Request, res: Response) => {
             data: { name: name.trim(), updatedAt: new Date() }
         });
 
-        await audit({
+        void audit({
             action: 'CREATE',
             entityType: 'Branch',
             entityId: branch.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Created new branch "${branch.name}"`,
-            metadata: { category: 'config' }
+            correlationId: req.correlationId
         });
 
         res.status(201).json({ success: true, branch });
@@ -89,14 +89,15 @@ export const renameBranch = async (req: Request, res: Response) => {
             changes.push(`Updated name from "${target.name}" to "${trimmedName}"`);
         }
 
-        await audit({
+        void audit({
             action: 'UPDATE',
             entityType: 'Branch',
             entityId: branch.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Renamed branch to "${branch.name}"`,
-            metadata: changes.length > 0 ? { category: 'config', updates: changes } : { category: 'config' }
+            metadata: changes.length > 0 ? { updates: changes } : undefined,
+            correlationId: req.correlationId
         });
 
         res.json({ success: true, branch });
@@ -138,14 +139,15 @@ export const deleteBranch = async (req: Request, res: Response) => {
 
         await prisma.branch.delete({ where: { id } });
 
-        await audit({
+        void audit({
             action: 'DELETE',
             entityType: 'Branch',
             entityId: id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
+            level: 'WARN',
             details: `Deleted branch "${existing.name}"`,
-            metadata: { category: 'config' }
+            correlationId: req.correlationId
         });
 
         res.json({ success: true, message: `Branch "${existing.name}" deleted` });

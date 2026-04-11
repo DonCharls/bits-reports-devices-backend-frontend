@@ -102,13 +102,14 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             res.status(401).json({ success: false, message: 'Invalid credentials' });
 
             // Log failed login — unknown user
-            await audit({
+            void audit({
                 action: 'FAILED_LOGIN',
                 level: 'WARN',
                 entityType: 'Account',
                 source: 'admin-panel',
                 details: `Failed login attempt for email "${email}" — account not found`,
-                metadata: { category: 'auth', email, reason: 'account_not_found', ip: req.ip }
+                metadata: { email, reason: 'account_not_found', ip: req.ip },
+                correlationId: req.correlationId
             });
             return;
         }
@@ -118,15 +119,16 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             res.status(401).json({ success: false, message: 'Invalid credentials' });
 
             // Log failed login — wrong password
-            await audit({
+            void audit({
                 action: 'FAILED_LOGIN',
                 level: 'WARN',
                 entityType: 'Account',
                 entityId: employee.id,
                 performedBy: employee.id,
                 source: 'admin-panel',
-                details: `Failed login attempt for ${employee.email} — invalid password`,
-                metadata: { category: 'auth', email: employee.email, reason: 'invalid_password', ip: req.ip }
+                details: `Failed login attempt for ${employee.firstName} ${employee.lastName} — invalid password`,
+                metadata: { email: employee.email, reason: 'invalid_password', ip: req.ip },
+                correlationId: req.correlationId
             });
             return;
         }
@@ -139,15 +141,16 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             });
 
             // Log blocked login — inactive account
-            await audit({
+            void audit({
                 action: 'FAILED_LOGIN',
                 level: 'WARN',
                 entityType: 'Account',
                 entityId: employee.id,
                 performedBy: employee.id,
                 source: 'admin-panel',
-                details: `Blocked login for deactivated account ${employee.email}`,
-                metadata: { category: 'auth', email: employee.email, reason: 'account_inactive', status: employee.employmentStatus, ip: req.ip }
+                details: `Blocked login for deactivated account ${employee.firstName} ${employee.lastName}`,
+                metadata: { email: employee.email, reason: 'account_inactive', status: employee.employmentStatus, ip: req.ip },
+                correlationId: req.correlationId
             });
             return;
         }
@@ -220,14 +223,15 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         const rateLimitKey = `${req.ip}:${email.toLowerCase()}`;
         loginLimiter.resetKey(rateLimitKey);
 
-        await audit({
+        void audit({
             action: 'LOGIN',
             entityType: 'Account',
             entityId: employee.id,
             performedBy: employee.id,
             source: 'admin-panel',
-            details: `User ${employee.email} logged in successfully`,
-            metadata: { category: 'auth', role: employee.role, email: employee.email }
+            details: `User ${employee.firstName} ${employee.lastName} logged in successfully`,
+            metadata: { email: employee.email },
+            correlationId: req.correlationId
         });
 
 
@@ -334,12 +338,28 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
 export const logout = async (req: Request, res: Response): Promise<void> => {
     try {
         const refreshTokenValue = req.cookies?.refresh_token;
+        let employeeIdToLog: number | undefined;
+        let employeeNameToLog: string = 'Unknown User';
 
         if (refreshTokenValue) {
-            // Delete from DB — token is now truly dead, cannot be reused
-            await prisma.refreshToken.deleteMany({
-                where: { token: refreshTokenValue }
+            // Find the token to identify WHO is logging out before we delete it
+            const storedToken = await prisma.refreshToken.findUnique({
+                where: { token: refreshTokenValue },
+                select: { 
+                    id: true, 
+                    employeeId: true,
+                    employee: { select: { firstName: true, lastName: true, email: true } }
+                }
             });
+
+            if (storedToken) {
+                employeeIdToLog = storedToken.employeeId;
+                employeeNameToLog = `${storedToken.employee.firstName} ${storedToken.employee.lastName}`;
+                // Delete from DB — token is now truly dead, cannot be reused
+                await prisma.refreshToken.delete({
+                    where: { id: storedToken.id }
+                });
+            }
         }
 
         res.clearCookie('auth_token', cookieOptions);
@@ -347,15 +367,19 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
 
         res.status(200).json({ success: true, message: 'Logged out successfully' });
 
-        if (req.user?.employeeId) {
-            await audit({
+        if (employeeIdToLog) {
+            void audit({
                 action: 'LOGOUT',
                 entityType: 'Account',
-                entityId: req.user.employeeId,
-                performedBy: req.user.employeeId,
+                entityId: employeeIdToLog,
+                performedBy: employeeIdToLog,
                 source: 'admin-panel',
-                details: `User logged out`,
-                metadata: { category: 'auth' }
+                details: `User ${employeeNameToLog} logged out`,
+                metadata: { 
+                    ip: req.ip, 
+                    userAgent: req.headers['user-agent'] 
+                },
+                correlationId: req.correlationId
             });
         }
 

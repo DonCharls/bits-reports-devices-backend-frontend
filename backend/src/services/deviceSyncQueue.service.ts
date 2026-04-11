@@ -446,10 +446,18 @@ export async function processDeviceSyncQueue(deviceId: number): Promise<void> {
             try {
                 await executeTask(task, zk);
                 
-                // Mark success
                 await prisma.deviceSyncTask.update({
                     where: { id: task.id },
                     data: { status: 'SUCCESS' }
+                });
+
+                void audit({
+                    action: 'SYNC_QUEUE_SUCCESS',
+                    entityType: 'Device',
+                    entityId: deviceId,
+                    source: 'device-sync',
+                    details: `Task ${task.actionType} for ${task.entityId} completed successfully`,
+                    metadata: { actionType: task.actionType, entityId: task.entityId },
                 });
                 
                 processedCount++;

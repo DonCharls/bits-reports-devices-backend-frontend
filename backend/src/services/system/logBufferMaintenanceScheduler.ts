@@ -142,7 +142,7 @@ class LogBufferMaintenanceScheduler {
 
             this.lastRunAt = new Date();
 
-            await audit({
+            void audit({
                 action: 'DEVICE_LOG_BUFFER_CLEAR',
                 entityType: 'System',
                 source: 'cron',
@@ -169,7 +169,7 @@ class LogBufferMaintenanceScheduler {
             const errMsg = err instanceof Error ? err.message : 'Unknown error';
             console.error(`[${ts()}] [LogBufferMaintenance] ✗ Maintenance failed:`, errMsg);
 
-            await audit({
+            void audit({
                 action: 'DEVICE_LOG_BUFFER_CLEAR',
                 entityType: 'System',
                 source: 'cron',

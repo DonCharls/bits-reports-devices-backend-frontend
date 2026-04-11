@@ -17,6 +17,7 @@ declare global {
                 lastName: string;
                 name: string;
             };
+            correlationId: string;
         }
     }
 }

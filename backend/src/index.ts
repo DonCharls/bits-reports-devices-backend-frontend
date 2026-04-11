@@ -22,6 +22,7 @@ import timeRoutes from './routes/time_routes';
 import meRoutes from './routes/me_routes';
 import { startCronJobs } from './lib/cronJobs';
 import { repairMissingCheckouts } from './services/attendance.service';
+import { correlationId } from './middleware/correlationId.middleware';
 
 dotenv.config();
 
@@ -52,6 +53,7 @@ app.use(cors({
 
 app.use(express.json());
 app.use(morgan('dev')); // Request logging
+app.use(correlationId);
 
 // Swagger UI
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));

@@ -22,7 +22,6 @@ model Attendance {
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   employee             Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  AttendanceAuditLog   AttendanceAuditLog[]
   AttendanceAdjustment AttendanceAdjustment[]
   checkInDevice        Device?                @relation("AttCheckIn", fields: [checkInDeviceId], references: [id])
   checkOutDevice       Device?                @relation("AttCheckOut", fields: [checkOutDeviceId], references: [id])
@@ -33,23 +32,6 @@ model Attendance {
   @@index([status])
 }
 
-model AttendanceAuditLog {
-  id           Int      @id @default(autoincrement())
-  attendanceId Int
-  adjustedById Int
-  field        String
-  oldValue     String?
-  newValue     String?
-  reason       String?
-  createdAt    DateTime @default(now())
-
-  attendance Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
-  adjustedBy Employee   @relation("AdjustedBy", fields: [adjustedById], references: [id])
-
-  @@index([attendanceId])
-  @@index([adjustedById])
-  @@index([createdAt])
-}
 
 model AttendanceAdjustment {
   id            Int @id @default(autoincrement())
@@ -183,7 +165,6 @@ model Employee {
   Department                    Department?                     @relation(fields: [departmentId], references: [id])
   Branch                        Branch?                         @relation(fields: [branchId], references: [id])
   Shift                         Shift?                          @relation(fields: [shiftId], references: [id])
-  AttendanceAuditLogAdjusted    AttendanceAuditLog[]            @relation("AdjustedBy")
   AuditLogs                     AuditLog[]
   AdjustmentsSubmitted          AttendanceAdjustment[]          @relation("AdjustmentSubmittedBy")
   AdjustmentsReviewed           AttendanceAdjustment[]          @relation("AdjustmentReviewedBy")
@@ -286,6 +267,8 @@ model AuditLog {
   source      String   @default("system") // "admin-panel", "api", "cron", "device-sync", etc.
   details     String? // Human-readable summary
   metadata    Json? // Optional JSON: old/new values, IP, device info, etc.
+  category    String   @default("system") // "auth", "attendance", "device", "employee", "config", "system"
+  correlationId String? // UUID for request tracing
 
   performer Employee? @relation(fields: [performedBy], references: [id], onDelete: SetNull)
 
@@ -294,6 +277,8 @@ model AuditLog {
   @@index([entityType])
   @@index([performedBy])
   @@index([level])
+  @@index([category])
+  @@index([correlationId])
 }
 
 enum EmploymentStatus {

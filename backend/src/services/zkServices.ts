@@ -493,7 +493,7 @@ async function syncSingleDevice(dbDevice: {
                             performedBy: employee.id,
                             source: 'device-sync',
                             details: `Duplicate punch detected for ${employee.firstName} ${employee.lastName} (${Math.round(diffMs / 1000)}s apart)`,
-                            metadata: { category: 'attendance', employeeId: employee.id, zkId: zkUserId, diffSeconds: Math.round(diffMs / 1000), deviceId: dbDevice.id }
+                            metadata: { employeeId: employee.id, zkId: zkUserId, diffSeconds: Math.round(diffMs / 1000), deviceId: dbDevice.id }
                         });
                         continue;
                     }
@@ -519,7 +519,7 @@ async function syncSingleDevice(dbDevice: {
                         performedBy: employee.id,
                         source: 'device-sync',
                         details: `Duplicate punch detected for ${employee.firstName} ${employee.lastName} (exact timestamp match)`,
-                        metadata: { category: 'attendance', employeeId: employee.id, zkId: zkUserId, diffSeconds: 0, deviceId: dbDevice.id }
+                        metadata: { employeeId: employee.id, zkId: zkUserId, diffSeconds: 0, deviceId: dbDevice.id }
                     });
                     continue;
                 }
@@ -571,7 +571,7 @@ async function syncSingleDevice(dbDevice: {
             lastPolledAt: new Date()
         });
 
-        await audit({
+        void audit({
             action: 'DEVICE_SYNC',
             entityType: 'Device',
             entityId: dbDevice.id,
@@ -605,7 +605,7 @@ async function syncSingleDevice(dbDevice: {
             lastPolledAt: new Date()
         });
 
-        await audit({
+        void audit({
             action: 'DEVICE_SYNC',
             entityType: 'Device',
             entityId: dbDevice.id,

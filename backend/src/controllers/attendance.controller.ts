@@ -258,7 +258,8 @@ export const updateAttendance = async (req: Request, res: Response) => {
                 performedBy: adjustedById,
                 source: 'admin-panel',
                 details: `Attendance adjustment submitted for record #${recordId}`,
-                metadata: { category: 'attendance', adjustmentId: adjustment.id, reason: String(reason).trim(), requestedCheckIn: checkInTime || null, requestedCheckOut: checkOutTime || null }
+                metadata: { adjustmentId: adjustment.id, reason: String(reason).trim(), requestedCheckIn: checkInTime || null, requestedCheckOut: checkOutTime || null },
+                correlationId: req.correlationId
             });
             return;
         }
@@ -315,17 +316,6 @@ export const updateAttendance = async (req: Request, res: Response) => {
         });
 
         if (auditEntries.length > 0) {
-            await prisma.attendanceAuditLog.createMany({
-                data: auditEntries.map(entry => ({
-                    attendanceId: recordId,
-                    adjustedById,
-                    field: entry.field,
-                    oldValue: entry.oldValue,
-                    newValue: entry.newValue,
-                    reason: reason || null,
-                })),
-            });
-
             void audit({
                 action: 'ATTENDANCE_OVERRIDE',
                 entityType: 'Attendance',
@@ -334,7 +324,8 @@ export const updateAttendance = async (req: Request, res: Response) => {
                 source: 'admin-panel',
                 level: 'WARN',
                 details: `Admin performed an immediate override on attendance record #${recordId}`,
-                metadata: { category: 'attendance', fieldsChanged: auditEntries.map(e => e.field), reason }
+                metadata: { changes: auditEntries, reason },
+                correlationId: req.correlationId
             });
         }
 
@@ -362,91 +353,128 @@ export const getAttendanceAuditLogs = async (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 15;
     const search = (req.query.search as string) || '';
     const branch = (req.query.branch as string) || '';
-    const date = (req.query.date as string) || '';
+    const dateStr = (req.query.date as string) || '';
 
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    // Use the central AuditLog instead of the legacy AttendanceAuditLog table
+    const where: any = {
+        entityType: 'Attendance',
+        action: { in: ['ATTENDANCE_OVERRIDE', 'ADJUSTMENT_APPROVE'] }
+    };
 
-    if (branch) {
-      where.attendance = {
-        employee: { branch }
-      };
-    }
-
-    if (date) {
-      const start = new Date(date);
+    if (dateStr) {
+      const start = new Date(dateStr);
       start.setUTCHours(0, 0, 0, 0);
-      const end = new Date(date);
+      const end = new Date(dateStr);
       end.setUTCHours(23, 59, 59, 999);
-      where.createdAt = { gte: start, lte: end };
+      where.timestamp = { gte: start, lte: end };
     }
 
-    if (search) {
-      where.OR = [
-        {
-          attendance: {
-            employee: {
-              OR: [
+    if (search || branch) {
+       // Since AuditLog handles entityId as an unconstrained Int, 
+       // we must fetch valid attendance IDs that match the employee criteria.
+       const attWhere: any = {};
+       if (branch) attWhere.employee = { branch };
+       if (search) {
+          attWhere.employee = {
+             ...attWhere.employee,
+             OR: [
+                { firstName: { contains: search, mode: 'insensitive' } },
+                { lastName: { contains: search, mode: 'insensitive' } }
+             ]
+          };
+       }
+       
+       const matchedAtts = await prisma.attendance.findMany({ 
+           where: attWhere, 
+           select: { id: true } 
+       });
+       const validAttIds = matchedAtts.map(a => a.id);
+
+       if (search) {
+          // If searching, it could match the attendance employee OR the adjuster
+          where.OR = [
+             { entityId: { in: validAttIds } },
+             { performer: { OR: [
                 { firstName: { contains: search, mode: 'insensitive' } },
                 { lastName: { contains: search, mode: 'insensitive' } },
-              ]
-            }
-          }
-        },
-        {
-          adjustedBy: {
-            OR: [
-              { firstName: { contains: search, mode: 'insensitive' } },
-              { lastName: { contains: search, mode: 'insensitive' } },
-            ]
-          }
-        }
-      ];
+             ] } }
+          ];
+       } else {
+          // If just branch, it only filters the attendance employee
+          where.entityId = { in: validAttIds };
+       }
     }
 
-    const [total, logs] = await Promise.all([
-      prisma.attendanceAuditLog.count({ where }),
-      prisma.attendanceAuditLog.findMany({
+    const [total, rawLogs] = await Promise.all([
+      prisma.auditLog.count({ where }),
+      prisma.auditLog.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          field: true,
-          oldValue: true,
-          newValue: true,
-          reason: true,
-          createdAt: true,
-          attendance: {
-            select: {
-              employee: {
+        orderBy: { timestamp: 'desc' },
+        include: {
+            performer: {
                 select: {
-                  firstName: true,
-                  lastName: true,
-                  branch: true,
-                  role: true,
+                    firstName: true,
+                    lastName: true,
+                    role: true
                 }
-              }
             }
-          },
-          adjustedBy: {
-            select: {
-              firstName: true,
-              lastName: true,
-              role: true,
-            }
-          }
         }
       })
     ]);
 
+    // Manually fetch Attendance details to attach to each log
+    const attIdsToFetch = Array.from(new Set(rawLogs.map(l => l.entityId).filter(Boolean))) as number[];
+    const attRecords = await prisma.attendance.findMany({
+        where: { id: { in: attIdsToFetch } },
+        include: {
+            employee: {
+                select: {
+                    firstName: true,
+                    lastName: true,
+                    branch: true,
+                    role: true
+                }
+            }
+        }
+    });
+
+    const attMap = new Map(attRecords.map(a => [a.id, a]));
+
+    // Flatten the `changes` array from metadata into individual rows (field updates)
+    // to preserve backward compatibility with the frontend's expected format.
+    const mappedLogs: any[] = [];
+    for (const log of rawLogs) {
+        const attendance = log.entityId ? attMap.get(log.entityId) : null;
+        if (!attendance) continue;
+
+        const changes = (log.metadata as any)?.changes || [];
+        const reason = (log.metadata as any)?.reason || null;
+
+        for (const change of changes) {
+            mappedLogs.push({
+                id: `${log.id}-${change.field}`, // synthetic ID
+                field: change.field,
+                oldValue: change.oldValue,
+                newValue: change.newValue,
+                reason: reason,
+                createdAt: log.timestamp,
+                attendance: {
+                    employee: attendance.employee
+                },
+                adjustedBy: log.performer || { firstName: 'System', lastName: '', role: 'SYSTEM' }
+            });
+        }
+    }
+
     return res.json({
       success: true,
-      data: logs,
+      data: mappedLogs,
       meta: {
-        total,
+        total, // Total operations
         page,
         limit,
         totalPages: Math.ceil(total / limit),
@@ -579,7 +607,8 @@ export const reviewAdjustment = async (req: Request, res: Response) => {
           performedBy: reviewerId,
           source: 'admin-panel',
           details: `Adjustment #${adjustmentId} rejected`,
-          metadata: { category: 'attendance', adjustmentId, rejectionReason: String(rejectionReason).trim() }
+          metadata: { adjustmentId, rejectionReason: String(rejectionReason).trim() },
+          correlationId: req.correlationId
       });
 
       return res.json({ success: true, message: 'Adjustment rejected' });
@@ -629,20 +658,7 @@ export const reviewAdjustment = async (req: Request, res: Response) => {
       data: updateData
     });
 
-    // Create audit log entries
-    if (auditEntries.length > 0) {
-      await prisma.attendanceAuditLog.createMany({
-        data: auditEntries.map(entry => ({
-          attendanceId: adjustment.attendanceId,
-          adjustedById: adjustment.submittedById,
-          field: entry.field,
-          oldValue: entry.oldValue,
-          newValue: entry.newValue,
-          reason: adjustment.reason,
-        })),
-      });
-    }
-
+    // Removed the legacy AttendanceAuditLog.createMany write
     // Update adjustment status
     await prisma.attendanceAdjustment.update({
       where: { id: adjustmentId },
@@ -664,7 +680,8 @@ export const reviewAdjustment = async (req: Request, res: Response) => {
         performedBy: reviewerId,
         source: 'admin-panel',
         details: `Adjustment #${adjustmentId} approved and applied`,
-        metadata: { category: 'attendance', adjustmentId, changesApplied: auditEntries.length }
+        metadata: { adjustmentId, changesApplied: auditEntries.length, changes: auditEntries, reason: adjustment.reason },
+        correlationId: req.correlationId
     });
 
     return res.json({ success: true, message: 'Adjustment approved and applied' });

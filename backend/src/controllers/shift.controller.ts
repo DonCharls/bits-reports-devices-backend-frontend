@@ -111,14 +111,14 @@ export const createShift = async (req: Request, res: Response) => {
             }
         });
 
-        await audit({
+        void audit({
             action: 'CREATE',
             entityType: 'Shift',
             entityId: shift.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Created new shift "${shift.name}" (${shift.shiftCode})`,
-            metadata: { category: 'config' }
+            correlationId: req.correlationId
         });
 
         res.status(201).json({ success: true, shift });
@@ -219,14 +219,15 @@ export const updateShift = async (req: Request, res: Response) => {
             }
         }
 
-        await audit({
+        void audit({
             action: 'UPDATE',
             entityType: 'Shift',
             entityId: shift.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Updated shift "${shift.name}" (${shift.shiftCode})`,
-            metadata: changes.length > 0 ? { category: 'config', updates: changes } : { category: 'config' }
+            metadata: changes.length > 0 ? { updates: changes } : undefined,
+            correlationId: req.correlationId
         });
 
         res.json({ success: true, shift });
@@ -250,14 +251,14 @@ export const toggleShift = async (req: Request, res: Response) => {
             data: { isActive: !existing.isActive }
         });
 
-        await audit({
+        void audit({
             action: 'STATUS_CHANGE',
             entityType: 'Shift',
             entityId: shift.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Shift "${shift.name}" was ${shift.isActive ? 'activated' : 'deactivated'}`,
-            metadata: { category: 'config' }
+            correlationId: req.correlationId
         });
 
         res.json({ success: true, shift, message: `Shift ${shift.isActive ? 'activated' : 'deactivated'}` });
@@ -288,14 +289,15 @@ export const deleteShift = async (req: Request, res: Response) => {
 
         await prisma.shift.delete({ where: { id } });
 
-        await audit({
+        void audit({
             action: 'DELETE',
             entityType: 'Shift',
             entityId: id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
+            level: 'WARN',
             details: `Deleted shift "${existing.name}"`,
-            metadata: { category: 'config' }
+            correlationId: req.correlationId
         });
 
         res.json({ success: true, message: `Shift "${existing.name}" deleted` });
