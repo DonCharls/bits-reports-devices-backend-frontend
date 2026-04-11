@@ -39,11 +39,10 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
   }, [fetchPendingCount])
 
   const isOnEmployees = pathname.startsWith('/employees')
-  const isOnReports = pathname.startsWith('/admin/reports') || pathname === '/admin/adjust' || pathname.startsWith('/admin/adjust/')
+  const isOnReports = pathname.startsWith('/admin/reports')
 
   // Inactive sub-item is toggleable anytime by clicking the chevron
   const [inactiveOpen, setInactiveOpen] = useState(isOnEmployees)
-  const [reportsOpen, setReportsOpen] = useState(isOnReports)
 
   // On mobile (<lg) the sidebar should NEVER appear collapsed — labels must always show
   const collapsed = isCollapsed && isLg
@@ -65,7 +64,8 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
     { href: '/shifts' },
     { href: '/organization' },
     { href: '/devices' },
-    { href: '/admin/reports', matchPrefix: '/admin/reports' }, // Used for index match
+    { href: '/admin/reports', matchPrefix: '/admin/reports' },
+    { href: '/admin/adjust', matchPrefix: '/admin/adjust' },
     { href: '/admin/logs' },
     { href: '/admin/system' },
     { href: '/admin/user-accounts' },
@@ -95,7 +95,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
   useEffect(() => {
     const timer = setTimeout(updateIndicator, 320)
     return () => clearTimeout(timer)
-  }, [inactiveOpen, reportsOpen, collapsed, updateIndicator])
+  }, [inactiveOpen, collapsed, updateIndicator])
 
   const labelStyle = {
     opacity: collapsed ? 0 : 1,
@@ -304,55 +304,32 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
             </Link>
           </li>
 
-          {/* Reports (with submenu) */}
+          {/* Reports */}
           <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
-            <div className="flex items-center relative z-10">
-              <Link
-                href="/admin/reports"
-                onClick={onClose}
-                className={`flex items-center gap-4 py-3 flex-1 ${isOnReports ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
-                style={{ paddingLeft: '12px' }}
-                title={collapsed ? 'Reports' : undefined}
-              >
-                <FileText size={22} className={`shrink-0 ${isOnReports ? 'text-[#E60000]' : 'text-white'}`} />
-                <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Reports</span>
-              </Link>
-              {!collapsed && (
-                <button
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setReportsOpen(o => !o); }}
-                  className={`p-2 mr-2 rounded-lg transition-colors shrink-0 ${isOnReports ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
-                  title="Toggle submenu"
-                >
-                  <ChevronDown
-                    size={16}
-                    style={{ transition: 'transform 300ms cubic-bezier(0.4, 0, 0.2, 1)', transform: reportsOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                  />
-                </button>
-              )}
-            </div>
-            {!collapsed && (
-              <div
-                style={{
-                  maxHeight: reportsOpen ? '56px' : '0px',
-                  overflow: 'hidden',
-                  transition: 'max-height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-                }}
-              >
-                <div className="pl-4 pr-3 pb-2 relative z-10">
-                  <Link
-                    href="/admin/adjust"
-                    onClick={onClose}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${pathname === '/admin/adjust'
-                      ? isOnReports ? 'text-[#E60000]' : 'text-white'
-                      : isOnReports ? 'text-[#E60000]/60 hover:text-[#E60000]' : 'text-white/60 hover:text-white'
-                      }`}
-                  >
-                    <History size={15} className="shrink-0" />
-                    Adjustment Logs
-                  </Link>
-                </div>
-              </div>
-            )}
+            <Link
+              href="/admin/reports"
+              onClick={onClose}
+              className={`flex items-center gap-4 py-3 relative z-10 ${isOnReports ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
+              title={collapsed ? 'Reports' : undefined}
+            >
+              <FileText size={22} className={`shrink-0 ${isOnReports ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Reports</span>
+            </Link>
+          </li>
+
+          {/* Adjustment Logs */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <Link
+              href="/admin/adjust"
+              onClick={onClose}
+              className={`flex items-center gap-4 py-3 relative z-10 ${pathname === '/admin/adjust' || pathname.startsWith('/admin/adjust/') ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
+              title={collapsed ? 'Adjustment Logs' : undefined}
+            >
+              <History size={22} className={`shrink-0 ${pathname === '/admin/adjust' || pathname.startsWith('/admin/adjust/') ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Adjustment Logs</span>
+            </Link>
           </li>
 
           {/* System Logs */}
