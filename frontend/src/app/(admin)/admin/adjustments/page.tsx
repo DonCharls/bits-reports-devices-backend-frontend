@@ -3,6 +3,8 @@
 export const dynamic = 'force-dynamic'
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useToast } from '@/hooks/useToast';
+import ToastContainer from '@/components/ui/ToastContainer';
 import { Search, Loader2, CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight, AlertCircle, X } from 'lucide-react';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 
@@ -86,7 +88,10 @@ export default function AdminAdjustmentsPage() {
   const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-  const [successToast, setSuccessToast] = useState('');
+  const { toasts, showToast, dismissToast } = useToast();
+
+  // Approve confirmation modal
+  const [approvingId, setApprovingId] = useState<number | null>(null);
 
   const fetchAdjustments = useCallback(async () => {
     try {
@@ -115,15 +120,10 @@ export default function AdminAdjustmentsPage() {
 
   useEffect(() => { fetchAdjustments(); }, [fetchAdjustments]);
   useEffect(() => { setCurrentPage(1); }, [searchQuery, statusFilter]);
-  useEffect(() => {
-    if (successToast) {
-      const t = setTimeout(() => setSuccessToast(''), 3000);
-      return () => clearTimeout(t);
-    }
-  }, [successToast]);
+
 
   const handleApprove = async (id: number) => {
-    if (!confirm('Are you sure you want to approve this adjustment? The attendance record will be updated.')) return;
+    setApprovingId(null);
     setActionLoading(true);
     try {
       const res = await fetch(`/api/attendance/adjustments/${id}/review`, {
@@ -134,13 +134,13 @@ export default function AdminAdjustmentsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setSuccessToast('Adjustment approved and applied!');
+        showToast('success', 'Adjustment Approved', 'Adjustment approved and applied!');
         fetchAdjustments();
       } else {
-        alert(data.message || 'Failed to approve');
+        showToast('error', 'Approval Failed', data.message || 'Failed to approve');
       }
     } catch (e: any) {
-      alert(e.message || 'Network error');
+      showToast('error', 'Approval Failed', e.message || 'Network error');
     } finally {
       setActionLoading(false);
     }
@@ -149,7 +149,7 @@ export default function AdminAdjustmentsPage() {
   const handleReject = async () => {
     if (!rejectingId) return;
     if (!rejectionReason.trim()) {
-      alert('Please provide a reason for rejection.');
+      showToast('warning', 'Reason Required', 'Please provide a reason for rejection.');
       return;
     }
     setActionLoading(true);
@@ -162,15 +162,15 @@ export default function AdminAdjustmentsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setSuccessToast('Adjustment rejected.');
+        showToast('success', 'Adjustment Rejected', 'Adjustment rejected.');
         setRejectingId(null);
         setRejectionReason('');
         fetchAdjustments();
       } else {
-        alert(data.message || 'Failed to reject');
+        showToast('error', 'Rejection Failed', data.message || 'Failed to reject');
       }
     } catch (e: any) {
-      alert(e.message || 'Network error');
+      showToast('error', 'Rejection Failed', e.message || 'Network error');
     } finally {
       setActionLoading(false);
     }
@@ -283,7 +283,7 @@ export default function AdminAdjustmentsPage() {
                     <td className="px-4 py-3 text-center">
                       {adj.status === 'pending' ? (
                         <div className="flex items-center justify-center gap-1.5">
-                          <button onClick={() => handleApprove(adj.id)} disabled={actionLoading}
+                          <button onClick={() => setApprovingId(adj.id)} disabled={actionLoading}
                             className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 transition-all shadow-sm disabled:opacity-50 active:scale-95">
                             ✅ Approve
                           </button>
@@ -377,13 +377,30 @@ export default function AdminAdjustmentsPage() {
         </div>
       )}
 
-      {/* Success Toast */}
-      {successToast && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 z-110">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          <span className="text-sm font-bold tracking-tight">{successToast}</span>
+      {/* Approve Confirmation Modal */}
+      {approvingId && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 text-center space-y-4">
+              <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-7 h-7 text-emerald-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-800 tracking-tight">Approve Adjustment?</h3>
+                <p className="text-sm text-slate-500 mt-1">The attendance record will be updated with the requested changes.</p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setApprovingId(null)} className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all">Cancel</button>
+                <button onClick={() => handleApprove(approvingId)} disabled={actionLoading} className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 transition-all shadow-lg shadow-emerald-200 active:scale-95">
+                  {actionLoading ? 'Approving…' : 'Approve'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

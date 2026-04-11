@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Edit2, UserPlus, Search, Download, Trash2, AlertTriangle, RefreshCcw, Calendar as CalendarIcon, ChevronDown, ChevronUp } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useToast } from '@/hooks/useToast';
+import ToastContainer from '@/components/ui/ToastContainer';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/ui/SortableHeader';
 
@@ -22,8 +24,7 @@ function InactiveRecordsContent() {
     const [branchFilter, setBranchFilter] = useState("All Branches");
     const [deletingEmployee, setDeletingEmployee] = useState<any>(null);
     const [restoringEmployee, setRestoringEmployee] = useState<any>(null);
-    const [showSuccessToast, setShowSuccessToast] = useState(false);
-    const [toastMessage, setToastMessage] = useState("");
+    const { toasts, showToast, dismissToast } = useToast();
     const [openDropdown, setOpenDropdown] = useState<string | null>(null);
     const dateInputRef = useRef<HTMLInputElement>(null);
 
@@ -31,12 +32,7 @@ function InactiveRecordsContent() {
         { firstName: "John", lastName: "Doe", dept: "I.T.", branch: "Tayud Branch", email: "john@biptip.com", phone: "0934-567-8901", date: getTodayDate() },
     ]);
 
-    useEffect(() => {
-        if (showSuccessToast) {
-            const timer = setTimeout(() => setShowSuccessToast(false), 3000);
-            return () => clearTimeout(timer);
-        }
-    }, [showSuccessToast]);
+
 
     const departments = ["All Departments", "Purchasing", "Finance", "I.T.", "Accounting", "Human Resources", "Engineering & Maintenance", "Office of the SVP - Corporate Services", "Marketing and Operations"];
     const branches = ["All Branches", "Main Office Branch", "Tayud Branch", "Makati Branch"];
@@ -61,15 +57,13 @@ function InactiveRecordsContent() {
     const handlePermanentDelete = () => {
         setEmployees(employees.filter(emp => emp.email !== deletingEmployee.email));
         setDeletingEmployee(null);
-        setToastMessage("Record deleted permanently.");
-        setShowSuccessToast(true);
+        showToast('success', 'Record Deleted', 'Record deleted permanently.');
     };
 
     const handleRestore = () => {
         setEmployees(employees.filter(emp => emp.email !== restoringEmployee.email));
         setRestoringEmployee(null);
-        setToastMessage("Employee restored to active status.");
-        setShowSuccessToast(true);
+        showToast('success', 'Employee Restored', 'Employee restored to active status.');
     };
 
     const exportEmployees = () => {
@@ -242,11 +236,7 @@ function InactiveRecordsContent() {
                 </div>
             )}
 
-            {showSuccessToast && (
-                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-4 rounded-2xl shadow-2xl z-[210] animate-in fade-in slide-in-from-bottom-4 duration-300">
-                    <span className="text-sm font-bold tracking-tight">{toastMessage}</span>
-                </div>
-            )}
+            <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         </div>
     );
 }

@@ -1,6 +1,8 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useToast } from '@/hooks/useToast'
+import ToastContainer from '@/components/ui/ToastContainer'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -52,6 +54,7 @@ const getPasswordStrength = (pw: string) => {
 }
 
 export default function UserAccountsPage() {
+  const { toasts, showToast, dismissToast } = useToast()
   const [users, setUsers] = useState<UserAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -188,6 +191,7 @@ export default function UserAccountsPage() {
       if (data.success) {
         await fetchUsers()
         setIsDialogOpen(false)
+        showToast('success', editingUser ? 'Account Updated' : 'Account Created', editingUser ? 'User account updated successfully' : 'User account created successfully')
       } else {
         setFormError(data.message || 'Failed to save user')
       }
@@ -214,8 +218,9 @@ export default function UserAccountsPage() {
           return
         }
         await fetchUsers()
+        showToast('success', 'Status Updated', `Account ${statusConfirm.currentStatus === 'ACTIVE' ? 'deactivated' : 'activated'} successfully`)
       } else {
-        alert(data.message || 'Failed to toggle status')
+        showToast('error', 'Toggle Failed', data.message || 'Failed to toggle status')
       }
     } catch (error) {
       console.error('Error toggling status:', error)
@@ -631,6 +636,7 @@ export default function UserAccountsPage() {
           </div>
         </div>
       )}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }

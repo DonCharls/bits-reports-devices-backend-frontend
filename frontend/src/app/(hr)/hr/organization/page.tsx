@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useToast } from '@/hooks/useToast'
+import ToastContainer from '@/components/ui/ToastContainer'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,6 +41,7 @@ export default function HRDepartmentsPage() {
   const [allEmployees, setAllEmployees] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [apiError, setApiError] = useState<string | null>(null)
+  const { toasts, showToast, dismissToast } = useToast()
 
   const [searchTerm, setSearchTerm] = useState('')
   const [branchFilter, setBranchFilter] = useState('all')
@@ -56,6 +59,12 @@ export default function HRDepartmentsPage() {
   const [editName, setEditName] = useState('')
   const [editLoading, setEditLoading] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
+
+  // Edit branch dialog
+  const [editingBranch, setEditingBranch] = useState<Branch | null>(null)
+  const [editBranchName, setEditBranchName] = useState('')
+  const [editBranchLoading, setEditBranchLoading] = useState(false)
+  const [editBranchError, setEditBranchError] = useState<string | null>(null)
 
   // Delete confirmation
   const [confirmDeleteDept, setConfirmDeleteDept] = useState<Department | null>(null)
@@ -154,6 +163,7 @@ export default function HRDepartmentsPage() {
       }
       setNewName('')
       setIsAddOpen(false)
+      showToast('success', addType === 'department' ? 'Department Created' : 'Branch Created', `${trimmed} has been added successfully`)
     } catch {
       setAddError('Network error. Please try again.')
     } finally {
@@ -192,10 +202,50 @@ export default function HRDepartmentsPage() {
         })
       }
       setEditingDept(null)
+      showToast('success', 'Department Renamed', `Department renamed to ${data.department.name}`)
     } catch {
       setEditError('Network error. Please try again.')
     } finally {
       setEditLoading(false)
+    }
+  }
+
+  // ── Rename branch ──
+  const handleEditBranchSave = async () => {
+    if (!editingBranch || !editBranchName.trim()) return
+    setEditBranchLoading(true)
+    setEditBranchError(null)
+    try {
+      const res = await fetch(`/api/branches/${editingBranch.id}`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        credentials: 'include',
+        body: JSON.stringify({ name: editBranchName.trim() }),
+      })
+      const data = await res.json()
+      if (!data.success) {
+        setEditBranchError(data.message || 'Failed to rename')
+        return
+      }
+      setBranches(prev =>
+        prev.map(b => b.id === editingBranch.id ? data.branch : b)
+          .sort((a, b) => a.name.localeCompare(b.name))
+      )
+      // Update counts key if name changed
+      if (branchCounts[editingBranch.name]) {
+        setBranchCounts(prev => {
+          const next = { ...prev }
+          next[data.branch.name] = next[editingBranch.name] || 0
+          delete next[editingBranch.name]
+          return next
+        })
+      }
+      setEditingBranch(null)
+      showToast('success', 'Branch Renamed', `Branch renamed to ${data.branch.name}`)
+    } catch {
+      setEditBranchError('Network error. Please try again.')
+    } finally {
+      setEditBranchLoading(false)
     }
   }
 
@@ -217,6 +267,7 @@ export default function HRDepartmentsPage() {
       }
       setDepartments(prev => prev.filter(d => d.id !== confirmDeleteDept.id))
       setConfirmDeleteDept(null)
+      showToast('success', 'Department Removed', `${confirmDeleteDept.name} has been removed`)
     } catch {
       setDeleteError('Network error. Please try again.')
     } finally {
@@ -242,6 +293,7 @@ export default function HRDepartmentsPage() {
       }
       setBranches(prev => prev.filter(b => b.id !== confirmDeleteBranch.id))
       setConfirmDeleteBranch(null)
+      showToast('success', 'Branch Removed', `${confirmDeleteBranch.name} has been removed`)
     } catch {
       setDeleteError('Network error. Please try again.')
     } finally {
@@ -349,6 +401,53 @@ export default function HRDepartmentsPage() {
                 className="px-8 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-colors flex items-center gap-2 disabled:opacity-60"
               >
                 {editLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Branch Dialog ── */}
+      {editingBranch && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
+          <div className="bg-white border-0 rounded-2xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
+            <div className="bg-red-600 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-white font-bold text-lg">Edit Branch</h3>
+                <p className="text-white/80 text-[10px] uppercase tracking-widest font-bold mt-1">Rename branch</p>
+              </div>
+              <button onClick={() => { setEditingBranch(null); setEditBranchError(null) }} className="text-white/80 hover:text-white transition-colors">
+                <XIcon className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <label className="text-slate-400 text-[10px] uppercase tracking-widest font-bold">Branch Name</label>
+                <input
+                  placeholder="e.g. CEBU CITY"
+                  className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+                  value={editBranchName}
+                  onChange={e => setEditBranchName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleEditBranchSave()}
+                />
+              </div>
+              {editBranchError && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{editBranchError}</p>}
+            </div>
+            <div className="flex items-center justify-center gap-6 px-6 py-4 border-t border-slate-100">
+              <button
+                className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                onClick={() => { setEditingBranch(null); setEditBranchError(null) }}
+                disabled={editBranchLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditBranchSave}
+                disabled={editBranchLoading}
+                className="px-8 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-colors flex items-center gap-2 disabled:opacity-60"
+              >
+                {editBranchLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                 Save Changes
               </button>
             </div>
@@ -511,6 +610,13 @@ export default function HRDepartmentsPage() {
                         <span className="text-[10px] font-bold text-emerald-500">Active</span>
                       </div>
                     )}
+                    <button
+                      onClick={() => { setEditingBranch(branch); setEditBranchName(branch.name); setEditBranchError(null) }}
+                      title="Edit branch"
+                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-slate-300 hover:text-blue-500 hover:bg-blue-50 transition-all"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
                     {count === 0 ? (
                       <button
                         onClick={() => { setConfirmDeleteBranch(branch); setDeleteError(null) }}
@@ -745,6 +851,7 @@ export default function HRDepartmentsPage() {
           </div>
         </div>
       )}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }

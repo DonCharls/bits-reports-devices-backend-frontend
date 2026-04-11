@@ -4,17 +4,17 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Shield, Lock, Eye, EyeOff, Save, CheckCircle, Mail, MapPin, Calendar, X, AlertTriangle, Phone } from 'lucide-react';
 import Image from 'next/image';
+import { useToast } from '@/hooks/useToast';
+import ToastContainer from '@/components/ui/ToastContainer';
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { toasts, showToast, dismissToast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
-  const [showToast, setShowToast] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [toastMessage, setToastMessage] = useState("");
-  const [toastType, setToastType] = useState<"success" | "error">("success");
 
   // User data from API
   const [userData, setUserData] = useState({
@@ -37,18 +37,7 @@ export default function SettingsPage() {
     confirm: ""
   });
 
-  const showToastMsg = (msg: string, type: "success" | "error" = "success") => {
-    setToastMessage(msg);
-    setToastType(type);
-    setShowToast(true);
-  };
 
-  useEffect(() => {
-    if (showToast) {
-      const timer = setTimeout(() => setShowToast(false), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [showToast]);
 
   // Fetch real user data from API
   useEffect(() => {
@@ -103,14 +92,14 @@ export default function SettingsPage() {
       if (data.success) {
         setOriginalData(userData);
         setIsEditingProfile(false);
-        showToastMsg("Profile updated successfully!");
+        showToast('success', 'Profile Updated', 'Profile updated successfully!');
         window.dispatchEvent(new Event('profileUpdate'));
       } else {
-        showToastMsg(data.message || "Failed to update profile.", "error");
+        showToast('error', 'Update Failed', data.message || 'Failed to update profile.');
       }
     } catch (error) {
       console.error('Error saving profile:', error);
-      showToastMsg("Failed to update profile.", "error");
+      showToast('error', 'Update Failed', 'Failed to update profile.');
     } finally {
       setIsSavingProfile(false);
     }
@@ -118,17 +107,17 @@ export default function SettingsPage() {
 
   const handlePasswordChange = async () => {
     if (!passwordForm.current || !passwordForm.new || !passwordForm.confirm) {
-      showToastMsg("Please fill in all password fields.", "error");
+      showToast('error', 'Validation Error', 'Please fill in all password fields.');
       return;
     }
 
     if (passwordForm.new.length < 8) {
-      showToastMsg("New password must be at least 8 characters.", "error");
+      showToast('error', 'Validation Error', 'New password must be at least 8 characters.');
       return;
     }
 
     if (passwordForm.new !== passwordForm.confirm) {
-      showToastMsg("New passwords do not match!", "error");
+      showToast('error', 'Validation Error', 'New passwords do not match!');
       return;
     }
 
@@ -147,14 +136,14 @@ export default function SettingsPage() {
 
       const data = await res.json();
       if (data.success) {
-        showToastMsg("Password changed successfully!");
+        showToast('success', 'Password Changed', 'Password changed successfully!');
         setPasswordForm({ current: "", new: "", confirm: "" });
       } else {
-        showToastMsg(data.message || "Failed to change password.", "error");
+        showToast('error', 'Password Change Failed', data.message || 'Failed to change password.');
       }
     } catch (error) {
       console.error('Error changing password:', error);
-      showToastMsg("Failed to change password.", "error");
+      showToast('error', 'Password Change Failed', 'Failed to change password.');
     } finally {
       setIsUpdatingPassword(false);
     }
@@ -451,12 +440,7 @@ export default function SettingsPage() {
       )}
 
       {/* Toast */}
-      {showToast && (
-        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 ${toastType === 'error' ? 'bg-red-600' : 'bg-emerald-600'} text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 z-50`}>
-          {toastType === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
-          <span className="text-sm font-bold tracking-tight">{toastMessage}</span>
-        </div>
-      )}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

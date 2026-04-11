@@ -26,7 +26,11 @@ import {
   TrendingDown,
   Timer,
   GitBranch,
+  Edit2,
+  Loader2,
 } from 'lucide-react'
+import { useToast } from '@/hooks/useToast'
+import ToastContainer from '@/components/ui/ToastContainer'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useTableSort } from '@/hooks/useTableSort'
 import { SortableHeader } from '@/components/ui/SortableHeader'
@@ -49,6 +53,15 @@ export default function BiometricPage() {
   const [records, setRecords] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Edit state
+  const [editingLog, setEditingLog] = useState<any | null>(null)
+  const [editCheckIn, setEditCheckIn] = useState('')
+  const [editCheckOut, setEditCheckOut] = useState('')
+  const [editReason, setEditReason] = useState('')
+  const [showCancelModal, setShowCancelModal] = useState(false)
+  const [actionLoading, setActionLoading] = useState(false)
+  const { toasts, showToast, dismissToast } = useToast()
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('')
@@ -323,6 +336,56 @@ export default function BiometricPage() {
 
   useEffect(() => { fetchRecords() }, [fetchRecords])
 
+  // Convert "07:45 AM" → "07:45" for time input
+  const toTimeInput = (str: string): string => {
+    if (!str || str === '—') return ''
+    try {
+      const d = new Date(`1970-01-01 ${str}`)
+      if (isNaN(d.getTime())) return ''
+      return d.toTimeString().slice(0, 5)
+    } catch { return '' }
+  }
+
+  const handleEditClick = (row: any) => {
+    setEditingLog(row)
+    setEditCheckIn(toTimeInput(row.checkIn))
+    setEditCheckOut(toTimeInput(row.checkOut))
+    setEditReason('')
+  }
+
+  const handleApplyChanges = async () => {
+    if (!editingLog) return
+    if (String(editingLog.id).startsWith('absent-')) {
+      showToast('error', 'Cannot Edit', 'Cannot edit an absent record — the employee has no clock-in/out entry for this day.')
+      return
+    }
+    setActionLoading(true)
+    try {
+      const body: any = { reason: editReason }
+      if (editCheckIn) body.checkInTime = `${editingLog.date}T${editCheckIn}:00+08:00`
+      if (editCheckOut) body.checkOutTime = `${editingLog.date}T${editCheckOut}:00+08:00`
+
+      const res = await fetch(`/api/attendance/${editingLog.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (data.success) {
+        showToast('success', 'Record Updated', 'Attendance record successfully updated!')
+        setEditingLog(null)
+        fetchRecords()
+      } else {
+        showToast('error', 'Update Failed', data.message || 'Update failed')
+      }
+    } catch (e: any) {
+      showToast('error', 'Network Error', e.message || 'Network error')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const handleExport = () => {
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
     const date = new Date(selectedDate + 'T00:00:00')
@@ -532,7 +595,7 @@ export default function BiometricPage() {
                         <p className="font-black text-foreground text-sm truncate uppercase tracking-tight">{row.employeeName}</p>
                         <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">{row.department} • {row.branchName}</p>
                       </div>
-                      <div className="shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
                         <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${row.displayStatus === 'present' ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
                           : row.displayStatus === 'IN_PROGRESS' ? 'text-blue-500 bg-blue-500/10 border-blue-500/20'
                             : row.displayStatus === 'late' ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
@@ -540,6 +603,9 @@ export default function BiometricPage() {
                           }`}>
                           {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus}
                         </span>
+                        <button onClick={() => handleEditClick(row)} className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-all">
+                          <Edit2 size={14} />
+                        </button>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -593,6 +659,7 @@ export default function BiometricPage() {
                   <SortableHeader label="OT" sortKey="overtimeMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-emerald-500" />
                   <SortableHeader label="UT" sortKey="undertimeMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-red-500" />
                   <SortableHeader label="Status" sortKey="status" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center" />
+                  <th className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -732,6 +799,11 @@ export default function BiometricPage() {
                         </Badge>
                       )}
                     </td>
+                    <td className="px-4 py-4 text-center">
+                      <button onClick={() => handleEditClick(record)} className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-all">
+                        <Edit2 size={16} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -749,6 +821,99 @@ export default function BiometricPage() {
           </div>
         )}
       </Card>
+
+      {/* Edit Modal */}
+      {editingLog && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-card rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col border border-border">
+            <div className="p-5 bg-primary text-primary-foreground flex justify-between items-center shrink-0">
+              <h3 className="font-bold text-lg leading-tight tracking-tight">Manual Time Changes</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-secondary p-3 rounded-xl border border-border">
+                <p className="text-sm font-bold text-foreground leading-none">{editingLog.employeeName}</p>
+                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider mt-1">
+                  {editingLog.department} • {editingLog.branchName}
+                  {editingLog.shiftCode && <span className="ml-2">• {editingLog.shiftCode}</span>}
+                </p>
+              </div>
+              {String(editingLog.id).startsWith('absent-') && (
+                <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-xl flex gap-3">
+                  <AlertCircle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-xs font-medium text-amber-200">This employee has no existing clock-in record for this day. Changes cannot be saved.</p>
+                </div>
+              )}
+              <div className="bg-blue-500/10 border border-blue-500/20 p-3 rounded-xl flex gap-3">
+                <Clock size={16} className="text-blue-400 shrink-0 mt-0.5" />
+                <p className="text-[10px] text-blue-300 leading-relaxed font-medium">
+                  <strong className="block mb-0.5 tracking-tight uppercase">Auto-Computed Status</strong>
+                  Status will be automatically determined based on the employee&apos;s assigned shift schedule and the recorded time-in / time-out.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-muted-foreground tracking-wider flex items-center gap-1.5"><Clock size={10} className="text-emerald-500" /> Clock In</label>
+                  <input type="time" value={editCheckIn} onChange={(e) => setEditCheckIn(e.target.value)}
+                    className="w-full p-2 bg-secondary border border-border rounded-xl text-xs font-bold text-foreground outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-muted-foreground tracking-wider flex items-center gap-1.5"><Clock size={10} className="text-red-500" /> Clock Out</label>
+                  <input type="time" value={editCheckOut} onChange={(e) => setEditCheckOut(e.target.value)}
+                    className="w-full p-2 bg-secondary border border-border rounded-xl text-xs font-bold text-foreground outline-none focus:ring-2 focus:ring-primary/20" />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black uppercase text-muted-foreground tracking-wider">Reason for Adjustment <span className="text-red-500">*</span></label>
+                <textarea value={editReason} onChange={(e) => setEditReason(e.target.value)}
+                  placeholder="e.g., Biometric error, Official business..."
+                  className={`w-full p-3 bg-secondary border rounded-xl h-16 text-xs outline-none focus:ring-2 focus:ring-primary/20 resize-none text-foreground ${!editReason.trim() ? 'border-red-500/50' : 'border-border'}`} />
+                {!editReason.trim() && (
+                  <p className="text-[10px] text-red-400 font-medium flex items-center gap-1">
+                    <AlertCircle size={10} />
+                    Reason is required. Please provide a reason before submitting.
+                  </p>
+                )}
+              </div>
+              <div className="bg-primary/10 border border-primary/20 p-3 rounded-xl flex gap-3 shadow-sm">
+                <AlertCircle size={18} className="text-primary shrink-0" />
+                <p className="text-[10px] text-foreground/80 leading-relaxed font-medium">
+                  <strong className="block mb-0.5 tracking-tight uppercase">Admin Override</strong>
+                  This change will bypass the adjustment queue and update the record permanently.
+                </p>
+              </div>
+            </div>
+            <div className="p-5 bg-secondary/50 flex gap-3 shrink-0 border-t border-border">
+              <button onClick={() => setShowCancelModal(true)} className="flex-1 px-4 py-3.5 text-sm font-bold text-muted-foreground hover:text-foreground transition-colors">Cancel</button>
+              <button
+                onClick={handleApplyChanges}
+                disabled={actionLoading || String(editingLog.id).startsWith('absent-') || !editReason.trim()}
+                className="flex-1 px-4 py-3.5 bg-primary text-primary-foreground rounded-xl text-sm font-black shadow-lg hover:bg-primary/90 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {actionLoading && <Loader2 size={15} className="animate-spin" />}
+                Apply Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel confirm modal */}
+      {showCancelModal && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div className="bg-card rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200 border border-border">
+            <div className="p-6 text-center space-y-4">
+              <h3 className="text-lg font-black text-foreground tracking-tight">Discard changes?</h3>
+              <p className="text-sm font-medium text-muted-foreground">Your unsaved modifications will be lost.</p>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setShowCancelModal(false)} className="flex-1 px-4 py-2.5 border border-border text-muted-foreground rounded-xl text-sm font-bold hover:bg-secondary transition-all">Cancel</button>
+                <button onClick={() => { setEditingLog(null); setShowCancelModal(false); }} className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-bold hover:bg-primary/90 transition-all active:scale-95">Yes</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }

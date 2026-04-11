@@ -4,6 +4,8 @@ import React, { useState, useEffect, Suspense, useMemo, useCallback } from 'reac
 import { useSearchParams } from 'next/navigation';
 import { Edit2, UserPlus, Search, Download, ChevronLeft, ChevronRight, Loader2, X, Fingerprint, CheckCircle2, WifiOff, Timer, AlertCircle, Key, CreditCard } from 'lucide-react';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
+import { useToast } from '@/hooks/useToast';
+import ToastContainer from '@/components/ui/ToastContainer';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
 import { validateEmployeeId } from '@/lib/employeeValidation';
@@ -12,12 +14,7 @@ import { SortableHeader } from '@/components/ui/SortableHeader';
 import RFIDCardEnrollmentModal from '@/components/biometrics/RFIDCardEnrollmentModal';
 import FingerprintDashboardModal from '@/components/biometrics/FingerprintDashboardModal';
 
-type Toast = {
-  id: number;
-  type: 'success' | 'warning' | 'error';
-  title: string;
-  message: string;
-};
+
 
 interface Employee {
   id?: number;
@@ -105,12 +102,7 @@ function EmployeeDirectoryContent() {
   const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // Toast system
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const showToast = (type: Toast['type'], title: string, message: string) => {
-    const id = Date.now();
-    setToasts(prev => [...prev, { id, type, title, message }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
-  };
+  const { toasts, showToast, dismissToast } = useToast();
 
   // Biometric Modal States
   const [fingerprintOpen, setFingerprintOpen] = useState<{ open: boolean, employeeId: number | null, employeeName: string }>({ open: false, employeeId: null, employeeName: '' });
@@ -1193,30 +1185,7 @@ function EmployeeDirectoryContent() {
         );
       })()}
 
-      {/* ── Toast Notifications ── */}
-      <div className="fixed top-5 right-5 z-[9999] flex flex-col gap-2 w-80 pointer-events-none">
-        {toasts.map(t => (
-          <div
-            key={t.id}
-            className={`flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border pointer-events-auto animate-in slide-in-from-right-8 duration-300
-              ${t.type === 'success' ? 'bg-white border-green-200' : t.type === 'warning' ? 'bg-white border-amber-200' : 'bg-white border-red-200'}`}
-          >
-            <span className={`mt-0.5 text-lg shrink-0 ${t.type === 'success' ? 'text-green-500' : t.type === 'warning' ? 'text-amber-500' : 'text-red-500'}`}>
-              {t.type === 'success' ? '✅' : t.type === 'warning' ? '⚠️' : '❌'}
-            </span>
-            <div className="flex-1 min-w-0">
-              <p className={`text-xs font-bold ${t.type === 'success' ? 'text-green-700' : t.type === 'warning' ? 'text-amber-700' : 'text-red-700'}`}>{t.title}</p>
-              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{t.message}</p>
-            </div>
-            <button
-              onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))}
-              className="text-slate-300 hover:text-slate-500 transition-colors shrink-0 mt-0.5"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        ))}
-      </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

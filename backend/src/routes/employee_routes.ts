@@ -5,6 +5,7 @@ import {
     deleteEmployee,
     reactivateEmployee,
     createEmployee,
+    bulkCreateEmployees,
     enrollEmployeeFingerprintController,
     enrollEmployeeCardController,
     deleteEmployeeCardController,
@@ -15,7 +16,9 @@ import {
     getEmployeeFingerprintStatus,
     getEmployeeCardStatus,
     deleteEmployeeFingerprint,
-    syncEmployeeFingerprintsController
+    syncEmployeeFingerprintsController,
+    exportEmployees,
+    exportTemplate
 } from '../controllers/employee.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { adminOrHR } from '../middleware/role.middleware';
@@ -136,6 +139,45 @@ router.get('/check-email', checkEmailAvailability);
 
 /**
  * @swagger
+ * /api/employees/export:
+ *   get:
+ *     summary: Export employees to .xlsx
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: department
+ *         schema:
+ *           type: string
+ *         description: Filter by department name
+ *       - in: query
+ *         name: branch
+ *         schema:
+ *           type: string
+ *         description: Filter by branch name
+ *     responses:
+ *       200:
+ *         description: Excel file download
+ */
+router.get('/export', exportEmployees);
+
+/**
+ * @swagger
+ * /api/employees/export-template:
+ *   get:
+ *     summary: Download blank import template (.xlsx)
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Excel template file download
+ */
+router.get('/export-template', exportTemplate);
+
+/**
+ * @swagger
  * /api/employees/sync-to-device:
  *   post:
  *     summary: Sync all employees to ZKTeco device
@@ -147,6 +189,33 @@ router.get('/check-email', checkEmailAvailability);
  *         description: Sync successful
  */
 router.post('/sync-to-device', syncEmployeesToDeviceController);
+
+/**
+ * @swagger
+ * /api/employees/bulk:
+ *   post:
+ *     summary: Bulk create employees from import
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - employees
+ *             properties:
+ *               employees:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *     responses:
+ *       200:
+ *         description: Bulk import results
+ */
+router.post('/bulk', bulkCreateEmployees);
 
 
 /**

@@ -1,7 +1,10 @@
 'use client'
 
 import React from "react"
-import { useState, useEffect } from 'react'
+import { useToast } from '@/hooks/useToast'
+import ToastContainer from '@/components/ui/ToastContainer'
+import { useState, useEffect, useCallback } from 'react'
+import * as XLSX from 'xlsx'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,7 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import { Search, Plus, Edit2, ChevronLeft, ChevronRight, Upload, AlertTriangle, AlertCircle, X as XIcon, Fingerprint, CheckCircle2, WifiOff, Timer, Loader2, Key, CreditCard } from 'lucide-react'
+import { Search, Plus, Edit2, ChevronLeft, ChevronRight, Upload, Download, AlertTriangle, AlertCircle, X as XIcon, Fingerprint, CheckCircle2, WifiOff, Timer, Loader2, Key, CreditCard, FileSpreadsheet, RotateCcw, CheckCircle, XCircle } from 'lucide-react'
 import { departmentsApi, branchesApi } from '@/lib/api'
 import type { Department, Branch } from '@/lib/api'
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll'
@@ -70,12 +73,7 @@ type ShiftOption = {
   endTime: string
 }
 
-type Toast = {
-  id: number
-  type: 'success' | 'warning' | 'error'
-  title: string
-  message: string
-}
+
 
 function formatTime(t: string) {
   if (!t) return '';
@@ -99,19 +97,53 @@ export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [toasts, setToasts] = useState<Toast[]>([])
-
-  const showToast = (type: Toast['type'], title: string, message: string) => {
-    const id = Date.now()
-    setToasts(prev => [...prev, { id, type, title, message }])
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000)
-  }
+  const { toasts, showToast, dismissToast } = useToast()
   const [selectedDept, setSelectedDept] = useState<string>('all')
   const [selectedBranch, setSelectedBranch] = useState<string>('all')
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [isImportOpen, setIsImportOpen] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
+  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
+
+  // ── Import flow state ──
+  type ImportRow = {
+    _rowNumber: number
+    employeeNumber: string
+    firstName: string
+    lastName: string
+    middleName?: string
+    suffix?: string
+    gender?: string
+    dateOfBirth?: string
+    email: string
+    contactNumber: string
+    department: string
+    branch: string
+    hireDate?: string
+    shiftCode?: string
+    shiftId?: number | null
+    status: 'valid' | 'invalid'
+    reason?: string
+  }
+  type ImportResult = { row: number; employeeNumber: string; status: 'success' | 'failed'; reason?: string }
+  const [importStep, setImportStep] = useState<'select' | 'preview' | 'results'>('select')
+  const [importParsedRows, setImportParsedRows] = useState<ImportRow[]>([])
+  const [importResults, setImportResults] = useState<ImportResult[]>([])
+  const [importFileError, setImportFileError] = useState<string | null>(null)
+
+  const MAX_IMPORT_ROWS = 200
+
+  const resetImportState = useCallback(() => {
+    setImportFile(null)
+    setImportStep('select')
+    setImportParsedRows([])
+    setImportResults([])
+    setImportFileError(null)
+    setIsImporting(false)
+  }, [])
+
 
   // Edit employee
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
@@ -210,6 +242,191 @@ export default function EmployeesPage() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [shifts, setShifts] = useState<ShiftOption[]>([])
 
+  const parseAndValidateFile = useCallback(async (file: File) => {
+    setImportFileError(null)
+    try {
+      const ab = await file.arrayBuffer()
+      const wb = XLSX.read(ab, { type: 'array', cellDates: true })
+      const sheet = wb.Sheets[wb.SheetNames[0]]
+      if (!sheet) { setImportFileError('No worksheet found in the file.'); return }
+      // range:1 skips the legend row (row 1) so row 2 (headers) becomes the key source
+      const jsonRows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '', range: 1 })
+      if (jsonRows.length === 0) { setImportFileError('The file contains no data rows.'); return }
+
+      // Filter out non-data rows: hint row, legend spillover, etc.
+      const isNonDataRow = (row: any): boolean => {
+        const empVal = String(row?.employeeNumber || row?.['Employee Number'] || '').trim().toLowerCase()
+        return empVal.startsWith('e.g') || empVal.startsWith('color') || empVal.startsWith('unique') || empVal === 'required field' || empVal === 'optional field'
+      }
+      const dataRows = jsonRows.filter(row => !isNonDataRow(row))
+
+      if (dataRows.length === 0) { setImportFileError('The file contains no data rows (only a hint row).'); return }
+      if (dataRows.length > MAX_IMPORT_ROWS) {
+        setImportFileError(`File contains ${dataRows.length} rows \u2014 maximum is ${MAX_IMPORT_ROWS}. Please split into smaller files.`)
+        return
+      }
+
+      // Normalize column names (handle both camelCase keys and "Human Readable" headers)
+      const normalize = (raw: any): Record<string, string> => {
+        const out: Record<string, string> = {}
+        for (const [k, v] of Object.entries(raw)) {
+          const key = k.replace(/[\s_]+/g, '').toLowerCase()
+          out[key] = v instanceof Date ? v.toISOString() : String(v ?? '').trim()
+        }
+        return out
+      }
+
+      const deptNames = departments.map(d => d.name)
+      const branchNames = branches.map(b => b.name)
+      const seenEmpNums = new Set<string>()
+      const seenEmails = new Set<string>()
+
+      const parsed: ImportRow[] = dataRows.map((raw, idx) => {
+        const n = normalize(raw)
+        const rowNum = idx + 2 // +1 for 0-index, +1 for header row
+        const empNum = n['employeenumber'] || n['employeeid'] || n['empid'] || ''
+        const firstName = n['firstname'] || ''
+        const lastName = n['lastname'] || ''
+        const middleName = n['middlename'] || undefined
+        const suffix = n['suffix'] || undefined
+        const gender = n['gender'] || undefined
+        const dateOfBirth = n['dateofbirth'] || n['dob'] || n['birthday'] || undefined
+        const email = n['email'] || n['emailaddress'] || ''
+        const contactNumber = (n['contactnumber'] || n['phonenumber'] || n['phone'] || n['contact'] || '').replace(/\s/g, '')
+        const department = n['department'] || n['dept'] || ''
+        const branch = n['branch'] || ''
+        const hireDate = n['hiredate'] || n['datehired'] || undefined
+        const shiftCode = n['shiftcode'] || n['shift'] || undefined
+
+        const errors: string[] = []
+
+        // Required fields
+        if (!empNum) errors.push('Missing employee number')
+        if (!firstName) errors.push('Missing first name')
+        if (!lastName) errors.push('Missing last name')
+        if (!email) errors.push('Missing email')
+        if (!contactNumber) errors.push('Missing contact number')
+        if (!department) errors.push('Missing department')
+        if (!branch) errors.push('Missing branch')
+
+        // Email format
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Invalid email format')
+
+        // Contact number: exactly 11 digits
+        if (contactNumber && contactNumber.replace(/\D/g, '').length !== 11) errors.push('Contact must be 11 digits')
+
+        // Dates
+        if (dateOfBirth && isNaN(Date.parse(dateOfBirth))) errors.push('Invalid date of birth')
+        if (hireDate && isNaN(Date.parse(hireDate))) errors.push('Invalid hire date')
+
+        // Department must match
+        if (department && !deptNames.includes(department)) errors.push(`Invalid department: ${department}`)
+
+        // Branch must match
+        if (branch && !branchNames.includes(branch)) errors.push(`Invalid branch: ${branch}`)
+
+        // Shift code must match
+        let resolvedShiftId: number | null = null
+        if (shiftCode) {
+          const matchedShift = shifts.find(s => s.shiftCode === shiftCode)
+          if (!matchedShift) errors.push(`Invalid shift code: ${shiftCode}`)
+          else resolvedShiftId = matchedShift.id
+        }
+
+        // Duplicate checks within the file
+        if (empNum) {
+          if (seenEmpNums.has(empNum)) errors.push('Duplicate employee number in file')
+          else seenEmpNums.add(empNum)
+        }
+        if (email) {
+          const lowerEmail = email.toLowerCase()
+          if (seenEmails.has(lowerEmail)) errors.push('Duplicate email in file')
+          else seenEmails.add(lowerEmail)
+        }
+
+        return {
+          _rowNumber: rowNum,
+          employeeNumber: empNum,
+          firstName,
+          lastName,
+          middleName,
+          suffix,
+          gender,
+          dateOfBirth,
+          email,
+          contactNumber,
+          department,
+          branch,
+          hireDate,
+          shiftCode,
+          shiftId: resolvedShiftId,
+          status: errors.length === 0 ? 'valid' : 'invalid',
+          reason: errors.length > 0 ? errors.join('; ') : undefined,
+        }
+      })
+
+      setImportParsedRows(parsed)
+      setImportStep('preview')
+    } catch (err: any) {
+      console.error('File parse error:', err)
+      setImportFileError('Failed to parse file. Please check the format and try again.')
+    }
+  }, [departments, branches, shifts])
+
+  const handleBulkImport = useCallback(async () => {
+    const validRows = importParsedRows.filter(r => r.status === 'valid')
+    if (validRows.length === 0) return
+
+    setIsImporting(true)
+    try {
+      const payload = validRows.map(r => ({
+        _rowNumber: r._rowNumber,
+        employeeNumber: r.employeeNumber,
+        firstName: r.firstName,
+        lastName: r.lastName,
+        middleName: r.middleName || undefined,
+        suffix: r.suffix || undefined,
+        gender: r.gender || undefined,
+        dateOfBirth: r.dateOfBirth || undefined,
+        email: r.email,
+        contactNumber: r.contactNumber || undefined,
+        department: r.department,
+        branch: r.branch,
+        hireDate: r.hireDate || undefined,
+        shiftId: r.shiftId || undefined,
+      }))
+
+      const res = await fetch('/api/employees/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ employees: payload }),
+      })
+      const data = await res.json()
+
+      if (data.success && data.results) {
+        setImportResults(data.results)
+        setImportStep('results')
+
+        const succeeded = data.results.filter((r: ImportResult) => r.status === 'success').length
+        const failed = data.results.filter((r: ImportResult) => r.status === 'failed').length
+
+        if (failed === 0) {
+          showToast('success', 'Import Complete', `All ${succeeded} employees imported successfully.`)
+        } else {
+          showToast('warning', 'Import Partially Complete', `${succeeded} imported, ${failed} failed. See details in the modal.`)
+        }
+      } else {
+        showToast('error', 'Import Failed', data.message || 'Server error during bulk import.')
+      }
+    } catch (err) {
+      console.error('Bulk import error:', err)
+      showToast('error', 'Import Failed', 'Could not reach the server.')
+    } finally {
+      setIsImporting(false)
+    }
+  }, [importParsedRows])
+
   const fetchShifts = async () => {
     try {
       const res = await fetch('/api/shifts', { credentials: 'include' })
@@ -255,6 +472,63 @@ export default function EmployeesPage() {
       console.error('Error fetching employees:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleExport = async () => {
+    setIsExporting(true)
+    try {
+      const params = new URLSearchParams()
+      if (selectedDept !== 'all') params.set('department', selectedDept)
+      if (selectedBranch !== 'all') params.set('branch', selectedBranch)
+      const url = `/api/employees/export${params.toString() ? `?${params}` : ''}`
+      const res = await fetch(url, { credentials: 'include' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        throw new Error(err?.message || 'Export failed')
+      }
+      const blob = await res.blob()
+      const disposition = res.headers.get('Content-Disposition') || ''
+      const filenameMatch = disposition.match(/filename="?([^"]+)"?/)
+      const filename = filenameMatch?.[1] || `employees_export_${new Date().toISOString().split('T')[0]}.xlsx`
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(a.href)
+      showToast('success', 'Export Complete', `Downloaded ${filename}`)
+    } catch (error: any) {
+      console.error('Export error:', error)
+      showToast('error', 'Export Failed', error.message || 'Could not export employees')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const handleDownloadTemplate = async () => {
+    setIsDownloadingTemplate(true)
+    try {
+      const res = await fetch('/api/employees/export-template', { credentials: 'include' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        throw new Error(err?.message || 'Template download failed')
+      }
+      const blob = await res.blob()
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = 'employee_import_template.xlsx'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(a.href)
+      showToast('success', 'Template Downloaded', 'Import template saved successfully')
+    } catch (error: any) {
+      console.error('Template download error:', error)
+      showToast('error', 'Download Failed', error.message || 'Could not download template')
+    } finally {
+      setIsDownloadingTemplate(false)
     }
   }
 
@@ -377,12 +651,13 @@ export default function EmployeesPage() {
       if (data.success) {
         await fetchEmployees()
         setConfirmDeactivate(null)
+        showToast('success', 'Employee Deactivated', `${confirmDeactivate.firstName} ${confirmDeactivate.lastName} moved to inactive`)
       } else {
-        alert('Failed to deactivate employee: ' + (data.message || 'Unknown error'))
+        showToast('error', 'Deactivation Failed', data.message || 'Unknown error')
       }
     } catch (error) {
       console.error('Error deactivating employee:', error)
-      alert('Failed to deactivate employee')
+      showToast('error', 'Deactivation Failed', 'Could not reach the server. Please try again.')
     } finally {
       setIsDeactivating(false)
     }
@@ -436,12 +711,13 @@ export default function EmployeesPage() {
       if (data.success) {
         await fetchEmployees()
         setEditingEmployee(null)
+        showToast('success', 'Profile Updated', 'Employee profile updated successfully!')
       } else {
-        alert('Failed to update employee: ' + (data.message || 'Unknown error'))
+        showToast('error', 'Update Failed', data.message || 'Unknown error')
       }
     } catch (error) {
       console.error('Error updating employee:', error)
-      alert('Failed to update employee')
+      showToast('error', 'Update Failed', 'Could not reach the server. Please try again.')
     }
   }
 
@@ -683,30 +959,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* Toast Notifications */}
-      <div className="fixed top-5 right-5 z-9999 flex flex-col gap-2 w-80 pointer-events-none">
-        {toasts.map(t => (
-          <div
-            key={t.id}
-            className={`flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border pointer-events-auto animate-in slide-in-from-right-8 duration-300
-              ${t.type === 'success' ? 'bg-white border-green-200' : t.type === 'warning' ? 'bg-white border-amber-200' : 'bg-white border-red-200'}`}
-          >
-            <span className={`mt-0.5 text-lg shrink-0 ${t.type === 'success' ? 'text-green-500' : t.type === 'warning' ? 'text-amber-500' : 'text-red-500'}`}>
-              {t.type === 'success' ? '✅' : t.type === 'warning' ? '⚠️' : '❌'}
-            </span>
-            <div className="flex-1 min-w-0">
-              <p className={`text-xs font-bold ${t.type === 'success' ? 'text-green-700' : t.type === 'warning' ? 'text-amber-700' : 'text-red-700'}`}>{t.title}</p>
-              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{t.message}</p>
-            </div>
-            <button
-              onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))}
-              className="text-slate-300 hover:text-slate-500 transition-colors shrink-0 mt-0.5"
-            >
-              <XIcon className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        ))}
-      </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
@@ -715,75 +968,248 @@ export default function EmployeesPage() {
           <p className="text-muted-foreground text-sm mt-1">Manage your active workforce and employee records</p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
+          {/* Export Excel Button */}
+          <Button
+            variant="outline"
+            className="flex-1 sm:flex-none border-border text-foreground hover:bg-red-700 hover:text-white gap-2"
+            disabled={isExporting}
+            onClick={handleExport}
+          >
+            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Export
+          </Button>
+
           {/* Import Excel Button */}
-          <Dialog open={isImportOpen} onOpenChange={(open) => { setIsImportOpen(open); if (!open) { setImportFile(null); } }}>
+          <Dialog open={isImportOpen} onOpenChange={(open) => { setIsImportOpen(open); if (!open) resetImportState(); }}>
             <DialogTrigger asChild>
-              <Button variant="outline" className="flex-1 sm:flex-none border-border text-foreground hover:bg-red-700 gap-2">
+              <Button variant="outline" className="flex-1 sm:flex-none border-border text-foreground hover:bg-red-700 hover:text-white gap-2">
                 <Upload className="w-4 h-4" />
-                <span className="hidden xs:inline">Import</span> Import
+                Import
               </Button>
             </DialogTrigger>
-            <DialogContent showCloseButton={false} className="bg-white border-0 max-w-md p-0 rounded-2xl overflow-hidden shadow-xl">
+            <DialogContent showCloseButton={false} className={`bg-white border-0 p-0 rounded-2xl overflow-hidden shadow-xl transition-all ${importStep === 'select' ? 'sm:max-w-md' : importStep === 'preview' ? 'sm:max-w-5xl' : 'sm:max-w-3xl'}`}>
               <div className="bg-red-600 px-6 py-4 flex items-center justify-between">
                 <div>
                   <DialogTitle className="text-white font-bold text-lg">Import Employees</DialogTitle>
-                  <DialogDescription className="text-white/80 text-[10px] uppercase tracking-widest font-bold mt-1">Upload from Excel or CSV</DialogDescription>
+                  <DialogDescription className="text-white/80 text-[10px] uppercase tracking-widest font-bold mt-1">
+                    {importStep === 'select' ? 'Upload from Excel or CSV' : importStep === 'preview' ? 'Review before importing' : 'Import results'}
+                  </DialogDescription>
                 </div>
-                <button onClick={() => { setIsImportOpen(false); setImportFile(null); }} className="text-white/80 hover:text-white transition-colors">
+                <button onClick={() => { setIsImportOpen(false); resetImportState(); }} className="text-white/80 hover:text-white transition-colors">
                   <XIcon className="w-5 h-5" />
                 </button>
               </div>
-              <div className="px-6 py-5 space-y-4">
-                <p className="text-sm text-slate-500 font-medium">
-                  Upload an Excel file (.xlsx, .xls) or CSV (.csv) to bulk import employee records.
-                </p>
-                <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-red-300 transition-colors">
-                  <Upload className="w-8 h-8 mx-auto text-slate-300 mb-2" />
-                  <label htmlFor="excel-upload" className="cursor-pointer">
-                    <span className="text-sm text-red-500 font-bold hover:underline">Click to select file</span>
-                    <input
-                      id="excel-upload"
-                      type="file"
-                      accept=".xlsx,.xls,.csv"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0]
-                        if (file) setImportFile(file)
-                      }}
-                    />
-                  </label>
-                  <p className="text-xs text-slate-400 mt-1">Supports .xlsx, .xls, .csv</p>
-                </div>
-                {importFile && (
-                  <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl">
-                    <Upload className="w-4 h-4 text-red-500" />
-                    <span className="text-sm text-slate-700 font-medium flex-1 truncate">{importFile.name}</span>
-                    <span className="text-xs text-slate-400">{(importFile.size / 1024).toFixed(1)} KB</span>
+
+              {/* ── STEP: File Select ── */}
+              {importStep === 'select' && (
+                <>
+                  <div className="px-6 py-5 space-y-4">
+                    <p className="text-sm text-slate-500 font-medium">
+                      Upload an Excel file (.xlsx, .xls) or CSV (.csv) to bulk import employee records.
+                    </p>
+                    <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-red-300 transition-colors">
+                      <Upload className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+                      <label htmlFor="excel-upload" className="cursor-pointer">
+                        <span className="text-sm text-red-500 font-bold hover:underline">Click to select file</span>
+                        <input
+                          id="excel-upload"
+                          type="file"
+                          accept=".xlsx,.xls,.csv"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              setImportFile(file)
+                              parseAndValidateFile(file)
+                            }
+                          }}
+                        />
+                      </label>
+                      <p className="text-xs text-slate-400 mt-1">Supports .xlsx, .xls, .csv · Max {MAX_IMPORT_ROWS} rows</p>
+                    </div>
+                    {importFile && !importFileError && (
+                      <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl">
+                        <FileSpreadsheet className="w-4 h-4 text-red-500" />
+                        <span className="text-sm text-slate-700 font-medium flex-1 truncate">{importFile.name}</span>
+                        <span className="text-xs text-slate-400">{(importFile.size / 1024).toFixed(1)} KB</span>
+                      </div>
+                    )}
+                    {importFileError && (
+                      <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl">
+                        <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                        <span className="text-sm text-red-700 font-medium">{importFileError}</span>
+                      </div>
+                    )}
+                    {/* Download Template */}
+                    <div className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3">
+                      <span className="text-xs text-slate-500 font-medium">Not sure about the format?</span>
+                      <button
+                        onClick={handleDownloadTemplate}
+                        disabled={isDownloadingTemplate}
+                        className="flex items-center gap-1.5 text-xs font-bold text-red-600 hover:text-red-700 transition-colors disabled:opacity-50"
+                      >
+                        {isDownloadingTemplate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                        Download template
+                      </button>
+                    </div>
                   </div>
-                )}
-              </div>
-              <div className="flex items-center justify-center gap-6 px-6 py-4 border-t border-slate-100">
-                <button
-                  className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
-                  onClick={() => { setIsImportOpen(false); setImportFile(null); }}
-                >
-                  Discard
-                </button>
-                <button
-                  className="px-8 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-50"
-                  disabled={!importFile || isImporting}
-                  onClick={() => {
-                    setIsImporting(true)
-                    setTimeout(() => {
-                      setIsImporting(false)
-                      setIsImportOpen(false)
-                      setImportFile(null)
-                    }, 1500)
-                  }}
-                >
-                  {isImporting ? 'Importing...' : 'Upload & Import'}
-                </button>
-              </div>
+                  <div className="flex items-center justify-center gap-6 px-6 py-4 border-t border-slate-100">
+                    <button
+                      className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                      onClick={() => { setIsImportOpen(false); resetImportState(); }}
+                    >
+                      Discard
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* ── STEP: Preview ── */}
+              {importStep === 'preview' && (() => {
+                const validCount = importParsedRows.filter(r => r.status === 'valid').length
+                const invalidCount = importParsedRows.filter(r => r.status === 'invalid').length
+                return (
+                  <>
+                    <div className="px-6 py-4 space-y-3">
+                      {/* Summary */}
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-slate-600 font-medium">
+                          <span className="text-green-600 font-bold">{validCount}</span> row{validCount !== 1 ? 's' : ''} ready to import{invalidCount > 0 && <>, <span className="text-red-500 font-bold">{invalidCount}</span> row{invalidCount !== 1 ? 's' : ''} {invalidCount !== 1 ? 'have' : 'has'} errors and will be skipped</>}.
+                        </p>
+                        <button
+                          onClick={() => { resetImportState(); }}
+                          className="flex items-center gap-1 text-xs font-bold text-red-600 hover:text-red-700 transition-colors"
+                        >
+                          <RotateCcw className="w-3 h-3" /> Change file
+                        </button>
+                      </div>
+                      {/* Preview Table */}
+                      <div className="max-h-[55vh] overflow-auto border border-slate-200 rounded-xl">
+                        <table className="w-full text-xs">
+                          <thead className="bg-slate-50 sticky top-0 z-10">
+                            <tr>
+                              <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Row</th>
+                              <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Emp. No.</th>
+                              <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">First Name</th>
+                              <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Last Name</th>
+                              <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Department</th>
+                              <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Branch</th>
+                              <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {importParsedRows.map((row, idx) => (
+                              <tr key={idx} className={row.status === 'invalid' ? 'bg-red-50' : 'hover:bg-slate-50'}>
+                                <td className="px-3 py-2 text-slate-400 font-mono">{row._rowNumber}</td>
+                                <td className="px-3 py-2 font-bold text-slate-700">{row.employeeNumber || '\u2014'}</td>
+                                <td className="px-3 py-2 text-slate-600">{row.firstName || '\u2014'}</td>
+                                <td className="px-3 py-2 text-slate-600">{row.lastName || '\u2014'}</td>
+                                <td className="px-3 py-2 text-slate-600">{row.department || '\u2014'}</td>
+                                <td className="px-3 py-2 text-slate-600">{row.branch || '\u2014'}</td>
+                                <td className="px-3 py-2">
+                                  {row.status === 'valid' ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-bold">
+                                      <CheckCircle className="w-3 h-3" /> Ready
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-start gap-1 px-2 py-1 rounded-lg bg-red-100 text-red-700 text-[10px] font-bold" title={row.reason}>
+                                      <XCircle className="w-3 h-3 shrink-0 mt-0.5" /> <span className="break-words">{row.reason}</span>
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-center gap-6 px-6 py-4 border-t border-slate-100">
+                      <button
+                        className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                        onClick={() => { setIsImportOpen(false); resetImportState(); }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="px-8 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+                        disabled={validCount === 0 || isImporting}
+                        onClick={handleBulkImport}
+                      >
+                        {isImporting ? <><Loader2 className="w-4 h-4 animate-spin" /> Importing...</> : `Upload & Import ${validCount} Row${validCount !== 1 ? 's' : ''}`}
+                      </button>
+                    </div>
+                  </>
+                )
+              })()}
+
+              {/* ── STEP: Results ── */}
+              {importStep === 'results' && (() => {
+                const succeeded = importResults.filter(r => r.status === 'success').length
+                const failed = importResults.filter(r => r.status === 'failed').length
+                const skippedInvalid = importParsedRows.filter(r => r.status === 'invalid').length
+                return (
+                  <>
+                    <div className="px-6 py-5 space-y-4">
+                      {/* Summary stats */}
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-slate-50 rounded-xl p-3 text-center">
+                          <p className="text-2xl font-black text-slate-700">{importResults.length}</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Attempted</p>
+                        </div>
+                        <div className="bg-green-50 rounded-xl p-3 text-center">
+                          <p className="text-2xl font-black text-green-600">{succeeded}</p>
+                          <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Succeeded</p>
+                        </div>
+                        <div className={`rounded-xl p-3 text-center ${failed > 0 ? 'bg-red-50' : 'bg-slate-50'}`}>
+                          <p className={`text-2xl font-black ${failed > 0 ? 'text-red-600' : 'text-slate-400'}`}>{failed}</p>
+                          <p className={`text-[10px] font-bold uppercase tracking-wider ${failed > 0 ? 'text-red-400' : 'text-slate-400'}`}>Failed</p>
+                        </div>
+                      </div>
+                      {skippedInvalid > 0 && (
+                        <p className="text-xs text-slate-400 text-center">{skippedInvalid} invalid row{skippedInvalid !== 1 ? 's were' : ' was'} skipped before sending.</p>
+                      )}
+                      {/* Failure details */}
+                      {failed > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-xs font-bold text-red-600 uppercase tracking-wider">Failed Rows</p>
+                          <div className="max-h-[30vh] overflow-auto border border-red-200 rounded-xl">
+                            <table className="w-full text-xs">
+                              <thead className="bg-red-50 sticky top-0">
+                                <tr>
+                                  <th className="px-3 py-2 text-left text-[10px] font-black text-red-400 uppercase">Row</th>
+                                  <th className="px-3 py-2 text-left text-[10px] font-black text-red-400 uppercase">Emp. No.</th>
+                                  <th className="px-3 py-2 text-left text-[10px] font-black text-red-400 uppercase">Reason</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-red-100">
+                                {importResults.filter(r => r.status === 'failed').map((r, idx) => (
+                                  <tr key={idx} className="bg-red-50/50">
+                                    <td className="px-3 py-2 text-slate-500 font-mono">{r.row}</td>
+                                    <td className="px-3 py-2 font-bold text-slate-700">{r.employeeNumber || '\u2014'}</td>
+                                    <td className="px-3 py-2 text-red-600">{r.reason}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-center px-6 py-4 border-t border-slate-100">
+                      <button
+                        className="px-10 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition-colors"
+                        onClick={() => {
+                          setIsImportOpen(false)
+                          resetImportState()
+                          fetchEmployees()
+                        }}
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </>
+                )
+              })()}
             </DialogContent>
           </Dialog>
 

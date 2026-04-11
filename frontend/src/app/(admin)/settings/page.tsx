@@ -1,6 +1,8 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useToast } from '@/hooks/useToast'
+import ToastContainer from '@/components/ui/ToastContainer'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,6 +21,7 @@ import {
 } from 'lucide-react'
 
 export default function SettingsPage() {
+  const { toasts, showToast, dismissToast } = useToast()
   const [userName, setUserName] = useState('Admin')
   const [userEmail, setUserEmail] = useState('admin@avega.com')
   const [userRole, setUserRole] = useState('ADMIN')
@@ -28,7 +31,6 @@ export default function SettingsPage() {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [phone, setPhone] = useState('')
-  const [profileSaved, setProfileSaved] = useState(false)
   const [profileError, setProfileError] = useState('')
 
   // Password form
@@ -39,7 +41,6 @@ export default function SettingsPage() {
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [passwordError, setPasswordError] = useState('')
-  const [passwordSaved, setPasswordSaved] = useState(false)
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -65,7 +66,6 @@ export default function SettingsPage() {
 
   const handleSaveProfile = async () => {
     setProfileError('')
-    setProfileSaved(false)
     try {
       const res = await fetch('/api/users/profile', {
         method: 'PUT',
@@ -81,20 +81,18 @@ export default function SettingsPage() {
       const data = await res.json()
       if (data.success) {
         setUserName(`${firstName} ${lastName}`.trim() || 'Admin')
-        setProfileSaved(true)
-        setTimeout(() => setProfileSaved(false), 3000)
+        showToast('success', 'Profile Updated', 'Your profile has been saved successfully')
       } else {
         setProfileError(data.message || 'Failed to update profile')
       }
     } catch (error) {
       console.error('Error saving profile:', error)
-      setProfileError('Failed to update profile')
+      showToast('error', 'Update Failed', 'Failed to update profile')
     }
   }
 
   const handleChangePassword = async () => {
-     setPasswordError('')
-    setPasswordSaved(false)
+    setPasswordError('')
 
     if (!currentPassword) {
       setPasswordError('Current password is required')
@@ -126,14 +124,13 @@ export default function SettingsPage() {
         setCurrentPassword('')
         setNewPassword('')
         setConfirmPassword('')
-        setPasswordSaved(true)
-        setTimeout(() => setPasswordSaved(false), 3000)
+        showToast('success', 'Password Changed', 'Your password has been updated successfully')
       } else {
         setPasswordError(data.message || 'Failed to change password')
       }
     } catch (error) {
       console.error('Error changing password:', error)
-      setPasswordError('Failed to change password')
+      showToast('error', 'Password Change Failed', 'Failed to change password')
     }
   }
 
@@ -261,11 +258,7 @@ export default function SettingsPage() {
         )}
 
         <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
-          {profileSaved && (
-            <span className="flex items-center gap-1 text-emerald-600 text-sm font-medium">
-              <CheckCircle2 className="w-4 h-4" /> Saved
-            </span>
-          )}
+
           <Button onClick={handleSaveProfile} className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto">
             Save Changes
           </Button>
@@ -375,16 +368,13 @@ export default function SettingsPage() {
         </div>
 
         <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
-          {passwordSaved && (
-            <span className="flex items-center gap-1 text-emerald-600 text-sm font-medium">
-              <CheckCircle2 className="w-4 h-4" /> Password updated
-            </span>
-          )}
+
           <Button onClick={handleChangePassword} className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto">
             Update Password
           </Button>
         </div>
       </Card>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }

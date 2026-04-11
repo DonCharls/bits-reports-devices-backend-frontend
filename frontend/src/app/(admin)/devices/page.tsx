@@ -1,6 +1,8 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { useToast } from '@/hooks/useToast'
+import ToastContainer from '@/components/ui/ToastContainer'
 import { Card } from '@/components/ui/card'
 import { useDeviceStream, DeviceStatusPayload, DeviceConnectedPayload } from '@/hooks/useDeviceStream'
 import { Button } from '@/components/ui/button'
@@ -61,12 +63,7 @@ export default function DevicesPage() {
     const [togglingId, setTogglingId] = useState<number | null>(null)
 
     // Toast
-    const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
-
-    const showToast = (msg: string, ok = true) => {
-        setToast({ msg, ok })
-        setTimeout(() => setToast(null), 4000)
-    }
+    const { toasts, showToast, dismissToast } = useToast()
 
     const fetchDevices = useCallback(async () => {
         setLoading(true)
@@ -120,10 +117,11 @@ export default function DevicesPage() {
         // Show a brief toast so the admin knows something changed even if they
         // are not looking at that particular device card.
         showToast(
+            payload.isActive ? 'success' : 'warning',
+            payload.isActive ? 'Device Online' : 'Device Offline',
             payload.isActive
                 ? `${payload.name} is back online`
-                : `${payload.name} went offline`,
-            payload.isActive
+                : `${payload.name} went offline`
         )
     }, [])
 
@@ -173,7 +171,7 @@ export default function DevicesPage() {
             })
             const data = await res.json()
             if (data.success) {
-                showToast(data.message || (editingDevice ? 'Device updated' : 'Device added'))
+                showToast('success', editingDevice ? 'Device Updated' : 'Device Added', data.message || (editingDevice ? 'Device updated' : 'Device added'))
                 closeModal()
                 fetchDevices()
             } else {
@@ -195,14 +193,14 @@ export default function DevicesPage() {
             })
             const data = await res.json()
             if (data.success) {
-                showToast(data.message || 'Device removed')
+                showToast('success', 'Device Removed', data.message || 'Device removed')
                 setDeleteConfirmId(null)
                 fetchDevices()
             } else {
-                showToast(data.message || 'Failed to delete device', false)
+                showToast('error', 'Delete Failed', data.message || 'Failed to delete device')
             }
         } catch (e: any) {
-            showToast(e.message || 'Network error', false)
+            showToast('error', 'Delete Failed', e.message || 'Network error')
         } finally {
             setDeletingId(null)
         }
@@ -243,15 +241,15 @@ export default function DevicesPage() {
                 setDevices(prev => prev.map(d =>
                     d.id === device.id ? { ...d, syncEnabled: device.syncEnabled } : d
                 ))
-                showToast(data.message || 'Failed to toggle sync', false)
+                showToast('error', 'Sync Toggle Failed', data.message || 'Failed to toggle sync')
             } else {
-                showToast(data.message, data.device.syncEnabled)
+                showToast(data.device.syncEnabled ? 'success' : 'warning', 'Sync Updated', data.message)
             }
         } catch (e: any) {
             setDevices(prev => prev.map(d =>
                 d.id === device.id ? { ...d, syncEnabled: device.syncEnabled } : d
             ))
-            showToast(e.message || 'Network error', false)
+            showToast('error', 'Sync Toggle Failed', e.message || 'Network error')
         } finally {
             setTogglingId(null)
         }
@@ -587,14 +585,7 @@ export default function DevicesPage() {
 
 
 
-            {/* Toast */}
-            {toast && (
-                <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl text-sm font-bold animate-in fade-in slide-in-from-bottom-4 duration-300 ${toast.ok ? 'bg-slate-800 text-white' : 'bg-red-600 text-white'
-                    }`}>
-                    {toast.ok ? <Check className="w-4 h-4 text-green-400" /> : <AlertCircle className="w-4 h-4" />}
-                    {toast.msg}
-                </div>
-            )}
+            <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         </div>
     )
 }
