@@ -17,10 +17,29 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
   const listRef = useRef<HTMLUListElement>(null)
   const [indicator, setIndicator] = useState<{ top: number; height: number } | null>(null)
   const [hasMounted, setHasMounted] = useState(false)
+  const [pendingCount, setPendingCount] = useState<number>(0)
   const [isLg, setIsLg] = useState(false)
 
+  const fetchPendingCount = useCallback(async () => {
+    try {
+      const res = await fetch('/api/attendance/adjustments?limit=1&status=pending')
+      const data = await res.json()
+      if (data.success) {
+        setPendingCount(data.meta.total)
+      }
+    } catch (err) {
+      console.error('Failed to fetch pending count:', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchPendingCount()
+    const interval = setInterval(fetchPendingCount, 120000) // 2 minutes
+    return () => clearInterval(interval)
+  }, [fetchPendingCount])
+
   const isOnEmployees = pathname.startsWith('/employees')
-  const isOnReports = pathname.startsWith('/admin/reports') || pathname.startsWith('/admin/adjust')
+  const isOnReports = pathname.startsWith('/admin/reports') || pathname === '/admin/adjust' || pathname.startsWith('/admin/adjust/')
 
   // Inactive sub-item is toggleable anytime by clicking the chevron
   const [inactiveOpen, setInactiveOpen] = useState(isOnEmployees)
@@ -171,7 +190,6 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
             </Link>
           </li>
 
-          {/* Approval Queue */}
           <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
             <Link
               href="/admin/adjustments"
@@ -182,6 +200,14 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
             >
               <FileCheck size={22} className={`shrink-0 ${pathname === '/admin/adjustments' ? 'text-[#E60000]' : 'text-white'}`} />
               <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Approval Queue</span>
+              {!collapsed && pendingCount > 0 && (
+                <span
+                  style={labelStyle}
+                  className={`ml-auto mr-4 px-2 py-0.5 text-[10px] font-black rounded-full shadow-sm transition-colors duration-300 ${pathname === '/admin/adjustments' ? 'bg-[#E60000] text-white' : 'bg-white text-[#E60000]'}`}
+                >
+                  {pendingCount > 99 ? '99+' : pendingCount}
+                </span>
+              )}
             </Link>
           </li>
 
