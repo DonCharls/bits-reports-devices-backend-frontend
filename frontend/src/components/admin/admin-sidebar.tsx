@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Clock, FileText, LayoutDashboard, UserCog, UserX, ChevronDown, Building2, Menu, X, Fingerprint, RadioTower, ScrollText, Server, History } from 'lucide-react'
+import { Users, Clock, FileText, LayoutDashboard, UserCog, UserX, ChevronDown, Building2, Menu, X, Fingerprint, RadioTower, ScrollText, Server, History, FileCheck } from 'lucide-react'
 import { useRef, useState, useEffect, useCallback } from 'react'
 
 interface AdminSidebarProps {
@@ -41,6 +41,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
   const allItems = [
     { href: '/dashboard' },
     { href: '/attendance' },
+    { href: '/admin/adjustments' },
     { href: '/employees', matchPrefix: '/employees' },
     { href: '/shifts' },
     { href: '/departments' },
@@ -167,6 +168,20 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
             >
               <Fingerprint size={22} className={`shrink-0 ${pathname === '/attendance' ? 'text-[#E60000]' : 'text-white'}`} />
               <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Attendance</span>
+            </Link>
+          </li>
+
+          {/* Approval Queue */}
+          <li className="relative" style={{ padding: '0 0 0 16px', overflow: 'visible' }}>
+            <Link
+              href="/admin/adjustments"
+              onClick={onClose}
+              className={`flex items-center gap-4 py-3 relative z-10 ${pathname === '/admin/adjustments' ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+              style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
+              title={collapsed ? 'Approval Queue' : undefined}
+            >
+              <FileCheck size={22} className={`shrink-0 ${pathname === '/admin/adjustments' ? 'text-[#E60000]' : 'text-white'}`} />
+              <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>Approval Queue</span>
             </Link>
           </li>
 
