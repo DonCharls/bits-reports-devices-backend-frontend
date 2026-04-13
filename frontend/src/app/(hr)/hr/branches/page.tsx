@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useToast } from '@/hooks/useToast'
+import ToastContainer from '@/components/ui/ToastContainer'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,6 +41,7 @@ export default function HRBranchesPage() {
   const [allEmployees, setAllEmployees] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [apiError, setApiError] = useState<string | null>(null)
+  const { toasts, showToast, dismissToast } = useToast()
 
   const [searchTerm, setSearchTerm] = useState('')
   const [branchFilter, setBranchFilter] = useState('all')
@@ -155,6 +158,7 @@ export default function HRBranchesPage() {
       }
       setNewName('')
       setIsAddOpen(false)
+      showToast('success', addType === 'department' ? 'Department Created' : 'Branch Created', `${trimmed} has been added successfully`)
     } catch {
       setAddError('Network error. Please try again.')
     } finally {
@@ -193,6 +197,7 @@ export default function HRBranchesPage() {
         })
       }
       setEditingDept(null)
+      showToast('success', 'Department Renamed', `Department renamed to ${data.department.name}`)
     } catch {
       setEditError('Network error. Please try again.')
     } finally {
@@ -218,6 +223,7 @@ export default function HRBranchesPage() {
       }
       setDepartments(prev => prev.filter(d => d.id !== confirmDeleteDept.id))
       setConfirmDeleteDept(null)
+      showToast('success', 'Department Removed', `${confirmDeleteDept.name} has been removed`)
     } catch {
       setDeleteError('Network error. Please try again.')
     } finally {
@@ -243,6 +249,7 @@ export default function HRBranchesPage() {
       }
       setBranches(prev => prev.filter(b => b.id !== confirmDeleteBranch.id))
       setConfirmDeleteBranch(null)
+      showToast('success', 'Branch Removed', `${confirmDeleteBranch.name} has been removed`)
     } catch {
       setDeleteError('Network error. Please try again.')
     } finally {
@@ -644,6 +651,7 @@ export default function HRBranchesPage() {
           </table>
         </div>
       </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }

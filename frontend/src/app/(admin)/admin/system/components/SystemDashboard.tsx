@@ -10,7 +10,7 @@ import {
     DeviceConnectedPayload,
     DeviceStatusPayload,
     DeviceSyncResultPayload
-} from '@/hooks/useDeviceStream';
+} from '@/features/devices/hooks/useDeviceStream';
 
 interface SyncStatus {
     isActive: boolean;
@@ -20,6 +20,12 @@ interface SyncStatus {
     shiftAwareMode: boolean;
     configUpdatedAt: string | null;
     globalSyncEnabled: boolean;
+    healthCheck?: {
+        isActive: boolean;
+        intervalSec: number;
+        lastCheckAt: string | null;
+        nextCheckAt: string | null;
+    };
 }
 
 interface Device {

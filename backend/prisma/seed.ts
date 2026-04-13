@@ -54,7 +54,32 @@ async function main() {
     }
 
     // ──────────────────────────────────────────────
-    // 3. Admin / HR accounts
+    // 3. Shifts
+    // ──────────────────────────────────────────────
+
+    // ──────────────────────────────────────────────
+    // 4.5. SyncConfig
+    // ──────────────────────────────────────────────
+    await prisma.syncConfig.upsert({
+        where: { id: 1 },
+        update: {},
+        create: {
+            id: 1,
+            globalSyncEnabled: true,
+            defaultIntervalSec: 30,
+            highFreqIntervalSec: 30,
+            lowFreqIntervalSec: 600,
+            shiftAwareSyncEnabled: false,
+            shiftBufferMinutes: 120,
+            autoTimeSyncEnabled: true,
+            timeSyncIntervalSec: 3600,
+            updatedAt: new Date()
+        }
+    })
+    console.log('⚙️ Seeded sync config')
+
+    // ──────────────────────────────────────────────
+    // 5. Employees
     // NOTE: zkId 1 is RESERVED for the ZKTeco device SUPER ADMIN — never use it.
     //       Employee zkIds start from 2.
     // ──────────────────────────────────────────────

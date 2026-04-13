@@ -8,76 +8,58 @@ datasource db {
 }
 
 model Attendance {
-  id           Int       @id @default(autoincrement())
-  employeeId   Int
-  date         DateTime
-  checkInTime       DateTime
-  checkOutTime      DateTime?
-  checkin_updated   DateTime?
-  checkout_updated  DateTime?
-  status            String    @default("present")
-  notes        String?
-  checkInDeviceId   Int?
-  checkOutDeviceId  Int?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  employee     Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  checkInDevice    Device?  @relation("AttCheckIn",  fields: [checkInDeviceId],  references: [id])
-  checkOutDevice   Device?  @relation("AttCheckOut", fields: [checkOutDeviceId], references: [id])
+  id                   Int                    @id @default(autoincrement())
+  employeeId           Int
+  date                 DateTime
+  checkInTime          DateTime
+  checkOutTime         DateTime?
+  checkin_updated      DateTime?
+  checkout_updated     DateTime?
+  status               String                 @default("present")
+  notes                String?
+  checkInDeviceId      Int?
+  checkOutDeviceId     Int?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  employee             Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  AttendanceAdjustment AttendanceAdjustment[]
+  checkInDevice        Device?                @relation("AttCheckIn", fields: [checkInDeviceId], references: [id])
+  checkOutDevice       Device?                @relation("AttCheckOut", fields: [checkOutDeviceId], references: [id])
 
   @@unique([employeeId, date])
   @@index([date])
   @@index([employeeId])
   @@index([status])
-  AttendanceAuditLog  AttendanceAuditLog[]
-  AttendanceAdjustment AttendanceAdjustment[]
 }
 
-model AttendanceAuditLog {
-  id            Int      @id @default(autoincrement())
-  attendanceId  Int
-  adjustedById  Int
-  field         String
-  oldValue      String?
-  newValue      String?
-  reason        String?
-  createdAt     DateTime @default(now())
-
-  attendance    Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
-  adjustedBy    Employee   @relation("AdjustedBy", fields: [adjustedById], references: [id])
-
-  @@index([attendanceId])
-  @@index([adjustedById])
-  @@index([createdAt])
-}
 
 model AttendanceAdjustment {
-  id                Int       @id @default(autoincrement())
-  attendanceId      Int
-  submittedById     Int
+  id            Int @id @default(autoincrement())
+  attendanceId  Int
+  submittedById Int
 
   // Snapshot of original values at time of request
-  originalCheckIn   DateTime?
-  originalCheckOut  DateTime?
+  originalCheckIn  DateTime?
+  originalCheckOut DateTime?
 
   // Requested new values
   requestedCheckIn  DateTime?
   requestedCheckOut DateTime?
 
-  reason            String    // Required — why the adjustment is needed
+  reason String // Required — why the adjustment is needed
 
   // Approval workflow
-  status            String    @default("pending") // pending, approved, rejected
-  reviewedById      Int?
-  rejectionReason   String?
+  status          String  @default("pending") // pending, approved, rejected
+  reviewedById    Int?
+  rejectionReason String?
 
-  submittedAt       DateTime  @default(now())
-  reviewedAt        DateTime?
+  submittedAt DateTime  @default(now())
+  reviewedAt  DateTime?
 
   // Relations
-  attendance        Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
-  submittedBy       Employee   @relation("AdjustmentSubmittedBy", fields: [submittedById], references: [id])
-  reviewedBy        Employee?  @relation("AdjustmentReviewedBy", fields: [reviewedById], references: [id])
+  attendance  Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  submittedBy Employee   @relation("AdjustmentSubmittedBy", fields: [submittedById], references: [id])
+  reviewedBy  Employee?  @relation("AdjustmentReviewedBy", fields: [reviewedById], references: [id])
 
   @@index([attendanceId])
   @@index([submittedById])
@@ -118,44 +100,47 @@ model Branch {
 }
 
 model Device {
-  id            Int             @id @default(autoincrement())
-  name          String
-  ip            String          @unique
-  port          Int             @default(4370)
-  location      String?
-  isActive      Boolean         @default(true)
-  syncEnabled   Boolean         @default(true)
-  lastSyncedAt  DateTime?                              // UTC timestamp of last processed log; null = never synced
-  lastSyncStatus String?                               // "SUCCESS", "FAILED"
-  lastSyncError  String?                               // Error message if FAILED
-  lastPolledAt   DateTime?                             // UTC timestamp of last successful heartbeat/check
-  lastReconciledAt DateTime?                           // UTC timestamp of last auto-reconcile; null = never reconciled
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime
-  AttendanceLog AttendanceLog[]
-  EmployeeDeviceEnrollment EmployeeDeviceEnrollment[]
-  AttendanceCheckIns  Attendance[] @relation("AttCheckIn")
-  AttendanceCheckOuts Attendance[] @relation("AttCheckOut")
+  id                            Int                             @id @default(autoincrement())
+  name                          String
+  ip                            String                          @unique
+  port                          Int                             @default(4370)
+  location                      String?
+  isActive                      Boolean                         @default(true)
+  syncEnabled                   Boolean                         @default(true)
+  lastSyncedAt                  DateTime? // UTC timestamp of last processed log; null = never synced
+  lastSyncStatus                String? // "SUCCESS", "FAILED"
+  lastSyncError                 String? // Error message if FAILED
+  lastPolledAt                  DateTime? // UTC timestamp of last successful heartbeat/check
+  lastReconciledAt              DateTime? // UTC timestamp of last auto-reconcile; null = never reconciled
+  createdAt                     DateTime                        @default(now())
+  updatedAt                     DateTime
+  AttendanceLog                 AttendanceLog[]
+  EmployeeDeviceEnrollment      EmployeeDeviceEnrollment[]
+  EmployeeFingerprintEnrollment EmployeeFingerprintEnrollment[]
+  EmployeeCardEnrollment        EmployeeCardEnrollment[]
+  AttendanceCheckIns            Attendance[]                    @relation("AttCheckIn")
+  AttendanceCheckOuts           Attendance[]                    @relation("AttCheckOut")
+  DeviceSyncTasks               DeviceSyncTask[]
 
   @@index([isActive])
   @@index([syncEnabled])
 }
 
 model Employee {
-  id               Int              @id @default(autoincrement())
-  zkId             Int?             @unique
-  cardNumber       Int?             @unique    // RFID badge card number (uint32 from device offset 35)
-  firstName        String
-  lastName         String
-  middleName       String?
-  suffix           String?
-  gender           String?
-  dateOfBirth      DateTime?
-  role             Role             @default(USER)
-  email            String?          @unique
-  password         String?
-  needsPasswordChange Boolean @default(false)
-  employmentStatus EmploymentStatus @default(ACTIVE)
+  id                  Int              @id @default(autoincrement())
+  zkId                Int?             @unique
+  cardNumber          Int?             @unique // RFID badge card number (uint32 from device offset 35)
+  firstName           String
+  lastName            String
+  middleName          String?
+  suffix              String?
+  gender              String?
+  dateOfBirth         DateTime?
+  role                Role             @default(USER)
+  email               String?          @unique
+  password            String?
+  needsPasswordChange Boolean          @default(false)
+  employmentStatus    EmploymentStatus @default(ACTIVE)
 
   // Secondary Info
   department     String?
@@ -168,21 +153,22 @@ model Employee {
   updatedAt      DateTime
 
   // Relations
-  departmentId   Int?
-  branchId       Int?
-  shiftId        Int?
-  Attendance     Attendance[]
-  AttendanceLog  AttendanceLog[]
-  RefreshToken   RefreshToken[]
-  EmployeeDeviceEnrollment EmployeeDeviceEnrollment[]
-  Department     Department?     @relation(fields: [departmentId], references: [id])
-  Branch         Branch?         @relation(fields: [branchId], references: [id])
-  Shift          Shift?          @relation(fields: [shiftId], references: [id])
-  AttendanceAuditLogAdjusted AttendanceAuditLog[]  @relation("AdjustedBy")
-  AuditLogs                  AuditLog[]
-  AdjustmentsSubmitted       AttendanceAdjustment[] @relation("AdjustmentSubmittedBy")
-  AdjustmentsReviewed        AttendanceAdjustment[] @relation("AdjustmentReviewedBy")
-  
+  departmentId                  Int?
+  branchId                      Int?
+  shiftId                       Int?
+  Attendance                    Attendance[]
+  AttendanceLog                 AttendanceLog[]
+  RefreshToken                  RefreshToken[]
+  EmployeeDeviceEnrollment      EmployeeDeviceEnrollment[]
+  EmployeeFingerprintEnrollment EmployeeFingerprintEnrollment[]
+  EmployeeCardEnrollment        EmployeeCardEnrollment[]
+  Department                    Department?                     @relation(fields: [departmentId], references: [id])
+  Branch                        Branch?                         @relation(fields: [branchId], references: [id])
+  Shift                         Shift?                          @relation(fields: [shiftId], references: [id])
+  AuditLogs                     AuditLog[]
+  AdjustmentsSubmitted          AttendanceAdjustment[]          @relation("AdjustmentSubmittedBy")
+  AdjustmentsReviewed           AttendanceAdjustment[]          @relation("AdjustmentReviewedBy")
+
   @@index([departmentId])
   @@index([branchId])
   @@index([shiftId])
@@ -232,8 +218,38 @@ model EmployeeDeviceEnrollment {
   deviceId   Int
   enrolledAt DateTime @default(now())
 
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  device     Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  device   Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, deviceId])
+  @@index([employeeId])
+  @@index([deviceId])
+}
+
+model EmployeeFingerprintEnrollment {
+  id          Int      @id @default(autoincrement())
+  employeeId  Int
+  deviceId    Int
+  fingerIndex Int // 0-9 (ZKTeco standard)
+  fingerLabel String // "Right Thumb", "Left Index Finger", etc.
+  enrolledAt  DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  device   Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, deviceId, fingerIndex])
+  @@index([employeeId])
+  @@index([deviceId])
+}
+
+model EmployeeCardEnrollment {
+  id         Int      @id @default(autoincrement())
+  employeeId Int
+  deviceId   Int
+  enrolledAt DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  device   Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, deviceId])
   @@index([employeeId])
@@ -243,26 +259,29 @@ model EmployeeDeviceEnrollment {
 model AuditLog {
   id          Int      @id @default(autoincrement())
   timestamp   DateTime @default(now())
-  level       String   @default("INFO")      // INFO, WARN, ERROR
-  action      String                          // CREATE, UPDATE, DELETE, LOGIN, LOGOUT, SYNC, CHECK_IN, CHECK_OUT, etc.
-  entityType  String                          // Employee, Device, Attendance, Shift, Department, Branch, Account, System
-  entityId    Int?                            // ID of the affected entity (nullable for system-wide events)
-  performedBy Int?                            // Employee ID of the actor (nullable for system/cron actions)
-  source      String   @default("system")     // "admin-panel", "api", "cron", "device-sync", etc.
-  details     String?                         // Human-readable summary
-  metadata    Json?                           // Optional JSON: old/new values, IP, device info, etc.
+  level       String   @default("INFO") // INFO, WARN, ERROR
+  action      String // CREATE, UPDATE, DELETE, LOGIN, LOGOUT, SYNC, CHECK_IN, CHECK_OUT, etc.
+  entityType  String // Employee, Device, Attendance, Shift, Department, Branch, Account, System
+  entityId    Int? // ID of the affected entity (nullable for system-wide events)
+  performedBy Int? // Employee ID of the actor (nullable for system/cron actions)
+  source      String   @default("system") // "admin-panel", "api", "cron", "device-sync", etc.
+  details     String? // Human-readable summary
+  metadata    Json? // Optional JSON: old/new values, IP, device info, etc.
+  category    String   @default("system") // "auth", "attendance", "device", "employee", "config", "system"
+  correlationId String? // UUID for request tracing
 
-  performer   Employee? @relation(fields: [performedBy], references: [id], onDelete: SetNull)
+  performer Employee? @relation(fields: [performedBy], references: [id], onDelete: SetNull)
 
   @@index([timestamp])
   @@index([action])
   @@index([entityType])
   @@index([performedBy])
   @@index([level])
+  @@index([category])
+  @@index([correlationId])
 }
 
 enum EmploymentStatus {
-
   ACTIVE
   INACTIVE
   TERMINATED
@@ -275,16 +294,38 @@ enum Role {
 }
 
 model SyncConfig {
-  id                    Int      @id @default(1)    // Singleton — always row id=1
-  globalSyncEnabled     Boolean  @default(true)
-  defaultIntervalSec    Int      @default(30)       // Default sync interval in seconds
-  highFreqIntervalSec   Int      @default(30)       // Near-shift interval
-  lowFreqIntervalSec    Int      @default(600)      // Off-peak interval (10 min)
-  shiftAwareSyncEnabled Boolean  @default(false)    // Feature 5 toggle
-  shiftBufferMinutes    Int      @default(120)      // ±2 hour window around shift start/end
-  autoTimeSyncEnabled   Boolean  @default(true)     // Enable background clock sync
-  timeSyncIntervalSec   Int      @default(3600)     // How often to sync device clocks (1 hour)
-  globalMinCheckoutMinutes Int   @default(120)      // Ensure checkout is valid only if diff >= minimum 
-  updatedAt             DateTime @updatedAt
+  id                           Int      @id @default(1) // Singleton — always row id=1
+  globalSyncEnabled            Boolean  @default(true)
+  defaultIntervalSec           Int      @default(30) // Default sync interval in seconds
+  highFreqIntervalSec          Int      @default(30) // Near-shift interval
+  lowFreqIntervalSec           Int      @default(600) // Off-peak interval (10 min)
+  shiftAwareSyncEnabled        Boolean  @default(false) // Feature 5 toggle
+  shiftBufferMinutes           Int      @default(120) // ±2 hour window around shift start/end
+  autoTimeSyncEnabled          Boolean  @default(true) // Enable background clock sync
+  timeSyncIntervalSec          Int      @default(3600) // How often to sync device clocks (1 hour)
+  globalMinCheckoutMinutes     Int      @default(120) // Ensure checkout is valid only if diff >= minimum 
+  healthCheckEnabled           Boolean  @default(true) // Independent device health monitoring (TCP ping)
+  healthCheckIntervalSec       Int      @default(60) // How frequency to ping devices for connectivity (seconds)
+  logBufferMaintenanceEnabled  Boolean  @default(true) // Scheduled device log buffer clearing
+  logBufferMaintenanceSchedule String   @default("weekly") // "daily" | "weekly" | "monthly"
+  logBufferMaintenanceHour     Int      @default(3) // PHT hour to run the job (0-23)
+  updatedAt                    DateTime @updatedAt
 }
 
+model DeviceSyncTask {
+  id         Int      @id @default(autoincrement())
+  deviceId   Int
+  actionType String // e.g. 'UPSERT_USER', 'DELETE_USER', 'DELETE_FINGER'
+  entityId   String // e.g. 'USER_5', 'FINGER_5_1'
+  payload    Json // Raw data to send
+  status     String   @default("PENDING") // 'PENDING', 'SUCCESS', 'DEAD_LETTER'
+  retryCount Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, actionType, entityId])
+  @@index([deviceId, status])
+  @@index([createdAt])
+}

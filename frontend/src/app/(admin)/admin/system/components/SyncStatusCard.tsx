@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Server, Activity, Clock, Play, AlertTriangle, XCircle } from 'lucide-react';
+import { Server, Activity, Clock, Play, AlertTriangle, XCircle, HeartPulse, Trash2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { format } from 'date-fns';
 import {
@@ -23,6 +23,12 @@ interface SyncStatus {
     configUpdatedAt: string | null;
     globalSyncEnabled: boolean;
     currentMode?: 'PEAK' | 'OFF-PEAK' | 'DEFAULT';
+    healthCheck?: {
+        isActive: boolean;
+        intervalSec: number;
+        lastCheckAt: string | null;
+        nextCheckAt: string | null;
+    };
 }
 
 interface FailedDevice {
@@ -50,6 +56,7 @@ interface SyncStatusCardProps {
 export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusCardProps) {
     const [syncing, setSyncing] = useState(false);
     const [syncingTime, setSyncingTime] = useState(false);
+    const [clearingLogs, setClearingLogs] = useState(false);
     const [toggling, setToggling] = useState(false);
     const [syncResult, setSyncResult] = useState<SyncResultData | null>(null);
     const [showResultModal, setShowResultModal] = useState(false);
@@ -142,6 +149,32 @@ export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusC
         }
     };
 
+    const handleManualClearLogs = async () => {
+        if (!confirm('Are you sure you want to clear the log buffers on all active devices right now?\nThis is normally done automatically during off-hours to prevent data loss races.')) {
+            return;
+        }
+        
+        setClearingLogs(true);
+        try {
+            const res = await axios.post('/api/system/clear-device-logs', {}, { withCredentials: true });
+            
+            toast({
+                title: res.data.success ? 'Logs Cleared' : 'Clear Logs Issue',
+                description: res.data.message,
+                variant: res.data.success ? 'default' : 'destructive',
+            });
+        } catch (error: unknown) {
+            const axiosErr = error as { response?: { data?: { message?: string } } };
+            toast({
+                title: 'Clear Logs Failed',
+                description: axiosErr.response?.data?.message || 'Server error occurred.',
+                variant: 'destructive',
+            });
+        } finally {
+            setClearingLogs(false);
+        }
+    };
+
     if (loading) return <div>Loading status...</div>;
     if (!status) return <div>Error loading status.</div>;
 
@@ -173,7 +206,7 @@ export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusC
                     </div>
                 </CardHeader>
                 <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-4">
                         <div className="flex flex-col gap-2">
                             <div className="text-sm text-muted-foreground flex items-center gap-1">
                                 <Activity className="h-4 w-4" /> Current Interval
@@ -201,6 +234,28 @@ export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusC
                             </div>
                         </div>
 
+                        <div className="flex flex-col gap-2">
+                            <div className="text-sm text-muted-foreground flex items-center gap-1">
+                                <HeartPulse className="h-4 w-4" /> Health Monitor
+                            </div>
+                            {status.healthCheck?.isActive ? (
+                                <div className="text-lg font-medium flex items-center gap-2">
+                                    <div className="h-2.5 w-2.5 rounded-full bg-green-500 animate-pulse" />
+                                    Active <span className="text-sm text-muted-foreground font-normal">({status.healthCheck.intervalSec}s)</span>
+                                </div>
+                            ) : (
+                                <div className="text-lg font-medium flex items-center gap-2 text-muted-foreground">
+                                    <div className="h-2.5 w-2.5 rounded-full bg-gray-400" />
+                                    Disabled
+                                </div>
+                            )}
+                            <div className="text-xs text-muted-foreground">
+                                {status.healthCheck?.isActive 
+                                    ? `Last check: ${status.healthCheck.lastCheckAt ? format(new Date(status.healthCheck.lastCheckAt), 'HH:mm:ss') : 'Pending...'}`
+                                    : 'Offline'}
+                            </div>
+                        </div>
+
                          <div className="flex flex-col gap-2 items-start justify-center">
                             <Button 
                                 onClick={handleManualSync} 
@@ -215,13 +270,26 @@ export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusC
                             </Button>
                             <Button 
                                 onClick={handleManualTimeSync} 
-                                disabled={syncingTime || syncing || !status.globalSyncEnabled}
+                                disabled={syncingTime || syncing || clearingLogs || !status.globalSyncEnabled}
                                 variant="outline"
                                 className="w-full"
                             >
                                 {syncingTime ? 'Aligning Clocks...' : (
                                     <>
                                         <Clock className="h-4 w-4 mr-2" /> Sync Time Now
+                                    </>
+                                )}
+                            </Button>
+                            
+                            <Button 
+                                onClick={handleManualClearLogs} 
+                                disabled={clearingLogs || syncing || syncingTime}
+                                variant="outline"
+                                className="w-full border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                            >
+                                {clearingLogs ? 'Clearing Logs...' : (
+                                    <>
+                                        <Trash2 className="h-4 w-4 mr-2" /> Clear Logs Now
                                     </>
                                 )}
                             </Button>

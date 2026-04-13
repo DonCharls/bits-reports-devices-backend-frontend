@@ -1,14 +1,14 @@
 "use client";
 import React, { useState } from 'react';
 import { Download } from 'lucide-react';
-import { useReportData } from './hooks/useReportData';
+import { useReportData } from '@/features/reports/hooks/useReportData';
 import { useTableSort } from '@/hooks/useTableSort';
-import { ReportFilters } from './components/ReportFilters';
-import { ReportTable } from './components/ReportTable';
-import { EmployeeModal } from './components/EmployeeModal';
-import { handleExport, handleExportIndividual } from './utils/exportReport';
-import { formatDateShort } from './utils/formatters';
-import { ReportRow } from './types';
+import { ReportFilters } from '@/features/reports/components/ReportFilters';
+import { ReportTable } from '@/features/reports/components/ReportTable';
+import { EmployeeModal } from '@/features/reports/components/EmployeeModal';
+import { handleExport, handleExportIndividual } from '@/features/reports/lib/exportReport';
+import { formatDateShort } from '@/features/reports/lib/formatters';
+import { ReportRow } from '@/types/reports';
 
 export default function ReportsPage() {
   // Use Asia/Manila for default dates to avoid shifting to previous day
@@ -85,6 +85,8 @@ export default function ReportsPage() {
       {/* Individual Employee Report Modal */}
       {selectedEmployee && (
         <EmployeeModal
+          variant="admin"
+          exportSource="admin-panel"
           employee={selectedEmployee}
           records={allRecords
             .filter((r) => r.employeeId === selectedEmployee.id)
@@ -95,8 +97,8 @@ export default function ReportsPage() {
           startDate={startDate}
           endDate={endDate}
           onClose={() => setSelectedEmployee(null)}
-          onExport={(emp, recs) =>
-            handleExportIndividual(emp, startDate, endDate, recs)
+          onExport={(emp, recs, expSrc) =>
+            handleExportIndividual(emp, startDate, endDate, recs, expSrc)
           }
         />
       )}
@@ -112,7 +114,7 @@ export default function ReportsPage() {
           </p>
         </div>
         <button
-          onClick={() => handleExport(filteredData, startDate, endDate)}
+          onClick={() => handleExport(filteredData, startDate, endDate, 'admin-panel')}
           className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl transition-colors shadow-lg shadow-red-600/20"
         >
           <Download className="w-4 h-4" />
@@ -123,6 +125,7 @@ export default function ReportsPage() {
 
       {/* Filter Bar */}
       <ReportFilters
+        variant="admin"
         startDate={startDate}
         setStartDate={setStartDate}
         endDate={endDate}
@@ -140,6 +143,7 @@ export default function ReportsPage() {
 
       {/* Preview Records Table */}
       <ReportTable
+        variant="admin"
         paginatedData={paginatedData}
         filteredDataLength={filteredData.length}
         loading={loading}

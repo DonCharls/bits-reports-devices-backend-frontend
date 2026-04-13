@@ -25,6 +25,7 @@ interface LogEntry {
     level?: 'INFO' | 'WARN' | 'ERROR'
     employeeRole?: string
     metadata?: any
+    correlationId?: string
 }
 interface LogMeta {
     total: number
@@ -497,8 +498,19 @@ export default function SystemLogsPage() {
                                     {/* Expanded Metadata Viewer */}
                                     {expandedLogId === log.id && (
                                         <div className="px-4 lg:px-[156px] py-4 bg-slate-50/80 border-b border-slate-100 shadow-inner">
-                                            <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                                                <Info className="w-4 h-4 text-blue-500" /> Event Details & Context
+                                            <div className="flex items-center justify-between">
+                                                <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                                    <Info className="w-4 h-4 text-blue-500" /> Event Details & Context
+                                                </div>
+                                                {/* Correlation ID */}
+                                                {log.correlationId && (
+                                                    <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                                                        <span className="font-black uppercase tracking-wider">Trace ID</span>
+                                                        <code className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 font-mono">
+                                                            {log.correlationId}
+                                                        </code>
+                                                    </div>
+                                                )}
                                             </div>
                                             
                                             {log.metadata && Object.keys(log.metadata).length > 0 ? (
