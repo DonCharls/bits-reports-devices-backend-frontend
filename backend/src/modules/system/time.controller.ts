@@ -18,11 +18,11 @@ export const getServerTime = (req: Request, res: Response) => {
                 timezone: 'Asia/Manila' // Enforced standard time
             }
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         res.status(500).json({
             success: false,
             message: 'Failed to retrieve server time',
-            error: error.message
+            error: error instanceof Error ? error.message : String(error)
         });
     }
 };

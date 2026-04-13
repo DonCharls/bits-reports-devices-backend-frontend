@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import ExcelJS from 'exceljs';
 import { prisma } from '../../shared/lib/prisma';
+import { Prisma } from '@prisma/client';
 import { syncEmployeesToDevice, enrollEmployeeFingerprint, enrollEmployeeCard, deleteEmployeeCard, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex, deleteFingerprintGlobally, syncEmployeeFingerprints } from '../devices/zk';
 import { enqueueGlobalUpsertUser, enqueueGlobalDeleteUser, processDeviceSyncQueue } from '../devices/deviceSyncQueue.service';
 import { audit } from '../../shared/lib/auditLogger';
@@ -14,7 +15,7 @@ export const exportEmployees = async (req: Request, res: Response) => {
     try {
         const { department, branch } = req.query;
 
-        const where: any = {
+        const where: Prisma.EmployeeWhereInput = {
             employmentStatus: 'ACTIVE',
             role: 'USER',
         };
@@ -115,12 +116,12 @@ export const exportEmployees = async (req: Request, res: Response) => {
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(Buffer.from(buffer as ArrayBuffer));
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error exporting employees:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to export employees',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+            error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined,
         });
     }
 };
@@ -441,12 +442,12 @@ export const exportTemplate = async (req: Request, res: Response) => {
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(Buffer.from(buffer as ArrayBuffer));
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error generating import template:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to generate import template',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+            error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined,
         });
     }
 };
@@ -594,15 +595,15 @@ export const bulkCreateEmployees = async (req: Request, res: Response) => {
                         try {
                             const displayName = `${capturedEmployee.firstName} ${capturedEmployee.lastName}`;
                             await addUserToDevice(capturedEmployee.zkId!, displayName, capturedEmployee.role);
-                        } catch (syncErr: any) {
-                            console.error(`[BULK] (background) Device sync failed for zkId ${capturedEmployee.zkId}:`, syncErr?.message || syncErr);
+                        } catch (syncErr: unknown) {
+                            console.error(`[BULK] (background) Device sync failed for zkId ${capturedEmployee.zkId}:`, syncErr instanceof Error ? syncErr.message : String(syncErr));
                         }
                     }
                 });
 
-            } catch (rowError: any) {
-                console.error(`[BULK] Error processing row ${rowNum}:`, rowError?.message || rowError);
-                results.push({ row: rowNum, employeeNumber: empNum, status: 'failed', reason: rowError?.message || 'Unexpected server error' });
+            } catch (rowError: unknown) {
+                console.error(`[BULK] Error processing row ${rowNum}:`, rowError instanceof Error ? rowError.message : String(rowError));
+                results.push({ row: rowNum, employeeNumber: empNum, status: 'failed', reason: rowError instanceof Error ? rowError.message : 'Unexpected server error' });
             }
         }
 
@@ -623,12 +624,12 @@ export const bulkCreateEmployees = async (req: Request, res: Response) => {
             results,
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[BULK] Bulk import error:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to process bulk import',
-            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : 'Internal server error',
         });
     }
 };

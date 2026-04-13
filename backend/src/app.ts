@@ -101,8 +101,8 @@ app.get('/api/health/device', async (req, res) => {
       port: device.port,
       lastSeen: device.updatedAt,
     });
-  } catch (error: any) {
-    return res.status(500).json({ online: false, status: 'error', message: error.message });
+  } catch (error: unknown) {
+    return res.status(500).json({ online: false, status: 'error', message: error instanceof Error ? error.message : String(error) });
   }
 });
 
@@ -132,7 +132,7 @@ app.use((req, res) => {
 });
 
 // Error handling middleware
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: Error & { status?: number; error?: string }, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error:', err);
   res.status(err.status || 500).json({
     success: false,

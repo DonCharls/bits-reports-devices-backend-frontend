@@ -39,7 +39,7 @@ async function main() {
         }
 
         console.log(`\n📋 Found ${employees.length} employees to sync:\n`);
-        employees.forEach((emp: any, idx: number) => {
+        employees.forEach((emp, idx) => {
             const empNum = emp.employeeNumber ? ` (${emp.employeeNumber})` : '';
             const fullName = `${emp.firstName} ${emp.lastName}`;
             console.log(`   ${idx + 1}. ${fullName}${empNum} - zkId: ${emp.zkId}`);
@@ -63,9 +63,9 @@ async function main() {
         }
         console.log('='.repeat(60) + '\n');
 
-    } catch (error: any) {
-        console.error('\n❌ ERROR:', error.message);
-        console.error('\nStack trace:', error.stack);
+    } catch (error: unknown) {
+        console.error('\n❌ ERROR:', error instanceof Error ? error.message : String(error));
+        if (error instanceof Error) console.error('\nStack trace:', error.stack);
         process.exit(1);
     } finally {
         await prisma.$disconnect();

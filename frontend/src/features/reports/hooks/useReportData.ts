@@ -81,7 +81,30 @@ export const useReportData = (startDate: string, endDate: string) => {
            return;
         }
 
-        const emps: any[] = empData.employees || empData.data || [];
+        interface RawEmployee {
+          id: number;
+          firstName: string;
+          lastName: string;
+          middleName?: string;
+          suffix?: string;
+          department?: string;
+          Department?: { name: string };
+          branch?: string;
+          employmentStatus: string;
+          role: string;
+          Shift?: {
+            id: number;
+            name: string;
+            startTime: string;
+            endTime: string;
+            graceMinutes?: number;
+            breakMinutes?: number;
+            workDays?: string;
+            halfDays?: string;
+          };
+        }
+
+        const emps: RawEmployee[] = empData.employees || empData.data || [];
         const records: AttendanceRecord[] = attData.success
           ? attData.data || []
           : [];
@@ -89,12 +112,12 @@ export const useReportData = (startDate: string, endDate: string) => {
         setAllRecords(records);
 
         const activeEmps = emps.filter(
-          (e: any) => e.employmentStatus === 'ACTIVE' && e.role === 'USER'
+          (e) => e.employmentStatus === 'ACTIVE' && e.role === 'USER'
         );
         const rowMap = new Map<number, ReportRow>();
 
         // Pre-initialize rows and compute totalDays from shift schedule
-        activeEmps.forEach((e: any) => {
+        activeEmps.forEach((e) => {
           const workDaysJson =
             e.Shift?.workDays ?? '["Mon","Tue","Wed","Thu","Fri"]';
 

@@ -28,12 +28,12 @@ export const syncEmployeesToDeviceController = async (req: Request, res: Respons
                 error: result.error
             });
         }
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error syncing employees:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to sync employees',
-            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+            error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : 'Internal server error'
         });
     }
 };

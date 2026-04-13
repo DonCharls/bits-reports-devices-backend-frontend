@@ -60,7 +60,7 @@ export async function enqueueUpsertUser(
             }
         },
         update: {
-            payload: payload as any,
+            payload: payload as object,
             status: 'PENDING',
             retryCount: 0,
             createdAt: new Date(),
@@ -70,7 +70,7 @@ export async function enqueueUpsertUser(
             deviceId,
             actionType: 'UPSERT_USER',
             entityId,
-            payload: payload as any,
+            payload: payload as object,
             status: 'PENDING'
         }
     });
@@ -96,7 +96,7 @@ export async function enqueueFingerprintPull(
             }
         },
         update: {
-            payload: payload as any,
+            payload: payload as object,
             status: 'PENDING',
             retryCount: 0,
             createdAt: new Date(),
@@ -106,7 +106,7 @@ export async function enqueueFingerprintPull(
             deviceId: targetDeviceId,
             actionType: 'SYNC_FINGER_FROM_SOURCE',
             entityId,
-            payload: payload as any,
+            payload: payload as object,
             status: 'PENDING'
         }
     });
@@ -151,7 +151,7 @@ export async function enqueueDeleteUser(
             deviceId,
             actionType: 'DELETE_USER',
             entityId,
-            payload: { zkId } as any,
+            payload: { zkId } as object,
             status: 'PENDING'
         }
     });
@@ -201,7 +201,7 @@ export async function enqueueDeleteFinger(
             deviceId,
             actionType: 'DELETE_FINGER',
             entityId,
-            payload: payload as any,
+            payload: payload as object,
             status: 'PENDING'
         }
     });
@@ -259,7 +259,7 @@ const MAX_RETRIES = 3;
  * Execute a single queue task idempotently.
  * Throws an Error if it fails and needs retry, otherwise returns void for success.
  */
-async function executeTask(task: any, zk: any): Promise<void> {
+async function executeTask(task: { id: number; deviceId: number; actionType: string; entityId: string; payload: unknown; retryCount: number }, zk: InstanceType<typeof import('../../shared/lib/zk-driver').ZKDriver>): Promise<void> {
     const actionType = task.actionType as SyncActionType;
     
     try {
@@ -270,8 +270,8 @@ async function executeTask(task: any, zk: any): Promise<void> {
             
             // Porting the robust pre-write occupancy check from addUserToDevice
             const deviceUsers = await zk.getUsers() || [];
-            const occupant = deviceUsers.find((u: any) => u.uid === deviceUid);
-            const visibleConflict = deviceUsers.find((u: any) =>
+            const occupant = deviceUsers.find((u) => u.uid === deviceUid);
+            const visibleConflict = deviceUsers.find((u) =>
                 String(u.userId).trim() === visibleId.trim() && u.uid !== deviceUid
             );
 
@@ -357,7 +357,7 @@ async function executeTask(task: any, zk: any): Promise<void> {
                         raw.fill(0); // Secure wipe
                         break;
                     }
-                } catch (err: any) {
+                } catch (err: unknown) {
                     console.warn(`[SyncQueue] Failed reading finger from source device ${srcDb.name}: ${zkErrMsg(err)}`);
                 } finally {
                     try { await srcZk.disconnect(); } catch { /* ignore */ }

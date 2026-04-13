@@ -1,4 +1,7 @@
 import { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
+import { AttendanceFilters } from './attendance.types';
+import { isPrismaUniqueViolation, handleDuplicateError } from '../../shared/utils/prisma-error.utils';
 import { syncZkData, addUserToDevice } from '../devices/zk';
 import {
     getAttendanceRecords,
@@ -15,12 +18,9 @@ export const syncAttendance = async (req: Request, res: Response) => {
         console.log('Starting manual sync...');
         const result = await syncZkData();
         res.status(200).json(result);
-    } catch (error: any) {
-        if (error?.code === 'P2002') {
-            res.status(409).json({
-                success: false,
-                message: 'Attendance record already exists for this employee today.'
-            });
+    } catch (error: unknown) {
+        if (isPrismaUniqueViolation(error)) {
+            handleDuplicateError(res, 'attendance');
             return;
         }
         console.error('Sync failed:', error);
@@ -44,12 +44,9 @@ export const addUser = async (req: Request, res: Response) => {
         const result = await addUserToDevice(parseInt(userId), name);
         res.status(200).json(result);
 
-    } catch (error: any) {
-        if (error?.code === 'P2002') {
-            res.status(409).json({
-                success: false,
-                message: 'Attendance record already exists for this employee today.'
-            });
+    } catch (error: unknown) {
+        if (isPrismaUniqueViolation(error)) {
+            handleDuplicateError(res, 'attendance');
             return;
         }
         console.error('Add Employee failed:', error);
@@ -68,7 +65,7 @@ export const getAttendance = async (req: Request, res: Response) => {
     try {
         const { startDate, endDate, employeeId, status, page = 1, limit = 10, branchName, departmentId, departmentName } = req.query;
 
-        const filters: any = {};
+        const filters: AttendanceFilters = {};
 
         // Parse dates using PHT timezone (UTC+8) to match how records are stored.
         // Records are stored with date = midnight PHT (setHours(0,0,0,0) on the server).
@@ -101,12 +98,9 @@ export const getAttendance = async (req: Request, res: Response) => {
                 totalPages: Math.ceil(total / limitNum)
             }
         });
-    } catch (error: any) {
-        if (error?.code === 'P2002') {
-            res.status(409).json({
-                success: false,
-                message: 'Attendance record already exists for this employee today.'
-            });
+    } catch (error: unknown) {
+        if (isPrismaUniqueViolation(error)) {
+            handleDuplicateError(res, 'attendance');
             return;
         }
         console.error('Get Attendance Failed:', error);
@@ -129,12 +123,9 @@ export const getToday = async (req: Request, res: Response) => {
             count: records.length,
             data: records
         });
-    } catch (error: any) {
-        if (error?.code === 'P2002') {
-            res.status(409).json({
-                success: false,
-                message: 'Attendance record already exists for this employee today.'
-            });
+    } catch (error: unknown) {
+        if (isPrismaUniqueViolation(error)) {
+            handleDuplicateError(res, 'attendance');
             return;
         }
         console.error('Get Today Failed:', error);
@@ -173,12 +164,9 @@ export const getEmployeeHistory = async (req: Request, res: Response) => {
             count: records.length,
             data: records
         });
-    } catch (error: any) {
-        if (error?.code === 'P2002') {
-            res.status(409).json({
-                success: false,
-                message: 'Attendance record already exists for this employee today.'
-            });
+    } catch (error: unknown) {
+        if (isPrismaUniqueViolation(error)) {
+            handleDuplicateError(res, 'attendance');
             return;
         }
         console.error('Get Employee History Failed:', error);
@@ -265,7 +253,7 @@ export const updateAttendance = async (req: Request, res: Response) => {
         }
 
         // ── ADMIN users: apply changes immediately (existing behavior) ──
-        const updateData: any = {};
+        const updateData: Prisma.AttendanceUpdateInput = {};
         const auditEntries: { field: string; oldValue: string | null; newValue: string | null }[] = [];
 
         if (checkInTime) {
@@ -290,7 +278,7 @@ export const updateAttendance = async (req: Request, res: Response) => {
                 }
 
                 if (updateData.status !== existing.status) {
-                    auditEntries.push({ field: 'status', oldValue: existing.status, newValue: updateData.status });
+                    auditEntries.push({ field: 'status', oldValue: existing.status, newValue: String(updateData.status) });
                 }
             }
         }
@@ -337,7 +325,7 @@ export const updateAttendance = async (req: Request, res: Response) => {
             data: updated,
             auditEntries: auditEntries.length,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Update Attendance Failed:', error);
         res.status(500).json({ success: false, message: 'An unexpected error occurred. Please try again.' });
     }
@@ -358,7 +346,7 @@ export const getAttendanceAuditLogs = async (req: Request, res: Response) => {
     const skip = (page - 1) * limit;
 
     // Use the central AuditLog instead of the legacy AttendanceAuditLog table
-    const where: any = {
+    const where: Prisma.AuditLogWhereInput = {
         entityType: 'Attendance',
         action: { in: ['ATTENDANCE_OVERRIDE', 'ADJUSTMENT_APPROVE'] }
     };
@@ -374,17 +362,16 @@ export const getAttendanceAuditLogs = async (req: Request, res: Response) => {
     if (search || branch) {
        // Since AuditLog handles entityId as an unconstrained Int, 
        // we must fetch valid attendance IDs that match the employee criteria.
-       const attWhere: any = {};
-       if (branch) attWhere.employee = { branch };
+       const attWhere: Prisma.AttendanceWhereInput = {};
+       const employeeWhere: Prisma.EmployeeWhereInput = {};
+       if (branch) employeeWhere.branch = branch;
        if (search) {
-          attWhere.employee = {
-             ...attWhere.employee,
-             OR: [
+           employeeWhere.OR = [
                 { firstName: { contains: search, mode: 'insensitive' } },
                 { lastName: { contains: search, mode: 'insensitive' } }
-             ]
-          };
+           ];
        }
+       if (branch || search) attWhere.employee = employeeWhere;
        
        const matchedAtts = await prisma.attendance.findMany({ 
            where: attWhere, 
@@ -446,13 +433,14 @@ export const getAttendanceAuditLogs = async (req: Request, res: Response) => {
 
     // Flatten the `changes` array from metadata into individual rows (field updates)
     // to preserve backward compatibility with the frontend's expected format.
-    const mappedLogs: any[] = [];
+    const mappedLogs: Record<string, unknown>[] = [];
     for (const log of rawLogs) {
         const attendance = log.entityId ? attMap.get(log.entityId) : null;
         if (!attendance) continue;
 
-        const changes = (log.metadata as any)?.changes || [];
-        const reason = (log.metadata as any)?.reason || null;
+        const meta = log.metadata as { changes?: { field: string; oldValue: string | null; newValue: string | null }[]; reason?: string } | null;
+        const changes = meta?.changes ?? [];
+        const reason = meta?.reason ?? null;
 
         for (const change of changes) {
             mappedLogs.push({
@@ -480,7 +468,7 @@ export const getAttendanceAuditLogs = async (req: Request, res: Response) => {
         totalPages: Math.ceil(total / limit),
       }
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching attendance audit logs:', error);
     return res.status(500).json({
       success: false,
@@ -501,7 +489,7 @@ export const getAdjustments = async (req: Request, res: Response) => {
     const search = (req.query.search as string) || '';
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.AttendanceAdjustmentWhereInput = {};
     if (statusFilter) where.status = statusFilter;
 
     if (search) {
@@ -543,7 +531,7 @@ export const getAdjustments = async (req: Request, res: Response) => {
       data: adjustments,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) }
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching adjustments:', error);
     return res.status(500).json({ success: false, message: 'Failed to fetch adjustments' });
   }
@@ -615,7 +603,7 @@ export const reviewAdjustment = async (req: Request, res: Response) => {
     }
 
     // ── APPROVE: apply the changes to the attendance record ──
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = {};
     const auditEntries: { field: string; oldValue: string | null; newValue: string | null }[] = [];
     const existing = adjustment.attendance;
 
@@ -635,7 +623,7 @@ export const reviewAdjustment = async (req: Request, res: Response) => {
         const shiftStartMinutes = startH * 60 + startM + grace;
         updateData.status = checkInMinutes <= shiftStartMinutes ? 'present' : 'late';
         if (updateData.status !== existing.status) {
-          auditEntries.push({ field: 'status', oldValue: existing.status, newValue: updateData.status });
+          auditEntries.push({ field: 'status', oldValue: existing.status, newValue: String(updateData.status) });
         }
       }
     }
@@ -685,7 +673,7 @@ export const reviewAdjustment = async (req: Request, res: Response) => {
     });
 
     return res.json({ success: true, message: 'Adjustment approved and applied' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error reviewing adjustment:', error);
     return res.status(500).json({ success: false, message: 'Failed to review adjustment' });
   }
@@ -732,7 +720,7 @@ export const streamAttendance = async (req: Request, res: Response): Promise<voi
     // The `any` on payload is unavoidable — the emitter carries untyped data
     // across module boundaries and typing it would require a shared interface
     // that adds coupling without safety (runtime JSON.parse is untyped anyway).
-    const onNewRecord = (payload: { type: string; record: any }) => {
+    const onNewRecord = (payload: { type: string; record: unknown }) => {
         res.write(`event: attendance\ndata: ${JSON.stringify(payload)}\n\n`);
     };
 

@@ -105,7 +105,7 @@ export const getAttendanceSummary = async (startDate: Date, endDate: Date) => {
 
   const summary: ReportSummaryRow[] = employees.map((emp) => {
     const empRecords = recordsByEmployee.get(emp.id) ?? [];
-    const shift = (emp as any).Shift ?? null;
+    const shift = emp.Shift ?? null;
 
     let present = 0;
     let late = 0;
@@ -161,7 +161,7 @@ export const getAttendanceSummary = async (startDate: Date, endDate: Date) => {
     return {
       id: emp.id,
       name: `${emp.firstName} ${emp.lastName}`,
-      department: (emp as any).Department?.name || (emp as any).department || '-',
+      department: emp.Department?.name || '-',
       branch: emp.branch || '-',
       totalDays: totalWorkingDays,
       present,

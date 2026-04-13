@@ -122,7 +122,7 @@ export const createShift = async (req: Request, res: Response) => {
         });
 
         res.status(201).json({ success: true, shift });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error creating shift:', error);
         res.status(500).json({ success: false, message: 'Failed to create shift' });
     }
@@ -187,7 +187,7 @@ export const updateShift = async (req: Request, res: Response) => {
             if (dup) return res.status(409).json({ success: false, message: 'Shift name already in use' });
         }
 
-        const updateData: any = {
+        const updateData: Record<string, unknown> = {
             ...(shiftCode && { shiftCode: shiftCode.trim().toUpperCase() }),
             ...(name && { name: name.trim() }),
             ...(startTime && { startTime: startTime.trim() }),
@@ -209,7 +209,7 @@ export const updateShift = async (req: Request, res: Response) => {
 
         const changes: string[] = [];
         for (const [key, newValue] of Object.entries(updateData)) {
-            const oldValue = (existing as any)[key];
+            const oldValue = (existing as Record<string, unknown>)[key];
             if (oldValue !== newValue) {
                 const oldValStr = oldValue || 'empty';
                 const newValStr = newValue || 'empty';
@@ -231,7 +231,7 @@ export const updateShift = async (req: Request, res: Response) => {
         });
 
         res.json({ success: true, shift });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error updating shift:', error);
         res.status(500).json({ success: false, message: 'Failed to update shift' });
     }
@@ -301,7 +301,7 @@ export const deleteShift = async (req: Request, res: Response) => {
         });
 
         res.json({ success: true, message: `Shift "${existing.name}" deleted` });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error deleting shift:', error);
         res.status(500).json({ success: false, message: 'Failed to delete shift' });
     }
@@ -331,7 +331,7 @@ export const getNextEmployeeNumber = async (req: Request, res: Response) => {
         const employeeNumber = `${prefix}${nextSequence}`;
 
         res.json({ success: true, employeeNumber });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error generating employee number:', error);
         res.status(500).json({ success: false, message: 'Failed to generate employee number' });
     }

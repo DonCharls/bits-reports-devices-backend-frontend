@@ -10,7 +10,7 @@ async function testRegistration() {
             lastName: 'User',
             email: 'test@example.com',
             password: 'password123',
-            role: 'USER' as any,
+            role: 'USER' as const,
             updatedAt: new Date(),
         };
 
@@ -53,8 +53,8 @@ async function testRegistration() {
         });
 
         console.log('\n🔍 Check Prisma Studio at http://localhost:5555 to verify!');
-    } catch (error: any) {
-        console.error('\n❌ Registration failed:', error.message);
+    } catch (error: unknown) {
+        console.error('\n❌ Registration failed:', error instanceof Error ? error.message : String(error));
         throw error;
     } finally {
         await prisma.$disconnect();

@@ -13,6 +13,7 @@ import { AttendanceFilters } from '@/features/attendance/components/AttendanceFi
 import { AttendanceTable } from '@/features/attendance/components/AttendanceTable';
 import { AttendanceEditModal } from '@/features/attendance/components/AttendanceEditModal';
 import { fmtHours, formatLate, fmtMins, toTimeInput } from '@/features/attendance/utils/attendance-formatters';
+import { AttendanceRecord } from '@/features/attendance/types';
 
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/ui/SortableHeader';
@@ -34,24 +35,6 @@ import {
 
 export interface AttendanceDashboardProps {
   role: 'admin' | 'hr';
-}
-
-interface AttendanceRecord {
-  id: number | string;
-  employeeId: number;
-  employeeName: string;
-  department: string;
-  branchName: string;
-  date: string;
-  checkIn: string;
-  checkOut: string;
-  status: string;
-  lateMinutes: number;
-  totalHours: number;
-  overtimeMinutes: number;
-  undertimeMinutes: number;
-  shiftCode: string | null;
-  isNightShift: boolean;
 }
 
 function AttendanceContent({ role }: AttendanceDashboardProps) {

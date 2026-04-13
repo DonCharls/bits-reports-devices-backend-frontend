@@ -52,12 +52,12 @@ export interface HealthCheckStatus {
  */
 async function tcpProbe(ip: string, port: number, timeoutMs: number): Promise<boolean> {
     for (let attempt = 1; attempt <= 2; attempt++) {
-        let zkInstance: any = null;
+        let zkInstance: { createSocket: () => Promise<void>; connect: () => Promise<void>; disconnect: () => Promise<void> } | null = null;
         try {
             const ZKLibTCP = require('node-zklib/zklibtcp');
             zkInstance = new ZKLibTCP(ip, port, timeoutMs);
-            await zkInstance.createSocket();
-            await zkInstance.connect();
+            await zkInstance!.createSocket();
+            await zkInstance!.connect();
             return true;
         } catch {
             if (attempt === 1) {

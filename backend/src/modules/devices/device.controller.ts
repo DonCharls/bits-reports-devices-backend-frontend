@@ -6,11 +6,15 @@ import deviceEmitter from '../../shared/events/deviceEmitter';
 import { audit } from '../../shared/lib/auditLogger';
 
 /** Unwrap node-zklib's ZKError: { err: Error, ip, command } → readable string */
-function zkErrMsg(err: any): string {
+function zkErrMsg(err: unknown): string {
     if (!err) return 'Unknown error';
     if (typeof err === 'string') return err;
-    if (err.err instanceof Error) return `${err.command || 'ZK'}: ${err.err.message}`;
-    if (err.message) return err.message;
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'object') {
+        const rec = err as Record<string, unknown>;
+        if (rec.err instanceof Error) return `${rec.command || 'ZK'}: ${rec.err.message}`;
+        if (typeof rec.message === 'string') return rec.message;
+    }
     return String(err);
 }
 
@@ -36,9 +40,9 @@ export const getAllDevices = async (req: Request, res: Response) => {
         });
 
         res.json({ success: true, devices });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[Devices] Error fetching devices:', error);
-        res.status(500).json({ success: false, message: 'Failed to fetch devices', error: error.message });
+        res.status(500).json({ success: false, message: 'Failed to fetch devices', error: error instanceof Error ? error.message : String(error) });
     }
 };
 
@@ -83,9 +87,9 @@ export const createDevice = async (req: Request, res: Response) => {
         });
 
         res.status(201).json({ success: true, message: `Device "${device.name}" added successfully`, device });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[Devices] Error creating device:', error);
-        res.status(500).json({ success: false, message: 'Failed to create device', error: error.message });
+        res.status(500).json({ success: false, message: 'Failed to create device', error: error instanceof Error ? error.message : String(error) });
     }
 };
 
@@ -140,9 +144,9 @@ export const updateDevice = async (req: Request, res: Response) => {
         });
 
         res.json({ success: true, message: `Device "${device.name}" updated. Please test the connection.`, device });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[Devices] Error updating device:', error);
-        res.status(500).json({ success: false, message: 'Failed to update device', error: error.message });
+        res.status(500).json({ success: false, message: 'Failed to update device', error: error instanceof Error ? error.message : String(error) });
     }
 };
 
@@ -171,9 +175,9 @@ export const deleteDevice = async (req: Request, res: Response) => {
 
         console.log(`[Devices] Deleted device ID ${id}: "${existing.name}"`);
         res.json({ success: true, message: `Device "${existing.name}" removed successfully` });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[Devices] Error deleting device:', error);
-        res.status(500).json({ success: false, message: 'Failed to delete device', error: error.message });
+        res.status(500).json({ success: false, message: 'Failed to delete device', error: error instanceof Error ? error.message : String(error) });
     }
 };
 
@@ -195,7 +199,7 @@ export const testDeviceConnection = async (req: Request, res: Response) => {
         const zk = new ZKDriver(device.ip, device.port, timeout);
 
         let connected = false;
-        let info: any = null;
+        let info: { serialNumber?: string; logCounts?: number; logCapacity?: number } | null = null;
         let userCount = 0;
 
         try {
@@ -257,7 +261,7 @@ export const testDeviceConnection = async (req: Request, res: Response) => {
         await prisma.device.update({ where: { id }, data: { isActive: false, updatedAt: new Date() } });
         return res.status(502).json({ success: false, message: 'Device unreachable' });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         // ZKError has shape { err: Error, ip, command } — extract inner message
         const msg = zkErrMsg(error);
         console.error(`[Devices] Connection test failed for device ${id}: ${msg}`);
@@ -286,11 +290,12 @@ export const testDeviceConnection = async (req: Request, res: Response) => {
         }
 
         // Check if it's a network/timeout error (ZKError wraps it in .err)
-        const innerErr = error?.err;
+        const errRecord = error as Record<string, unknown>;
+        const innerErr = errRecord?.err as Record<string, unknown> | undefined;
         const isNetworkError =
-            error.code === 'ETIMEDOUT' ||
-            error.code === 'ECONNREFUSED' ||
-            error.code === 'ENOTFOUND' ||
+            errRecord?.code === 'ETIMEDOUT' ||
+            errRecord?.code === 'ECONNREFUSED' ||
+            errRecord?.code === 'ENOTFOUND' ||
             innerErr?.code === 'ETIMEDOUT' ||
             innerErr?.code === 'ECONNREFUSED' ||
             msg.toLowerCase().includes('timeout') ||
@@ -346,7 +351,7 @@ export const reconcileDevice = async (req: Request, res: Response) => {
                 : `${mode}: ${report.pushed.length} push tasks, ${report.deleted.length} deletion tasks, and finger pulls (${report.needsEnrollment.length} users) enqueued successfully.`,
             report,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         const msg = zkErrMsg(error);
         console.error(`[Devices] Reconcile failed for device ${id}: ${msg}`);
         return res.status(500).json({ success: false, message: msg });
@@ -386,9 +391,9 @@ export const toggleDevice = async (req: Request, res: Response) => {
         });
 
         return res.json({ success: true, message: `Sync ${state} for "${updated.name}"`, device: updated });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error(`[Devices] Toggle failed for device ${id}:`, error);
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: error instanceof Error ? error.message : String(error) });
     }
 };
 
@@ -418,8 +423,8 @@ export const syncBiometrics = async (req: Request, res: Response) => {
                     const result = await syncEmployeeFingerprints(emp.id);
                     if (result.success) successCount++;
                     else failCount++;
-                } catch (err: any) {
-                    console.error(`[GlobalSync] Error syncing ${emp.firstName} ${emp.lastName}:`, err.message);
+                } catch (err: unknown) {
+                    console.error(`[GlobalSync] Error syncing ${emp.firstName} ${emp.lastName}:`, err instanceof Error ? err.message : String(err));
                     failCount++;
                 }
             }
@@ -443,9 +448,9 @@ export const syncBiometrics = async (req: Request, res: Response) => {
             message: `Background sync started for ${employees.length} active employees.`,
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[GlobalSync] Failed to initiate biometric sync:', error);
-        res.status(500).json({ success: false, message: 'Failed to initiate biometric sync', error: error.message });
+        res.status(500).json({ success: false, message: 'Failed to initiate biometric sync', error: error instanceof Error ? error.message : String(error) });
     }
 };
 

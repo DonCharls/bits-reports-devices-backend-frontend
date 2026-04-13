@@ -8,22 +8,26 @@ export const getDriver = (ip?: string, port?: number): ZKDriver => {
     return new ZKDriver(resolvedIp, resolvedPort, timeout);
 };
 
-export function zkErrMsg(err: any): string {
+export function zkErrMsg(err: unknown): string {
     if (!err) return 'Unknown error';
     if (typeof err === 'string') return err;
-    if (err.err instanceof Error) return `${err.command || 'ZK'}: ${err.err.message}`;
-    if (err.message) return err.message;
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'object') {
+        const rec = err as Record<string, unknown>;
+        if (rec.err instanceof Error) return `${rec.command || 'ZK'}: ${rec.err.message}`;
+        if (typeof rec.message === 'string') return rec.message;
+    }
     return JSON.stringify(err);
 }
 
 export async function connectWithRetry(zk: ZKDriver, maxRetries: number = 2): Promise<void> {
-    let lastError: any;
+    let lastError: unknown;
     for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
         try {
             await zk.connect();
             if (attempt > 1) console.log(`[ZK] Connected on attempt ${attempt}.`);
             return;
-        } catch (err: any) {
+        } catch (err: unknown) {
             lastError = err;
             console.warn(`[ZK] Connection attempt ${attempt} failed: ${zkErrMsg(err)}`);
             if (attempt <= maxRetries) {

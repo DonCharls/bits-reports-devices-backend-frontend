@@ -96,9 +96,10 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
             });
         }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[API] Enrollment error:', error);
 
+        const errMsg = error instanceof Error ? error.message : String(error);
         const empId = req.params.id ? parseInt(req.params.id as string) : undefined;
         void audit({
             action: 'UPDATE',
@@ -106,15 +107,15 @@ export const enrollEmployeeFingerprintController = async (req: Request, res: Res
             entityType: 'Employee',
             entityId: isNaN(empId as number) ? undefined : empId,
             performedBy: req.user?.employeeId,
-            details: `Exception while starting fingerprint enrollment: ${error.message}`,
-            metadata: { error: error.message, body: req.body },
+            details: `Exception while starting fingerprint enrollment: ${errMsg}`,
+            metadata: { error: errMsg, body: req.body },
             correlationId: req.correlationId
         });
 
         return res.status(500).json({
             success: false,
             message: 'Failed to start enrollment',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+            error: process.env.NODE_ENV === 'development' ? errMsg : undefined,
         });
     }
 };
@@ -191,9 +192,10 @@ export const enrollEmployeeCardController = async (req: Request, res: Response) 
             });
         }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[API] Card enrollment error:', error);
 
+        const errMsg = error instanceof Error ? error.message : String(error);
         const empId = req.params.id ? parseInt(req.params.id as string) : undefined;
         void audit({
             action: 'UPDATE',
@@ -201,15 +203,15 @@ export const enrollEmployeeCardController = async (req: Request, res: Response) 
             entityType: 'Employee',
             entityId: isNaN(empId as number) ? undefined : empId,
             performedBy: req.user?.employeeId,
-            details: `Exception while enrolling RFID badge: ${error.message}`,
-            metadata: { error: error.message, body: req.body },
+            details: `Exception while enrolling RFID badge: ${errMsg}`,
+            metadata: { error: errMsg, body: req.body },
             correlationId: req.correlationId
         });
 
         return res.status(500).json({
             success: false,
             message: 'Failed to enroll RFID badge',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+            error: process.env.NODE_ENV === 'development' ? errMsg : undefined,
         });
     }
 };
@@ -258,12 +260,12 @@ export const deleteEmployeeCardController = async (req: Request, res: Response) 
             });
         }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[API] Card deletion error:', error);
         return res.status(500).json({
             success: false,
             message: 'Server error during card deletion',
-            error: error.message
+            error: error instanceof Error ? error.message : String(error)
         });
     }
 };
@@ -399,7 +401,7 @@ export const getEmployeeFingerprintStatus = async (req: Request, res: Response) 
             allDevices: activeDevices,
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[API] Fingerprint status error:', error);
         return res.status(500).json({
             success: false,
@@ -442,7 +444,7 @@ export const deleteEmployeeFingerprint = async (req: Request, res: Response) => 
             return res.status(500).json(result);
         }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[API] Delete fingerprint error:', error);
         return res.status(500).json({
             success: false,
@@ -472,7 +474,7 @@ export const syncEmployeeFingerprintsController = async (req: Request, res: Resp
                 entityType: 'Employee',
                 entityId: employeeId,
                 performedBy: req.user?.employeeId,
-                details: `Synced fingerprints for ${emp?.firstName} ${emp?.lastName}: ${result.results.filter((r: any) => r.status === 'synced').length} device(s)`,
+                details: `Synced fingerprints for ${emp?.firstName} ${emp?.lastName}: ${result.results.filter((r: { status: string }) => r.status === 'synced').length} device(s)`,
                 metadata: { results: result.results },
                 correlationId: req.correlationId
             });
@@ -482,7 +484,7 @@ export const syncEmployeeFingerprintsController = async (req: Request, res: Resp
             return res.status(400).json(result);
         }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[API] Sync fingerprints error:', error);
         return res.status(500).json({
             success: false,
@@ -549,12 +551,12 @@ export const getEmployeeCardStatus = async (req: Request, res: Response) => {
             devices: devicesResult,
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error fetching employee card status:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to fetch employee card status',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+            error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined,
         });
     }
 };

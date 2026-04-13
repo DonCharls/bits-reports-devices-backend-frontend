@@ -31,7 +31,7 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
                 status: u.employmentStatus === 'ACTIVE' ? 'active' : 'inactive',
             })),
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Get users failed:', error);
         res.status(500).json({ success: false, message: 'Failed to fetch users' });
     }
@@ -112,7 +112,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
                 status: newUser.employmentStatus === 'ACTIVE' ? 'active' : 'inactive',
             },
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Create user failed:', error);
         
         void audit({
@@ -121,8 +121,8 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
             entityType: 'User Account',
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Failed to create admin/HR account due to server error: ${error.message}`,
-            metadata: { error: error.message },
+            details: `Failed to create admin/HR account due to server error: ${error instanceof Error ? error.message : String(error)}`,
+            metadata: { error: error instanceof Error ? error.message : String(error) },
             correlationId: req.correlationId
         });
 
@@ -154,7 +154,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
             }
         }
 
-        const updateData: any = {
+        const updateData: Record<string, unknown> = {
             ...(firstName && { firstName }),
             ...(lastName && { lastName }),
             ...(email && { email }),
@@ -184,7 +184,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
         const changes: string[] = [];
         for (const [key, newValue] of Object.entries(updateData)) {
             if (key === 'password' || key === 'updatedAt') continue;
-            const oldValue = (user as any)[key];
+            const oldValue = (user as Record<string, unknown>)[key];
             if (oldValue !== newValue) {
                 const oldValStr = oldValue instanceof Date ? oldValue.toISOString().split('T')[0] : (oldValue || 'empty');
                 const newValStr = newValue instanceof Date ? newValue.toISOString().split('T')[0] : (newValue || 'empty');
@@ -216,7 +216,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
                 status: updated.employmentStatus === 'ACTIVE' ? 'active' : 'inactive',
             },
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Update user failed:', error);
         res.status(500).json({ success: false, message: 'Failed to update user' });
     }
@@ -258,7 +258,7 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
         });
 
         res.json({ success: true, message: 'User deleted successfully' });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Delete user failed:', error);
         res.status(500).json({ success: false, message: 'Failed to delete user' });
     }
@@ -319,7 +319,7 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
                 status: updated.employmentStatus === 'ACTIVE' ? 'active' : 'inactive',
             },
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Toggle status failed:', error);
         res.status(500).json({ success: false, message: 'Failed to toggle user status' });
     }
@@ -365,7 +365,7 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
             message: 'Profile updated successfully',
             employee: updated,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Update profile failed:', error);
         res.status(500).json({ success: false, message: 'Failed to update profile' });
     }
@@ -418,7 +418,7 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
         });
 
         res.json({ success: true, message: 'Password changed successfully' });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Change password failed:', error);
         res.status(500).json({ success: false, message: 'Failed to change password' });
     }

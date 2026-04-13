@@ -5,7 +5,7 @@ import { tryAcquireDeviceLock, releaseDeviceLock, acquireDeviceLock } from './zk
 export const PROTECTED_DEVICE_UIDS = [1];
 const MIN_EMPLOYEE_ZK_ID = 2;
 
-interface SyncResult { success: boolean; message?: string; error?: string; newLogs?: number; count?: number; results?: any[]; }
+interface SyncResult { success: boolean; message?: string; error?: string; newLogs?: number; count?: number; results?: Record<string, unknown>[]; }
 
 
 export const findNextSafeZkId = async (): Promise<number> => {
@@ -32,11 +32,11 @@ export const findNextSafeZkId = async (): Promise<number> => {
             await connectWithRetry(zk, 1);
             const deviceUsers = await zk.getUsers();
             // node-zklib does not export its user type, so 'any' is required here
-            deviceUsers.forEach((u: any) => {
+            deviceUsers.forEach((u) => {
                 if (typeof u.uid === 'number') usedIds.add(u.uid);
             });
             console.log(`[ZK] findNextSafeZkId — scanned ${deviceUsers.length} UIDs from "${dbDevice.name}".`);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.warn(`[ZK] findNextSafeZkId — could not reach "${dbDevice.name}" (${zkErrMsg(err)}).`);
         } finally {
             try { await zk.disconnect(); } catch { /* ignore disconnect errors */ }
@@ -203,7 +203,7 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
 
                     try {
                         // Pre-write slot occupancy check. Skip if slot is held by a different user.
-                        const occupant = deviceUsers.find((u: any) => u.uid === deviceUid);
+                        const occupant = deviceUsers.find((u) => u.uid === deviceUid);
 
                         if (occupant) {
                             if (String(occupant.userId).trim() === visibleId.trim()) {
@@ -224,14 +224,14 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
                             console.log(`[ZK]   ✓ Written: "${fullName}" → UID=${deviceUid} on "${dbDevice.name}"`);
                             successCount++;
                         }
-                    } catch (err: any) {
+                    } catch (err: unknown) {
                         console.error(`[ZK]   ✗ Failed "${fullName}": ${zkErrMsg(err)}`);
                     }
                 }
 
                 await zk.refreshData();
                 totalSuccess += successCount;
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error(`[ZK] Could not sync to "${dbDevice.name}": ${zkErrMsg(err)}`);
             } finally {
                 try { await zk.disconnect(); } catch { /* ignore */ }
@@ -245,8 +245,8 @@ export const syncEmployeesToDevice = async (): Promise<SyncResult> => {
             count: totalSuccess,
         };
 
-    } catch (error: any) {
-        throw new Error(`Sync failed: ${error.message}`);
+    } catch (error: unknown) {
+        throw new Error(`Sync failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 };
 
@@ -274,8 +274,8 @@ export const testDeviceConnection = async (): Promise<SyncResult> => {
         }
 
         return { success: true, message: `Connected! Serial: ${serial}${timePart}` };
-    } catch (error: any) {
-        return { success: false, error: error.message };
+    } catch (error: unknown) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
     } finally {
         try { await zk.disconnect(); } catch { /* ignore disconnect errors */ }
         releaseDeviceLock(0);
@@ -343,7 +343,7 @@ export const syncEmployeesFromDevice = async (): Promise<SyncResult> => {
                 totalSkippedCount += skippedCount;
                 console.log(`[ZK] "${dbDevice.name}" done. Matched: ${updateCount}, Skipped: ${skippedCount}.`);
 
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error(`[ZK] Failed to read users from "${dbDevice.name}": ${zkErrMsg(err)}`);
             } finally {
                 try { await zk.disconnect(); } catch { /* ignore */ }
@@ -357,8 +357,8 @@ export const syncEmployeesFromDevice = async (): Promise<SyncResult> => {
             count: totalUpdateCount,
         };
 
-    } catch (error: any) {
-        return { success: false, error: error.message };
+    } catch (error: unknown) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
 };
 

@@ -6,7 +6,7 @@ import { ZKDriver } from "../../shared/lib/zk-driver";
 export interface EnrollmentResult {
     success: boolean;
     message: string;
-    data?: any;
+    data?: unknown;
     error?: string;
     employee_id?: number;
     finger_index?: number;
@@ -49,7 +49,7 @@ const FINGER_MAP: { [key: number]: string } = {
 /**
  * Print data as JSON for consumption (matches Python script behavior)
  */
-function printJson(data: any) {
+function printJson(data: unknown) {
     console.log(JSON.stringify(data));
 }
 
@@ -168,16 +168,16 @@ export async function enrollFingerprint(
 
             // Try multiple lookup strategies to find the user
             // 1. Match by the provided userIdString (= zkId as string)
-            let targetEmployee = deviceUsers.find((emp: any) => String(emp.userId) === targetUserIdString);
+            let targetEmployee = deviceUsers.find((emp) => String(emp.userId) === targetUserIdString);
 
             // 2. If not found, try matching by employeeId string
             if (!targetEmployee) {
-                targetEmployee = deviceUsers.find((emp: any) => String(emp.userId) === String(employeeId));
+                targetEmployee = deviceUsers.find((emp) => String(emp.userId) === String(employeeId));
             }
 
             // 3. If still not found, try matching by name
             if (!targetEmployee) {
-                targetEmployee = deviceUsers.find((emp: any) => emp.name === name);
+                targetEmployee = deviceUsers.find((emp) => emp.name === name);
             }
 
             if (targetEmployee) {
@@ -199,7 +199,7 @@ export async function enrollFingerprint(
                 console.log(`[Enrollment] Found User: "${targetEmployee.name}" (VisibleId: ${resolvedVisibleId}, InternalUID: ${targetEmployee.uid}).`);
             } else {
                 console.error(`[Enrollment] User not found on device (userIdString="${targetUserIdString}", employeeId=${employeeId}, name="${name}"). Available users:`);
-                deviceUsers.forEach((emp: any) => {
+                deviceUsers.forEach((emp) => {
                     console.log(`[Enrollment]   UID=${emp.uid}, userId="${emp.userId}", name="${emp.name}"`);
                 });
             }
@@ -247,19 +247,20 @@ export async function enrollFingerprint(
             finger_index: fingerIndex
         };
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Enrollment error:", error);
 
         // Determine error type
         let errorType = "unknown_error";
-        let errorMsg = error.message || "Unknown error";
+        const errObj = error instanceof Error ? error : null;
+        let errorMsg = errObj?.message || "Unknown error";
 
-        if (error.message?.includes("connect") || error.message?.includes("timeout") || error.code === "ETIMEDOUT" || error.code === "ECONNREFUSED") {
+        if (errObj?.message?.includes("connect") || errObj?.message?.includes("timeout") || (error as NodeJS.ErrnoException)?.code === "ETIMEDOUT" || (error as NodeJS.ErrnoException)?.code === "ECONNREFUSED") {
             errorType = "network_error";
             errorMsg = `Network error: Cannot connect to device at ${deviceIp}:${port}`;
-        } else if (error.message?.includes("device") || error.message?.includes("command")) {
+        } else if (errObj?.message?.includes("device") || errObj?.message?.includes("command")) {
             errorType = "device_error";
-        } else if (error.message?.includes("finger") || error.message?.includes("enroll")) {
+        } else if (errObj?.message?.includes("finger") || errObj?.message?.includes("enroll")) {
             errorType = "enrollment_error";
         }
 
@@ -269,13 +270,13 @@ export async function enrollFingerprint(
             "error_type": errorType,
             "employee_id": employeeId,
             "finger_index": fingerIndex,
-            "details": error.stack || error.message
+            "details": errObj?.stack || errObj?.message || String(error)
         });
 
         return {
             success: false,
             message: errorMsg,
-            error: error.stack || error.message,
+            error: errObj?.stack || errObj?.message || String(error),
             employee_id: employeeId,
             finger_index: fingerIndex
         };

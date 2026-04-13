@@ -130,8 +130,8 @@ async function testRoleBasedAccess() {
 
         console.log('\n✅ Role-Based Access Control Tests Complete!');
 
-    } catch (error: any) {
-        console.error('\n❌ Test failed:', error.message);
+    } catch (error: unknown) {
+        console.error('\n❌ Test failed:', error instanceof Error ? error.message : String(error));
     } finally {
         await prisma.$disconnect();
     }

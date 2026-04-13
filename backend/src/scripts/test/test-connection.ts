@@ -36,9 +36,9 @@ async function main() {
             console.log('   5. No other software is connected to device\n');
         }
 
-    } catch (error: any) {
-        console.error('\n❌ UNEXPECTED ERROR:', error.message);
-        console.error('\nStack trace:', error.stack);
+    } catch (error: unknown) {
+        console.error('\n❌ UNEXPECTED ERROR:', error instanceof Error ? error.message : String(error));
+        if (error instanceof Error) console.error('\nStack trace:', error.stack);
         process.exit(1);
     } finally {
         await prisma.$disconnect();

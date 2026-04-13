@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../shared/lib/prisma';
+import { Prisma } from '@prisma/client';
 import { audit } from '../../shared/lib/auditLogger';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -76,7 +77,7 @@ export const getLogs = async (req: Request, res: Response) => {
             : new Date();
 
         // 1. Build the where clause
-        const baseWhere: any = {
+        const baseWhere: Prisma.AuditLogWhereInput = {
             timestamp: { gte: startUTC, lte: endUTC },
         };
 
@@ -86,7 +87,7 @@ export const getLogs = async (req: Request, res: Response) => {
         }
 
         // Category filter directly targets the new DB column.
-        const listWhere: any = { ...baseWhere };
+        const listWhere: Prisma.AuditLogWhereInput = { ...baseWhere };
 
         if (category && category !== 'all' && VALID_CATEGORIES.includes(category as LogCategory)) {
             listWhere.category = category;
@@ -129,7 +130,7 @@ export const getLogs = async (req: Request, res: Response) => {
         const allCount = categoryCounts.reduce((a, b) => a + b, 0);
 
         // 3. Map to the expected format for the frontend
-        const mappedLogs = rawLogs.map((log: any) => {
+        const mappedLogs = rawLogs.map((log) => {
             const empName = log.performer ? `${log.performer.firstName} ${log.performer.lastName}`.trim() : 'System';
             // Use the explicit category column now Instead of inferring from entityType
             const logCategory = log.category;
@@ -173,9 +174,9 @@ export const getLogs = async (req: Request, res: Response) => {
             },
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[Logs] Error fetching logs:', error);
-        return res.status(500).json({ success: false, message: 'Failed to fetch logs', error: error.message });
+        return res.status(500).json({ success: false, message: 'Failed to fetch logs', error: error instanceof Error ? error.message : String(error) });
     }
 };
 
@@ -197,7 +198,7 @@ export const logExportEvent = async (req: Request, res: Response) => {
             fileName,
         } = req.body;
 
-        const performedBy = (req as any).user?.employeeId;
+        const performedBy = req.user?.employeeId;
 
         if (!performedBy) {
             return res.status(401).json({ success: false, message: 'User not authenticated' });
@@ -221,12 +222,12 @@ export const logExportEvent = async (req: Request, res: Response) => {
                 fileFormat: fileFormat || 'xlsx',
                 fileName: fileName || null,
             },
-            correlationId: (req as any).correlationId
+            correlationId: req.correlationId
         });
 
         return res.json({ success: true, message: 'Export event logged' });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[Logs] Error logging export event:', error);
-        return res.status(500).json({ success: false, message: 'Failed to log export event', error: error.message });
+        return res.status(500).json({ success: false, message: 'Failed to log export event', error: error instanceof Error ? error.message : String(error) });
     }
 };

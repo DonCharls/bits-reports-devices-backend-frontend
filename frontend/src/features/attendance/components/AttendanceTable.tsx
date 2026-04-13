@@ -2,19 +2,20 @@ import React from 'react';
 import { AlertCircle, ChevronLeft, ChevronRight, Edit2 } from 'lucide-react';
 import { SortableHeader } from '@/components/ui/SortableHeader';
 import { fmtHours, formatLate, fmtMins } from '../utils/attendance-formatters';
+import { AttendanceRecord } from '../types';
 
 interface AttendanceTableProps {
   loading: boolean;
-  records: any[];
-  sortedRecords: any[];
+  records: AttendanceRecord[];
+  sortedRecords: AttendanceRecord[];
   sortKeyStr: string | null;
   sortOrder: 'asc' | 'desc' | null;
-  handleSort: (key: any) => void;
+  handleSort: (key: keyof AttendanceRecord) => void;
   currentPage: number;
   setCurrentPage: React.Dispatch<React.SetStateAction<number>>;
   totalPages: number;
   rowsPerPage: number;
-  handleEditClick: (row: any) => void;
+  handleEditClick: (row: AttendanceRecord) => void;
 }
 
 export function AttendanceTable({
@@ -67,9 +68,9 @@ export function AttendanceTable({
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                   <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Clock In</p><p className="font-mono text-emerald-600 font-black text-sm">{row.checkIn}</p></div>
                   <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Clock Out</p>
-                    {(row as any).notes?.includes('Early punch detected') ? (
+                    {row.notes?.includes('Early punch detected') ? (
                       <span className="text-[10px] font-bold text-orange-500">🔶 Early punch flagged</span>
-                    ) : row.checkOut === '—' && (row as any).notes?.includes('No checkout recorded') ? (
+                    ) : row.checkOut === '—' && row.notes?.includes('No checkout recorded') ? (
                       <span className="text-[10px] font-bold text-amber-600">⚠️ No checkout</span>
                     ) : (
                       <p className="font-mono text-slate-600 font-black text-sm">{row.checkOut}</p>

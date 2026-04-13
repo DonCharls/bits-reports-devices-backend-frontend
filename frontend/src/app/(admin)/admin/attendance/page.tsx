@@ -1,4 +1,4 @@
-import AttendanceDashboard from '@/components/attendance/AttendanceDashboard';
+import AttendanceDashboard from '@/features/attendance/components/AttendanceDashboard';
 
 export default function AdminAttendancePage() {
   return <AttendanceDashboard role="admin" />;

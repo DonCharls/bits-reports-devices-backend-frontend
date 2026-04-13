@@ -15,7 +15,7 @@ export const getMyAttendance = async (req: Request, res: Response): Promise<void
         const employeeId = req.user.employeeId;
         const { startDate, endDate } = req.query;
 
-        let dateFilter: any = {};
+        let dateFilter: { gte?: Date; lte?: Date } = {};
 
         if (startDate && endDate) {
             // Use PHT (UTC+8) boundaries: subtract 8 hours from PHT midnight to get the correct UTC time
@@ -43,7 +43,7 @@ export const getMyAttendance = async (req: Request, res: Response): Promise<void
         });
 
         // Enrich each record with shift-based calculations
-        const enrichedData = records.map((record: any) => {
+        const enrichedData = records.map((record) => {
             const shift = record.employee?.Shift ?? null;
             const metrics = calculateAttendanceMetrics(record, shift);
             return {
@@ -57,9 +57,9 @@ export const getMyAttendance = async (req: Request, res: Response): Promise<void
         });
 
         res.status(200).json({ success: true, count: enrichedData.length, data: enrichedData });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('getMyAttendance error:', error);
-        res.status(500).json({ success: false, message: 'Failed to fetch attendance records', error: error.message });
+        res.status(500).json({ success: false, message: 'Failed to fetch attendance records', error: error instanceof Error ? error.message : String(error) });
     }
 };
 
@@ -82,9 +82,9 @@ export const getMyShift = async (req: Request, res: Response): Promise<void> => 
         }
 
         res.status(200).json({ success: true, shift: employee.Shift });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('getMyShift error:', error);
-        res.status(500).json({ success: false, message: 'Failed to fetch shift details', error: error.message });
+        res.status(500).json({ success: false, message: 'Failed to fetch shift details', error: error instanceof Error ? error.message : String(error) });
     }
 };
 
@@ -123,9 +123,9 @@ export const getMyProfile = async (req: Request, res: Response): Promise<void> =
         }
 
         res.status(200).json({ success: true, profile: employee });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('getMyProfile error:', error);
-        res.status(500).json({ success: false, message: 'Failed to fetch profile', error: error.message });
+        res.status(500).json({ success: false, message: 'Failed to fetch profile', error: error instanceof Error ? error.message : String(error) });
     }
 };
 
@@ -172,9 +172,9 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
         });
 
         res.status(200).json({ success: true, message: 'Password changed successfully' });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('changePassword error:', error);
-        res.status(500).json({ success: false, message: 'Failed to change password', error: error.message });
+        res.status(500).json({ success: false, message: 'Failed to change password', error: error instanceof Error ? error.message : String(error) });
     }
 };
 
@@ -203,7 +203,7 @@ export const streamMyAttendance = async (req: Request, res: Response): Promise<v
         res.write(': heartbeat\n\n');
     }, 25_000);
 
-    const onNewRecord = (payload: { type: string; record: any }) => {
+    const onNewRecord = (payload: { type: string; record: { employeeId?: number } }) => {
         // Only forward events belonging to the logged-in employee
         if (payload.record?.employeeId === currentEmployeeId) {
             res.write(`event: attendance\ndata: ${JSON.stringify(payload)}\n\n`);

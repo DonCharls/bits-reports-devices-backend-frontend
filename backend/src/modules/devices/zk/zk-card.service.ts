@@ -1,4 +1,4 @@
-interface SyncResult { success: boolean; message?: string; error?: string; count?: number; results?: any[]; }
+interface SyncResult { success: boolean; message?: string; error?: string; count?: number; results?: Record<string, unknown>[]; }
 
 import { prisma } from '../../../shared/lib/prisma';
 import { ZKDriver } from '../../../shared/lib/zk-driver';

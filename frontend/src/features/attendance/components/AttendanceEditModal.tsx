@@ -1,9 +1,10 @@
 import React from 'react';
 import { Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { AttendanceRecord } from '../types';
 
 interface AttendanceEditModalProps {
-  editingLog: any;
-  setEditingLog: (val: any) => void;
+  editingLog: AttendanceRecord | null;
+  setEditingLog: (val: AttendanceRecord | null) => void;
   role: 'admin' | 'hr';
   editCheckIn: string;
   setEditCheckIn: (val: string) => void;

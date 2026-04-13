@@ -30,8 +30,8 @@ async function main() {
             }
         });
 
-        const withZkId = allEmployees.filter((e: any) => e.zkId !== null);
-        const withoutZkId = allEmployees.filter((e: any) => e.zkId === null);
+        const withZkId = allEmployees.filter((e) => e.zkId !== null);
+        const withoutZkId = allEmployees.filter((e) => e.zkId === null);
 
         console.log(`\n📊 Current Status:`);
         console.log(`   Total Employees: ${allEmployees.length}`);
@@ -43,7 +43,7 @@ async function main() {
 
             // Show current assignments
             console.log('Current zkId Assignments:');
-            allEmployees.forEach((emp: any, idx: number) => {
+            allEmployees.forEach((emp, idx) => {
                 const empNum = emp.employeeNumber ? ` (${emp.employeeNumber})` : '';
                 const fullName = `${emp.firstName} ${emp.lastName}`;
                 const status = emp.employmentStatus;
@@ -54,7 +54,7 @@ async function main() {
         }
         // 2. Show employees that need zkId assignment
         console.log(`\n📋 Employees without zkId:\n`);
-        withoutZkId.forEach((emp: any, idx: number) => {
+        withoutZkId.forEach((emp, idx) => {
             const empNum = emp.employeeNumber ? ` (${emp.employeeNumber})` : '';
             const fullName = `${emp.firstName} ${emp.lastName}`;
             console.log(`   ${idx + 1}. ID: ${emp.id} - ${fullName}${empNum} [${emp.employmentStatus}]`);
@@ -75,9 +75,9 @@ async function main() {
                 const fullName = `${emp.firstName} ${emp.lastName}`;
                 console.log(`   ✓ ${fullName}${empNum} → zkId: ${emp.id}`);
                 assignedCount++;
-            } catch (error: any) {
+            } catch (error: unknown) {
                 const fullName = `${emp.firstName} ${emp.lastName}`;
-                console.error(`   ✗ Failed to assign zkId to ${fullName}: ${error.message}`);
+                console.error(`   ✗ Failed to assign zkId to ${fullName}: ${error instanceof Error ? error.message : String(error)}`);
             }
         }
 
@@ -108,9 +108,9 @@ async function main() {
         console.log('🚀 Next Step: Run the sync command:');
         console.log('   npm run sync-employees\n');
 
-    } catch (error: any) {
-        console.error('\n❌ ERROR:', error.message);
-        console.error('\nStack trace:', error.stack);
+    } catch (error: unknown) {
+        console.error('\n❌ ERROR:', error instanceof Error ? error.message : String(error));
+        if (error instanceof Error) console.error('\nStack trace:', error.stack);
         process.exit(1);
     } finally {
         await prisma.$disconnect();

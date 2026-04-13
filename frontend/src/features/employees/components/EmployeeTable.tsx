@@ -13,7 +13,7 @@ interface EmployeeTableProps {
   totalPages: number
   sortKey: string | null
   sortOrder: 'asc' | 'desc' | null
-  onSort: (key: any) => void
+  onSort: (key: keyof Employee) => void
   onPageChange: (page: number) => void
   onEdit: (employee: Employee) => void
   onResetPassword: (employee: Employee) => void

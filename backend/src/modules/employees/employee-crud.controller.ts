@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import ExcelJS from 'exceljs';
 import { prisma } from '../../shared/lib/prisma';
+import { Prisma } from '@prisma/client';
 import { syncEmployeesToDevice, enrollEmployeeFingerprint, enrollEmployeeCard, deleteEmployeeCard, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex, deleteFingerprintGlobally, syncEmployeeFingerprints } from '../devices/zk';
 import { enqueueGlobalUpsertUser, enqueueGlobalDeleteUser, processDeviceSyncQueue } from '../devices/deviceSyncQueue.service';
 import { audit } from '../../shared/lib/auditLogger';
@@ -214,12 +215,12 @@ export const reactivateEmployee = async (req: Request, res: Response) => {
             message: `Employee "${updatedEmployee.firstName} ${updatedEmployee.lastName}" reactivated`,
             employee: updatedEmployee,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error reactivating employee:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to reactivate employee',
-            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : 'Internal server error',
         });
     }
 };
@@ -428,29 +429,30 @@ export const createEmployee = async (req: Request, res: Response) => {
                     const displayName = `${newEmployee.firstName} ${newEmployee.lastName}`;
                     await addUserToDevice(newEmployee.zkId!, displayName, newEmployee.role);
                     console.log(`[API] (background) Device sync OK: ${displayName} (zkId: ${newEmployee.zkId})`);
-                } catch (syncErr: any) {
-                    console.error(`[API] (background) Device sync failed for zkId ${newEmployee.zkId}:`, syncErr?.message || syncErr);
+                } catch (syncErr: unknown) {
+                    console.error(`[API] (background) Device sync failed for zkId ${newEmployee.zkId}:`, syncErr instanceof Error ? syncErr.message : String(syncErr));
                 }
             }
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error creating employee:', error);
 
+        const errMsg = error instanceof Error ? error.message : String(error);
         void audit({
             action: 'CREATE',
             level: 'ERROR',
             entityType: 'Employee',
             performedBy: req.user?.employeeId,
-            details: `Failed to create employee due to server error: ${error.message}`,
-            metadata: { error: error.message },
+            details: `Failed to create employee due to server error: ${errMsg}`,
+            metadata: { error: errMsg },
             correlationId: req.correlationId
         });
 
         res.status(500).json({
             success: false,
             message: 'Failed to create employee',
-            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? errMsg : 'Internal server error',
         });
     }
 };
@@ -532,7 +534,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
         }
 
         // Prepare data for update
-        const updateData: any = {};
+        const updateData: Record<string, unknown> = {};
         if (employeeNumber !== undefined) updateData.employeeNumber = employeeNumber.trim();
         if (firstName !== undefined) updateData.firstName = firstName;
         if (lastName !== undefined) updateData.lastName = lastName;
@@ -590,7 +592,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
         const changes: string[] = [];
         for (const [key, newValue] of Object.entries(updateData)) {
             if (key === 'updatedAt' || key === 'password') continue;
-            const oldValue = (existingEmployee as any)[key];
+            const oldValue = (existingEmployee as Record<string, unknown>)[key];
             if (oldValue !== newValue) {
                 const oldValStr = oldValue instanceof Date ? oldValue.toISOString().split('T')[0] : (oldValue || 'empty');
                 const newValStr = newValue instanceof Date ? newValue.toISOString().split('T')[0] : (newValue || 'empty');
@@ -647,12 +649,12 @@ export const updateEmployee = async (req: Request, res: Response) => {
             }
         }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error updating employee:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to update employee',
-            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+            error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : 'Internal server error'
         });
     }
 };
@@ -817,12 +819,12 @@ export const resetEmployeePassword = async (req: Request, res: Response) => {
             message: `Password reset successfully. Email sent to ${employee.email}.`,
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error resetting password:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to reset password',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+            error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined,
         });
     }
 };
@@ -835,7 +837,7 @@ export const checkEmailAvailability = async (req: Request, res: Response) => {
             return res.status(400).json({ success: false, message: 'Email is required' });
         }
 
-        const where: any = { email: email.trim().toLowerCase() };
+        const where: Prisma.EmployeeWhereInput = { email: email.trim().toLowerCase() };
         if (excludeId) {
             where.id = { not: parseInt(excludeId as string, 10) };
         }
@@ -846,7 +848,7 @@ export const checkEmailAvailability = async (req: Request, res: Response) => {
             success: true,
             available: !existing,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error checking email:', error);
         res.status(500).json({
             success: false,

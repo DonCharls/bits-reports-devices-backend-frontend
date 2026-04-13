@@ -81,9 +81,9 @@ export const register = async (req: Request, res: Response): Promise<void> => {
             }
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Registration failed:', error);
-        res.status(500).json({ success: false, message: 'Registration failed', error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error' });
+        res.status(500).json({ success: false, message: 'Registration failed', error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : 'Internal server error' });
     }
 };
 
@@ -235,9 +235,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         });
 
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Login failed:', error);
-        res.status(500).json({ success: false, message: 'Login failed', error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error' });
+        res.status(500).json({ success: false, message: 'Login failed', error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : 'Internal server error' });
     }
 };
 
@@ -325,9 +325,9 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
 
         res.status(200).json({ success: true, message: 'Token refreshed successfully' });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Token refresh failed:', error);
-        res.status(500).json({ success: false, message: 'Token refresh failed', error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error' });
+        res.status(500).json({ success: false, message: 'Token refresh failed', error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : 'Internal server error' });
     }
 };
 
@@ -383,7 +383,7 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
             });
         }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Logout failed:', error);
         // Still clear cookies even if DB operation fails
         res.clearCookie('auth_token', cookieOptions);
@@ -433,9 +433,9 @@ export const me = async (req: Request, res: Response): Promise<void> => {
 
         res.status(200).json({ success: true, employee });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('GET /auth/me failed:', error);
-        res.status(500).json({ success: false, message: 'Failed to fetch user.', error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error' });
+        res.status(500).json({ success: false, message: 'Failed to fetch user.', error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : 'Internal server error' });
     }
 };
 

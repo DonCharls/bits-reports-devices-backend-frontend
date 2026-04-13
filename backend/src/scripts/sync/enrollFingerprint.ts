@@ -53,10 +53,10 @@ async function main() {
             if (fingerIndex < 0 || fingerIndex > 9) {
                 throw new Error("Finger index must be between 0 and 9");
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.log(JSON.stringify({
                 "status": "error",
-                "message": error.message,
+                "message": error instanceof Error ? error.message : String(error),
                 "error_type": "invalid_finger_index"
             }));
             process.exit(1);
@@ -68,7 +68,7 @@ async function main() {
     if (args.length >= 4) {
         try {
             timeout = parseInt(args[3]);
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.log(JSON.stringify({
                 "status": "error",
                 "message": "Timeout must be a valid integer",

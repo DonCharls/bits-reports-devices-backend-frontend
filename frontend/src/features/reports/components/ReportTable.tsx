@@ -16,7 +16,7 @@ interface ReportTableProps {
   setSelectedEmployee: (emp: ReportRow) => void;
   sortKey: string | null;
   sortOrder: 'asc' | 'desc';
-  handleSort: (key: any) => void;
+  handleSort: (key: keyof ReportRow) => void;
 }
 
 export const ReportTable: React.FC<ReportTableProps> = ({

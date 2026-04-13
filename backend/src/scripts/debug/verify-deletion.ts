@@ -20,7 +20,7 @@ const run = async () => {
 
         console.log("3. Verifying user exists...");
         let users = await zk.getUsers();
-        let found = users.find((u: any) => u.uid === TEST_ID);
+        let found = users.find((u) => u.uid === TEST_ID);
         if (found) {
             console.log("   User verified on device.");
         } else {
@@ -37,7 +37,7 @@ const run = async () => {
         console.log("5. Verifying user is gone...");
         await zk.connect();
         users = await zk.getUsers();
-        found = users.find((u: any) => u.uid === TEST_ID);
+        found = users.find((u) => u.uid === TEST_ID);
 
         if (!found) {
             console.log("   SUCCESS: User successfully deleted from device!");

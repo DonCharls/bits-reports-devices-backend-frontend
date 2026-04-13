@@ -39,7 +39,7 @@ async function main() {
         // Create CSV content with proper ZKBio headers
         let csvContent = 'Emp ID,Name,Card No\n';
 
-        employees.forEach((emp: any) => {
+        employees.forEach((emp) => {
             const cardNo = emp.employeeNumber || '';
             const fullName = `${emp.firstName} ${emp.lastName}`;
             csvContent += `${emp.zkId},"${fullName}",${cardNo}\n`;
@@ -64,8 +64,8 @@ async function main() {
         console.log('2. Or manually set: Emp ID → Column 1');
         console.log('3. Click "start" to import\n');
 
-    } catch (error: any) {
-        console.error('\n❌ ERROR:', error.message);
+    } catch (error: unknown) {
+        console.error('\n❌ ERROR:', error instanceof Error ? error.message : String(error));
         process.exit(1);
     } finally {
         await prisma.$disconnect();

@@ -83,11 +83,11 @@ async function syncSingleDevice(dbDevice: {
 
         // 3. Filter and sort logs by watermark.
         const logs = allLogs
-            .filter((log: any) => {
+            .filter((log) => {
                 const logUTC = convertPHTtoUTC(log.recordTime);
                 return logUTC > watermark;
             })
-            .sort((a: any, b: any) =>
+            .sort((a, b) =>
                 convertPHTtoUTC(a.recordTime).getTime() -
                 convertPHTtoUTC(b.recordTime).getTime()
             );
@@ -228,7 +228,7 @@ async function syncSingleDevice(dbDevice: {
         console.log(`[ZK] Device "${dbDevice.name}" sync complete. ${newCount} new logs.`);
         return { deviceId: dbDevice.id, newLogs: newCount, skipped: false };
 
-    } catch (deviceErr: any) {
+    } catch (deviceErr: unknown) {
         console.error(`[ZK] Error syncing "${dbDevice.name}" (${dbDevice.ip}): ${zkErrMsg(deviceErr)}`);
 
         // Record sync failure.
@@ -332,18 +332,17 @@ export const syncZkData = async (): Promise<SyncZkDataResult> => {
             newLogs: totalNewLogs
         };
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[ZK] syncZkData fatal error:', zkErrMsg(error));
         return { 
             success: false, 
             status: 'FAILED',
-            error: `Sync Error: ${zkErrMsg(error)}`, 
-            message: 'Failed to sync attendance data',
+            message: `Sync Error: ${zkErrMsg(error)}`,
             totalDevices: 0,
             successfulDevices: 0,
             failedDevices: [],
             newLogs: 0
-        } as any;
+        };
     }
     // NOTE: No top-level releaseDeviceLock() here — each device releases its own lock
 };
@@ -376,8 +375,8 @@ export const syncAllDeviceClocks = async (): Promise<void> => {
             } finally {
                 await zk.disconnect();
             }
-        } catch (err: any) {
-            console.warn(`[ClockSync] ✗ "${device.name}" (${device.ip}) — failed: ${err.message}`);
+        } catch (err: unknown) {
+            console.warn(`[ClockSync] ✗ "${device.name}" (${device.ip}) — failed: ${zkErrMsg(err)}`);
         } finally {
             releaseDeviceLock(device.id);
         }

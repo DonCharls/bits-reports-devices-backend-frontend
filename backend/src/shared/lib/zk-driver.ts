@@ -33,7 +33,18 @@ export class ZKDriver {
     private ip: string;
     private port: number;
     private timeout: number;
-    private zkInstance: any;
+    private zkInstance: {
+        createSocket: () => Promise<void>;
+        connect: () => Promise<void>;
+        disconnect: () => Promise<void>;
+        getInfo: () => Promise<DeviceInfo>;
+        getTime: () => Promise<DeviceTime>;
+        getUsers: () => Promise<{ data?: unknown[] } | unknown[]>;
+        getAttendances: () => Promise<{ data?: unknown[] } | unknown[]>;
+        executeCmd: (cmd: number, data: Buffer | string) => Promise<Buffer>;
+        clearAttendanceLog: () => Promise<void>;
+        connectionType?: string;
+    } | null = null;
 
     constructor(ip: string = '192.168.1.201', port: number = 4370, timeout: number = 30000) {
         this.ip = ip;
@@ -51,12 +62,12 @@ export class ZKDriver {
         const ZKLibTCP = require('node-zklib/zklibtcp');
         this.zkInstance = new ZKLibTCP(this.ip, this.port, this.timeout);
 
-        await this.zkInstance.createSocket();
-        await this.zkInstance.connect();
+        await this.zkInstance!.createSocket();
+        await this.zkInstance!.connect();
 
         // Expose a connectionType so functionWrapper-style calls still work
         // if any internal node-zklib helpers check for it.
-        this.zkInstance.connectionType = 'tcp';
+        this.zkInstance!.connectionType = 'tcp';
 
         console.log(`[ZKDriver] Connected to ${this.ip}:${this.port} (TCP)`);
     }
@@ -137,8 +148,8 @@ export class ZKDriver {
         try {
             await this.zkInstance.executeCmd(COMMANDS.CMD_SET_TIME, buf);
             await this.refreshData();
-        } catch (error: any) {
-            throw new Error(`Failed to set device time: ${error.message || error}`);
+        } catch (error: unknown) {
+            throw new Error(`Failed to set device time: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
@@ -148,19 +159,19 @@ export class ZKDriver {
     async getUsers(): Promise<DeviceUser[]> {
         if (!this.zkInstance) throw new Error('Not connected');
         const result = await this.zkInstance.getUsers();
-        const users = result.data || result;
+        const users = Array.isArray(result) ? result : (result as { data?: unknown[] }).data ?? result;
 
         if (!Array.isArray(users)) {
             throw new Error('Invalid user data received from device');
         }
 
-        return users.map((u: any) => ({
-            uid: parseInt(u.uid),
-            userId: u.userId || u.user_id,
-            name: u.name || u.userName,
-            password: u.password,
-            role: u.role,
-            cardno: u.cardno
+        return (users as Record<string, unknown>[]).map((u) => ({
+            uid: parseInt(String(u.uid)),
+            userId: (u.userId || u.user_id) as string,
+            name: (u.name || u.userName) as string,
+            password: u.password as string | undefined,
+            role: u.role as number | undefined,
+            cardno: u.cardno as number | undefined
         }));
     }
 
@@ -244,8 +255,8 @@ export class ZKDriver {
         // Send command
         try {
             await this.zkInstance.executeCmd(COMMANDS.CMD_USER_WRQ, buf);
-        } catch (error: any) {
-            throw new Error(`Failed to set user: ${error.message || error}`);
+        } catch (error: unknown) {
+            throw new Error(`Failed to set user: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
@@ -267,9 +278,9 @@ export class ZKDriver {
         try {
             await this.zkInstance.executeCmd(COMMANDS.CMD_DELETE_USER, buf);
             console.log(`[ZKDriver] User ${uid} deleted.`);
-        } catch (error: any) {
+        } catch (error: unknown) {
             // If user doesn't exist, it might throw error, we can ignore or rethrow
-            throw new Error(`Failed to delete user: ${error.message || error}`);
+            throw new Error(`Failed to delete user: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
@@ -500,11 +511,12 @@ export class ZKDriver {
             await zkInfo.executeCmd(COMMANDS.CMD_ENABLEDEVICE, '');
 
             console.log(`[ZKDriver] Successfully synchronized fingerprint for UID: ${uid}`);
-        } catch (error: any) {
-            console.error(`[ZKDriver] Failed to push template UID ${uid}:`, error.message);
+        } catch (error: unknown) {
+            const errMsg = error instanceof Error ? error.message : String(error);
+            console.error(`[ZKDriver] Failed to push template UID ${uid}:`, errMsg);
             // Attempt to re-enable device on failure to un-brick user interface
-            await this.zkInstance.executeCmd(COMMANDS.CMD_ENABLEDEVICE, '').catch(() => {});
-            throw new Error(`Failed to set fingerprint template: ${error.message || error}`);
+            await this.zkInstance!.executeCmd(COMMANDS.CMD_ENABLEDEVICE, '').catch(() => {});
+            throw new Error(`Failed to set fingerprint template: ${errMsg}`);
         }
     }
 
@@ -514,15 +526,13 @@ export class ZKDriver {
     async getLogs(): Promise<DeviceLog[]> {
         if (!this.zkInstance) throw new Error('Not connected');
         const result = await this.zkInstance.getAttendances();
-        const logs = result.data || result;
+        const rawResult = Array.isArray(result) ? result : (result as { data?: unknown[] });
+        const logs = Array.isArray(rawResult) ? rawResult : rawResult.data;
 
         if (!Array.isArray(logs)) {
-            // Sometimes it returns data wrapper, sometimes not
-            if (logs && Array.isArray(logs.data)) return this.parseLogs(logs.data);
-            // If completely invalid
             return [];
         }
-        return this.parseLogs(logs);
+        return this.parseLogs(logs as Record<string, unknown>[]);
     }
 
     /**
@@ -559,18 +569,18 @@ export class ZKDriver {
 
         try {
             await this.zkInstance.executeCmd(COMMANDS.CMD_STARTENROLL, enrollData);
-        } catch (error: any) {
-            throw new Error(`Failed to start enrollment: ${error.message || error}`);
+        } catch (error: unknown) {
+            throw new Error(`Failed to start enrollment: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
-    private parseLogs(logs: any[]): DeviceLog[] {
+    private parseLogs(logs: Record<string, unknown>[]): DeviceLog[] {
         return logs
-            .filter((log: any) => log.deviceUserId && log.recordTime)
-            .map((log: any) => ({
-                deviceUserId: log.deviceUserId,
-                recordTime: new Date(log.recordTime),
-                status: log.status || 0
+            .filter((log) => log.deviceUserId && log.recordTime)
+            .map((log) => ({
+                deviceUserId: String(log.deviceUserId),
+                recordTime: new Date(log.recordTime as string | number),
+                status: (log.status as number) || 0
             }));
     }
 }

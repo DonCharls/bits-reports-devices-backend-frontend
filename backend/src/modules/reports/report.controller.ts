@@ -43,11 +43,11 @@ export const getAttendanceSummaryReport = async (req: Request, res: Response) =>
       summary,
       rawRecords,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Reports] Failed to generate summary:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Failed to generate attendance report',
+      message: error instanceof Error ? error.message : 'Failed to generate attendance report',
     });
   }
 };

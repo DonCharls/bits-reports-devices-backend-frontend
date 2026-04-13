@@ -29,9 +29,9 @@ async function main() {
         }
         console.log('='.repeat(60) + '\n');
 
-    } catch (error: any) {
-        console.error('\n❌ ERROR:', error.message);
-        console.error('\nStack trace:', error.stack);
+    } catch (error: unknown) {
+        console.error('\n❌ ERROR:', error instanceof Error ? error.message : String(error));
+        if (error instanceof Error) console.error('\nStack trace:', error.stack);
         process.exit(1);
     } finally {
         await prisma.$disconnect();

@@ -5,7 +5,7 @@ import { acquireDeviceLock, releaseDeviceLock, acquireInteractiveDeviceLock } fr
 
 const FINGER_MAP: { [key: number]: string } = { 5: 'Right Thumb', 6: 'Right Index', 7: 'Right Middle', 8: 'Right Ring', 9: 'Right Little', 4: 'Left Thumb', 3: 'Left Index', 2: 'Left Middle', 1: 'Left Ring', 0: 'Left Little' };
 import { audit } from '../../../shared/lib/auditLogger';
-interface SyncResult { success: boolean; message?: string; error?: string; newLogs?: number; count?: number; results?: any[]; }
+interface SyncResult { success: boolean; message?: string; error?: string; newLogs?: number; count?: number; results?: Record<string, unknown>[]; }
 
 
 export const deleteFingerprintGlobally = async (
@@ -122,8 +122,8 @@ export const enrollEmployeeFingerprint = async (
 
         const deviceUsers = await zk.getUsers();
         // Slot occupancy check.
-        const slotOccupant = deviceUsers.find((u: any) => u.uid === deviceUid);
-        const userByVisibleId = deviceUsers.find((u: any) => String(u.userId).trim() === visibleId.trim());
+        const slotOccupant = deviceUsers.find((u) => u.uid === deviceUid);
+        const userByVisibleId = deviceUsers.find((u) => String(u.userId).trim() === visibleId.trim());
 
         if (slotOccupant && String(slotOccupant.userId).trim() !== visibleId.trim()) {
             // Guard 1: A DIFFERENT person occupies the target slot — refuse immediately.
@@ -166,7 +166,7 @@ export const enrollEmployeeFingerprint = async (
         await zk.startEnrollment(visibleId, fingerIndex);
 
         // Extract template in background.
-        extractAndDistributeTemplate(dbDevice.id, employee.id, fingerIndex).catch((err: any) => {
+        extractAndDistributeTemplate(dbDevice.id, employee.id, fingerIndex).catch((err: unknown) => {
             console.error('[BiometricSync] Background task error:', err);
         });
 
@@ -213,12 +213,12 @@ export const enrollEmployeeFingerprint = async (
             message: `Enrollment started for ${fullName} on device "${dbDevice.name}". Please scan finger now.`,
         };
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error(`[Enrollment] Error:`, error);
         return {
             success: false,
             message: 'Enrollment failed',
-            error: error.message,
+            error: zkErrMsg(error),
         };
     } finally {
         try { await zk.disconnect(); } catch { /* ignore */ }
@@ -282,7 +282,7 @@ export const propagateFingerprintToAllDevices = async (
             `"${sourceDevice.name}" for ${fullName} (zkId: ${employee.zkId}).`,
             templates.map(t => `slot${t.finger}=${t.data.length}B`).join(', ')
         );
-    } catch (err: any) {
+    } catch (err: unknown) {
         return { success: false, pushed: 0,
             errors: [`Failed to read from source: ${zkErrMsg(err)}`] };
     } finally {
@@ -310,7 +310,7 @@ export const propagateFingerprintToAllDevices = async (
             // Ensure user record exists.
             const deviceUsers = await tgtZk.getUsers();
             const exists = deviceUsers.find(
-                (u: any) => String(u.userId).trim() === String(employee.zkId)
+                (u) => String(u.userId).trim() === String(employee.zkId)
             );
 
             if (!exists) {
@@ -395,7 +395,7 @@ export const propagateFingerprintToAllDevices = async (
 
             pushed++;
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             const msg = `"${targetDevice.name}": ${zkErrMsg(err)}`;
             errors.push(msg);
             console.error(`[Propagate] ✗ Failed to write to ${msg}`);
@@ -485,7 +485,7 @@ export const deleteFingerprintFromDevice = async (
 
         return { success: true, message: `${fingerLabel} deleted from "${device.name}"` };
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error(`[DeleteFinger] Error:`, error);
         return { success: false, message: `Failed to delete fingerprint: ${zkErrMsg(error)}` };
     } finally {
@@ -588,7 +588,7 @@ export const syncEmployeeFingerprints = async (
             // Ensure user record exists on target
             const deviceUsers = await tgtZk.getUsers();
             const userExists = deviceUsers.find(
-                (u: any) => String(u.userId).trim() === String(employee.zkId)
+                (u) => String(u.userId).trim() === String(employee.zkId)
             );
             if (!userExists) {
                 await tgtZk.setUser(employee.zkId, fullName, '', 0, 0, String(employee.zkId));
@@ -627,7 +627,7 @@ export const syncEmployeeFingerprints = async (
                             );
                             break;
                         }
-                    } catch (err: any) {
+                    } catch (err: unknown) {
                         console.warn(
                             `[SyncFingers] Failed to read finger ${fingerIndex} from "${srcDevice.name}": ${zkErrMsg(err)}`
                         );
@@ -661,7 +661,7 @@ export const syncEmployeeFingerprints = async (
                         update: { enrolledAt: new Date() },
                         create: { employeeId, deviceId: targetDevice.id, fingerIndex, fingerLabel },
                     });
-                } catch (err: any) {
+                } catch (err: unknown) {
                     slotErrors.push(`Finger ${fingerIndex}: write failed — ${zkErrMsg(err)}`);
                 } finally {
                     templateData.fill(0);
@@ -685,7 +685,7 @@ export const syncEmployeeFingerprints = async (
                 (slotErrors.length > 0 ? ` Errors: ${slotErrors.join('; ')}` : '')
             );
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             const errMsg = zkErrMsg(err);
             results.push({ deviceId: targetDevice.id, deviceName: targetDevice.name, status: 'failed', error: errMsg });
             console.error(`[SyncFingers] ✗ Failed on "${targetDevice.name}": ${errMsg}`);

@@ -1,4 +1,5 @@
 import { prisma } from '../../shared/lib/prisma';
+import { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import attendanceEmitter from '../../shared/events/attendanceEmitter';
 import { audit } from '../../shared/lib/auditLogger';
@@ -152,7 +153,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             ...metrics,
                         },
                     });
-                } catch (err: any) {
+                } catch (err: unknown) {
                     if (err instanceof PrismaClientKnownRequestError && err.code === 'P2002') {
                         // Duplicate record — silently skip, this is expected behavior
                         console.debug(`[Attendance] Duplicate record skipped for employeeId=${log.employeeId} on ${dateOnly}`);
@@ -288,7 +289,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
             created,
             updated
         };
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[Attendance] Error processing logs:', error);
         return {
             success: false,
@@ -340,7 +341,7 @@ export const autoCloseIncompleteAttendance = async (): Promise<number> => {
 
         console.log(`[Attendance] Flagged ${flaggedCount} incomplete records (no checkout) for manual review`);
         return flaggedCount;
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[Attendance] Error flagging incomplete records:', error);
         return 0;
     }
@@ -439,7 +440,7 @@ export const autoCheckoutEmployees = async (): Promise<number> => {
             `${incompleteRecords.length - count} skipped.`
         );
         return count;
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[Attendance] Error during auto-checkout:', error);
         return 0;
     }
@@ -503,7 +504,7 @@ export const repairMissingCheckouts = async (): Promise<number> => {
         );
         return flaggedCount;
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('[Attendance] Error during startup repair:', error);
         return 0;
     }
@@ -513,7 +514,7 @@ export const repairMissingCheckouts = async (): Promise<number> => {
  * Get attendance records with filters
  */
 export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page: number = 1, limit: number = 10000) => {
-    const where: any = {};
+    const where: Prisma.AttendanceWhereInput = {};
 
     if (filters.startDate || filters.endDate) {
         where.date = {};
@@ -531,11 +532,11 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
 
     // Branch / department filters — applied via nested employee relation
     // Use OR for department: filter by FK (if set) OR string field (legacy)
-    const empConditions: any = {}
+    const empConditions: Prisma.EmployeeWhereInput = {}
     if (filters.branch) empConditions.branch = filters.branch
 
     if (filters.departmentId || filters.departmentName) {
-        const deptOr: any[] = []
+        const deptOr: Prisma.EmployeeWhereInput[] = []
         if (filters.departmentId) deptOr.push({ departmentId: filters.departmentId })
         if (filters.departmentName) deptOr.push({ department: { equals: filters.departmentName, mode: 'insensitive' } })
         if (Object.keys(empConditions).length > 0 || deptOr.length > 0) {
@@ -573,7 +574,7 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
     ]);
 
     // Enrich each record with shift-based calculations
-    const data = records.map((record: any) => {
+    const data = records.map((record) => {
         const shift = record.employee?.Shift ?? null;
         const metrics = calculateAttendanceMetrics(record, shift);
         return {
@@ -589,15 +590,30 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
     return { data, total };
 };
 
+interface BasicAttendanceRecord {
+    date: Date;
+    checkInTime: Date | null;
+    checkOutTime: Date | null;
+    status: string | null;
+}
+
 /**
  * Calculate attendance metrics based on an employee's assigned Shift
  * All times are stored as UTC where PHT midnight = UTC midnight offset by -8h
  * i.e. a stored timestamp of 2026-02-10T00:00:00Z represents 2026-02-10T08:00:00+08:00 PHT midnight workaround
  */
-export function calculateAttendanceMetrics(record: any, shift: any) {
+export function calculateAttendanceMetrics(record: BasicAttendanceRecord, shift: Prisma.ShiftGetPayload<{}> | null) {
     const shiftCode = shift?.shiftCode ?? null;
 
-    if (!shift || !record.checkInTime) {
+    if (!record.checkInTime) {
+        return { 
+            shiftCode: null, lateMinutes: 0, overtimeMinutes: 0, undertimeMinutes: 0, 
+            totalHours: 0, isAnomaly: false, isEarlyOut: false, isShiftActive: false, 
+            status: record.status, gracePeriodApplied: false, latePenaltyMinutes: 0, workedHours: 0 
+        };
+    }
+
+    if (!shift) {
         // No shift assigned – fall back to a generic 8-hour day
         const checkIn = new Date(record.checkInTime);
         const checkOut = record.checkOutTime ? new Date(record.checkOutTime) : null;
@@ -666,7 +682,7 @@ export function calculateAttendanceMetrics(record: any, shift: any) {
     let explicitBreaks: { start: Date, end: Date }[] = [];
     try {
         const parsedBreaks = JSON.parse(shift.breaks || '[]');
-        explicitBreaks = parsedBreaks.map((b: any) => {
+        explicitBreaks = parsedBreaks.map((b: { start: string; end: string }) => {
             const [bhStart, bmStart] = b.start.split(':').map(Number);
             const [bhEnd, bmEnd] = b.end.split(':').map(Number);
             
@@ -881,7 +897,7 @@ export const getTodayLogs = async () => {
         orderBy: { timestamp: 'desc' }
     });
 
-    return logs.map((log: any) => ({
+    return logs.map((log) => ({
         id: log.id,
         employeeId: log.employeeId,
         timestamp: log.timestamp,

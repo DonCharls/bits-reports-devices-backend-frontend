@@ -64,9 +64,9 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
         console.log(`[Reconcile] Device has ${deviceUsers.length} users. DB has ${dbEmployees.length} active employees.`);
 
         // Convert userId to trimmed format for accurate comparison.
-        const deviceByVisibleId = new Map(deviceUsers.map((u: any) => [String(u.userId).trim(), u]));
+        const deviceByVisibleId = new Map(deviceUsers.map((u) => [String(u.userId).trim(), u]));
         // Also build a UID-based lookup for secondary matching
-        const deviceByUid = new Map(deviceUsers.map((u: any) => [u.uid as number, u]));
+        const deviceByUid = new Map(deviceUsers.map((u) => [u.uid as number, u]));
 
         // ── STEP B: Delete device-only ghost users ──────────────────────────
         if (pushOnly) {
@@ -103,8 +103,8 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
                         await enqueueDeleteUser(deviceId, uid);
                         report.deleted.push({ uid, userId: visibleId, name: dUser.name });
                         console.log(`[Reconcile] ✓ Queued deletion of ghost UID=${uid}.`);
-                    } catch (err: any) {
-                        const msg = `Failed to queue delete for UID=${uid}: ${err.message}`;
+                    } catch (err: unknown) {
+                        const msg = `Failed to queue delete for UID=${uid}: ${zkErrMsg(err)}`;
                         report.errors.push(msg);
                         console.error(`[Reconcile] ✗ ${msg}`);
                     }
@@ -145,8 +145,8 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
                         // Newly pushed user has no fingerprints yet
                         report.needsEnrollment.push({ zkId, name: fullName });
                         console.log(`[Reconcile] ✓ Queued push of "${fullName}" to UID=${zkId}.`);
-                    } catch (err: any) {
-                        const msg = `Failed to queue push for "${fullName}": ${err.message}`;
+                    } catch (err: unknown) {
+                        const msg = `Failed to queue push for "${fullName}": ${zkErrMsg(err)}`;
                         report.errors.push(msg);
                         console.error(`[Reconcile] ✗ ${msg}`);
                     }
@@ -154,6 +154,7 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
             } else {
                 // User exists on device — check finger count and check card state
                 const dUser = deviceByVisibleId.get(visibleId) ?? deviceByUid.get(zkId);
+                if (!dUser) continue; // Should not happen given existsOnDevice check above
                 const actualCard = Number(dUser.cardno || 0);
 
                 if (actualCard !== expectedCard && !dryRun) {
@@ -161,8 +162,8 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
                     try {
                         await enqueueUpsertUser(deviceId, { zkId, name: fullName, card: expectedCard, role: deviceRole });
                         console.log(`[Reconcile] ✓ Queued card update for "${fullName}".`);
-                    } catch (err: any) {
-                        console.error(`[Reconcile] ✗ Failed to queue card update for "${fullName}": ${err.message}`);
+                    } catch (err: unknown) {
+                        console.error(`[Reconcile] ✗ Failed to queue card update for "${fullName}": ${zkErrMsg(err)}`);
                         report.errors.push(`Failed to queue card update for ${fullName}`);
                     }
                 } else if (actualCard !== expectedCard && dryRun) {
@@ -201,8 +202,8 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
                         for (const { fingerIndex } of enrollments) {
                             await enqueueFingerprintPull(deviceId, { zkId, employeeId: emp.id, fingerIndex });
                         }
-                    } catch (err: any) {
-                        console.error(`[Reconcile] Failed to queue fingerprint for zkId ${zkId}:`, err.message);
+                    } catch (err: unknown) {
+                        console.error(`[Reconcile] Failed to queue fingerprint for zkId ${zkId}:`, zkErrMsg(err));
                     }
                 }
             }
@@ -220,7 +221,7 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
 
         return report;
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         const msg = zkErrMsg(error);
         console.error(`[Reconcile] Fatal error: ${msg}`);
         // Mark device offline
