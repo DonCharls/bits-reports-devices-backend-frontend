@@ -55,11 +55,29 @@ export function EmployeeListPage({ role, statusFilter = 'Active' }: EmployeeList
   const [fingerprintDashboardOpen, setFingerprintDashboardOpen] = useState<{ open: boolean; employeeId: number | null; employeeName: string }>({ open: false, employeeId: null, employeeName: '' });
   const [cardEnrollOpen, setCardEnrollOpen] = useState<{ open: boolean; employeeId: number | null; employeeName: string; currentCard: number | null }>({ open: false, employeeId: null, employeeName: '', currentCard: null });
   const [isExporting, setIsExporting] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const handleUpdateEmployee = async () => {
     if (!editingEmployee || !editForm) return;
-    const success = await actions.updateEmployee(editingEmployee.id as number, editForm);
-    if (success) setEditingEmployee(null);
+    
+    // Basic validation check before calling action
+    if (!editForm.firstName?.trim() || !editForm.lastName?.trim() || !editForm.employeeNumber?.trim()) {
+      showToast('error', 'Validation Failed', 'Please fill in all required fields.');
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const success = await actions.updateEmployee(editingEmployee.id as number, editForm);
+      if (success) {
+        setEditingEmployee(null);
+        showToast('success', 'Profile Updated', `${editForm.firstName} ${editForm.lastName} has been updated.`);
+      }
+    } catch (error) {
+      showToast('error', 'Update Failed', 'An unexpected error occurred.');
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const handleDeactivate = async () => {
@@ -236,17 +254,28 @@ export function EmployeeListPage({ role, statusFilter = 'Active' }: EmployeeList
         {...(statusFilter === 'Inactive' ? { onRestore: setConfirmRestore, onPermanentDelete: setConfirmPermanentDelete } : {})}
       />
 
-      {editingEmployee && <EmployeeEditModal employee={editingEmployee} editForm={editForm} departments={departments} branches={branches} shifts={shifts} onFormChange={setEditForm} onSave={handleUpdateEmployee} onClose={() => setEditingEmployee(null)} onEmailBlur={async () => {
-        const email = editForm.email?.trim();
-        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
-        try {
-          const res = await fetch(`/api/employees/check-email?email=${encodeURIComponent(email)}&excludeId=${editingEmployee.id}`);
-          const data = await res.json();
-          if (data.success && !data.available) {
-            showToast('warning', 'Email In Use', 'This email is already assigned to another employee.');
-          }
-        } catch { /* ignore network error on blur */ }
-      }} />}
+      {editingEmployee && <EmployeeEditModal 
+        employee={editingEmployee} 
+        editForm={editForm} 
+        departments={departments} 
+        branches={branches} 
+        shifts={shifts} 
+        isSaving={isUpdating}
+        onFormChange={setEditForm} 
+        onSave={handleUpdateEmployee} 
+        onClose={() => setEditingEmployee(null)} 
+        onEmailBlur={async () => {
+          const email = editForm.email?.trim();
+          if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
+          try {
+            const res = await fetch(`/api/employees/check-email?email=${encodeURIComponent(email)}&excludeId=${editingEmployee.id}`);
+            const data = await res.json();
+            if (data.success && !data.available) {
+              showToast('warning', 'Email In Use', 'This email is already assigned to another employee.');
+            }
+          } catch { /* ignore network error on blur */ }
+        }} 
+      />}
       {confirmDeactivate && <ConfirmDeactivateDialog employee={confirmDeactivate} isDeactivating={false} onConfirm={handleDeactivate} onCancel={() => setConfirmDeactivate(null)} />}
       {confirmResetPassword && <ConfirmResetPasswordDialog employee={confirmResetPassword} isResetting={isResettingPassword} onConfirm={handleResetPassword} onCancel={() => setConfirmResetPassword(null)} />}
       <ScanNowModal open={scanModal.open} employeeName={scanModal.employeeName} countdown={scanModal.countdown} onClose={() => setScanModal(p => ({ ...p, open: false }))} />

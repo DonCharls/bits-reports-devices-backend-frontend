@@ -41,7 +41,11 @@ export function EmployeeAddModal({ departments, branches, shifts, onSave, isOpen
     if (!newEmployee.lastName.trim()) errors.lastName = 'Last name is required';
     if (!newEmployee.contactNumber.trim()) errors.contactNumber = 'Contact number is required';
     else if (newEmployee.contactNumber.replace(/\D/g, '').length !== 11) errors.contactNumber = 'Must be exactly 11 digits';
-    if (newEmployee.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmployee.email.trim())) errors.email = 'A valid email is required';
+    if (!newEmployee.email.trim()) {
+      errors.email = 'Email address is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmployee.email.trim())) {
+      errors.email = 'A valid email is required';
+    }
     if (formErrors.email && formErrors.email.includes('already in use')) errors.email = formErrors.email;
     if (!newEmployee.department) errors.department = 'Department is required';
     if (!newEmployee.branch) errors.branch = 'Branch is required';

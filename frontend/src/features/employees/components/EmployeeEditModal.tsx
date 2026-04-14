@@ -1,10 +1,9 @@
-'use client'
-
-import React from 'react'
-import { X as XIcon, AlertCircle } from 'lucide-react'
+import React, { useState } from 'react'
+import { X as XIcon, AlertCircle, Loader2 } from 'lucide-react'
 import { Employee, SUFFIX_OPTIONS, formatPhoneNumber, formatTime } from '../utils/employee-types'
 import type { Department, Branch } from '@/lib/api'
 import type { ShiftOption } from '../utils/employee-types'
+import { validateEmployeeId } from '@/lib/employeeValidation'
 
 interface EmployeeEditModalProps {
   employee: Employee
@@ -12,6 +11,7 @@ interface EmployeeEditModalProps {
   departments: Department[]
   branches: Branch[]
   shifts: ShiftOption[]
+  isSaving?: boolean
   onFormChange: (form: Partial<Employee>) => void
   onSave: () => void
   onClose: () => void
@@ -19,9 +19,54 @@ interface EmployeeEditModalProps {
 }
 
 export function EmployeeEditModal({
-  employee, editForm, departments, branches, shifts,
+  employee, editForm, departments, branches, shifts, isSaving,
   onFormChange, onSave, onClose, onEmailBlur
 }: EmployeeEditModalProps) {
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+
+  const validateForm = () => {
+    const errors: Record<string, string> = {}
+    
+    // Employee ID Validation
+    const idValid = validateEmployeeId(editForm.employeeNumber)
+    if (!idValid.isValid) errors.employeeNumber = idValid.error || 'Invalid Employee ID'
+
+    // Name Validation
+    if (!editForm.firstName?.trim()) errors.firstName = 'First name is required'
+    if (!editForm.lastName?.trim()) errors.lastName = 'Last name is required'
+
+    // Contact Validation
+    if (!editForm.contactNumber?.trim()) {
+      errors.contactNumber = 'Contact number is required'
+    } else {
+      const numeric = editForm.contactNumber.replace(/\D/g, '')
+      if (numeric.length !== 11) {
+        errors.contactNumber = 'Must be exactly 11 digits'
+      }
+    }
+
+    // Email Validation (format only)
+    if (editForm.email?.trim()) {
+      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailPattern.test(editForm.email.trim())) {
+        errors.email = 'A valid email is required'
+      }
+    }
+
+    // Dept/Branch Validation
+    if (!editForm.department) errors.department = 'Department is required'
+    if (!editForm.branch) errors.branch = 'Branch is required'
+
+    setFormErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  const handleSaveWrapper = () => {
+    if (validateForm()) {
+      onSave()
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
@@ -36,37 +81,71 @@ export function EmployeeEditModal({
         </div>
 
         <div className="p-6 space-y-4 overflow-y-auto">
+          {/* Employee ID */}
           <div className="space-y-1">
             <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Employee ID *</label>
-            <input type="text" placeholder="e.g. 10001" value={editForm.employeeNumber || ''} onChange={(e) => onFormChange({ ...editForm, employeeNumber: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+            <input 
+              type="text" 
+              placeholder="e.g. 10001" 
+              value={editForm.employeeNumber || ''} 
+              onChange={(e) => {
+                onFormChange({ ...editForm, employeeNumber: e.target.value })
+                if (formErrors.employeeNumber) setFormErrors(p => ({ ...p, employeeNumber: '' }))
+              }} 
+              className={`w-full p-2.5 bg-slate-50 border ${formErrors.employeeNumber ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-200'} rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all`} 
+            />
+            {formErrors.employeeNumber && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.employeeNumber}</p>}
           </div>
+
           <div className="grid grid-cols-2 gap-3">
+            {/* First Name */}
             <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">First Name</label>
-              <input type="text" value={editForm.firstName || ''} onChange={(e) => onFormChange({ ...editForm, firstName: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+              <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">First Name *</label>
+              <input 
+                type="text" 
+                value={editForm.firstName || ''} 
+                onChange={(e) => {
+                  onFormChange({ ...editForm, firstName: e.target.value })
+                  if (formErrors.firstName) setFormErrors(p => ({ ...p, firstName: '' }))
+                }} 
+                className={`w-full p-2.5 bg-slate-50 border ${formErrors.firstName ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-200'} rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all`} 
+              />
+              {formErrors.firstName && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.firstName}</p>}
             </div>
+            {/* Last Name */}
             <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Last Name</label>
-              <input type="text" value={editForm.lastName || ''} onChange={(e) => onFormChange({ ...editForm, lastName: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+              <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Last Name *</label>
+              <input 
+                type="text" 
+                value={editForm.lastName || ''} 
+                onChange={(e) => {
+                  onFormChange({ ...editForm, lastName: e.target.value })
+                  if (formErrors.lastName) setFormErrors(p => ({ ...p, lastName: '' }))
+                }} 
+                className={`w-full p-2.5 bg-slate-50 border ${formErrors.lastName ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-200'} rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all`} 
+              />
+              {formErrors.lastName && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.lastName}</p>}
             </div>
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Middle Name</label>
-              <input type="text" placeholder="Optional" value={(editForm as any).middleName || ''} onChange={(e) => onFormChange({ ...editForm, middleName: e.target.value } as any)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+              <input type="text" placeholder="Optional" value={(editForm as any).middleName || ''} onChange={(e) => onFormChange({ ...editForm, middleName: e.target.value } as any)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all" />
             </div>
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Suffix</label>
-              <select value={(editForm as any).suffix || ''} onChange={(e) => onFormChange({ ...editForm, suffix: e.target.value } as any)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20">
+              <select value={(editForm as any).suffix || ''} onChange={(e) => onFormChange({ ...editForm, suffix: e.target.value } as any)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all">
                 <option value="">None</option>
                 {SUFFIX_OPTIONS.filter(Boolean).map(s => (<option key={s} value={s}>{s}</option>))}
               </select>
             </div>
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Gender</label>
-              <select value={(editForm as any).gender || ''} onChange={(e) => onFormChange({ ...editForm, gender: e.target.value } as any)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20">
+              <select value={(editForm as any).gender || ''} onChange={(e) => onFormChange({ ...editForm, gender: e.target.value } as any)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all">
                 <option value="">Select Gender</option>
                 <option value="Male">Male</option>
                 <option value="Female">Female</option>
@@ -75,42 +154,83 @@ export function EmployeeEditModal({
             </div>
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Date of Birth</label>
-              <input type="date" value={(editForm as any).dateOfBirth ? (editForm as any).dateOfBirth.split('T')[0] : ''} onChange={(e) => onFormChange({ ...editForm, dateOfBirth: e.target.value } as any)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+              <input type="date" value={(editForm as any).dateOfBirth ? (editForm as any).dateOfBirth.split('T')[0] : ''} onChange={(e) => onFormChange({ ...editForm, dateOfBirth: e.target.value } as any)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all" />
             </div>
           </div>
+
           <div className="grid grid-cols-2 gap-3">
+            {/* Email */}
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Email Address</label>
-              <input type="email" value={editForm.email || ''} onChange={(e) => onFormChange({ ...editForm, email: e.target.value })} onBlur={onEmailBlur} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+              <input 
+                type="email" 
+                value={editForm.email || ''} 
+                onChange={(e) => {
+                  onFormChange({ ...editForm, email: e.target.value })
+                  if (formErrors.email) setFormErrors(p => ({ ...p, email: '' }))
+                }} 
+                onBlur={onEmailBlur} 
+                className={`w-full p-2.5 bg-slate-50 border ${formErrors.email ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-200'} rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all`} 
+              />
+              {formErrors.email && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.email}</p>}
             </div>
+            {/* Contact */}
             <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Contact Number</label>
-              <input type="tel" maxLength={13} value={editForm.contactNumber || ''} onChange={(e) => {
-                const val = formatPhoneNumber(e.target.value)
-                onFormChange({ ...editForm, contactNumber: val })
-              }} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+              <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Contact Number *</label>
+              <input 
+                type="tel" 
+                maxLength={13} 
+                value={editForm.contactNumber || ''} 
+                onChange={(e) => {
+                  const val = formatPhoneNumber(e.target.value)
+                  onFormChange({ ...editForm, contactNumber: val })
+                  if (formErrors.contactNumber) setFormErrors(p => ({ ...p, contactNumber: '' }))
+                }} 
+                className={`w-full p-2.5 bg-slate-50 border ${formErrors.contactNumber ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-200'} rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all`} 
+              />
+              {formErrors.contactNumber && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.contactNumber}</p>}
             </div>
           </div>
+
           <div className="grid grid-cols-2 gap-3">
+            {/* Dept */}
             <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Department</label>
-              <select value={editForm.department || ''} onChange={(e) => onFormChange({ ...editForm, department: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20">
+              <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Department *</label>
+              <select 
+                value={editForm.department || ''} 
+                onChange={(e) => {
+                  onFormChange({ ...editForm, department: e.target.value })
+                  if (formErrors.department) setFormErrors(p => ({ ...p, department: '' }))
+                }} 
+                className={`w-full p-2.5 bg-slate-50 border ${formErrors.department ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-200'} rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all`}
+              >
                 <option value="" disabled>Select Department</option>
                 {departments.map(d => (<option key={d.id} value={d.name}>{d.name}</option>))}
               </select>
+              {formErrors.department && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.department}</p>}
             </div>
+            {/* Branch */}
             <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Branch</label>
-              <select value={editForm.branch || ''} onChange={(e) => onFormChange({ ...editForm, branch: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20">
+              <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Branch *</label>
+              <select 
+                value={editForm.branch || ''} 
+                onChange={(e) => {
+                  onFormChange({ ...editForm, branch: e.target.value })
+                  if (formErrors.branch) setFormErrors(p => ({ ...p, branch: '' }))
+                }} 
+                className={`w-full p-2.5 bg-slate-50 border ${formErrors.branch ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-200'} rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all`}
+              >
                 <option value="" disabled>Select Branch</option>
                 {branches.map(b => (<option key={b.id} value={b.name}>{b.name}</option>))}
               </select>
+              {formErrors.branch && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.branch}</p>}
             </div>
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Date Hired</label>
-              <input type="date" value={editForm.hireDate || ''} onChange={(e) => onFormChange({ ...editForm, hireDate: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20" />
+              <input type="date" value={editForm.hireDate || ''} onChange={(e) => onFormChange({ ...editForm, hireDate: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all" />
             </div>
             <div className="space-y-3 px-6">
               <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Status</label>
@@ -138,7 +258,7 @@ export function EmployeeEditModal({
             <select
               value={(editForm as any).shiftId || ''}
               onChange={(e) => onFormChange({ ...editForm, shiftId: e.target.value ? parseInt(e.target.value) : null } as any)}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20"
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all"
             >
               <option value="">No shift assigned</option>
               {shifts.map(s => (
@@ -156,8 +276,14 @@ export function EmployeeEditModal({
         </div>
 
         <div className="p-5 bg-slate-50 flex gap-3 shrink-0">
-          <button onClick={onClose} className="flex-1 px-4 py-3.5 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">Cancel</button>
-          <button onClick={onSave} className="flex-1 px-4 py-3.5 bg-red-600 text-white rounded-xl text-sm font-black shadow-lg shadow-red-600/30 hover:bg-red-700 transition-all active:scale-95">Update</button>
+          <button onClick={onClose} disabled={isSaving} className="flex-1 px-4 py-3.5 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50">Cancel</button>
+          <button 
+            onClick={handleSaveWrapper} 
+            disabled={isSaving}
+            className="flex-1 px-4 py-3.5 bg-red-600 text-white rounded-xl text-sm font-black shadow-lg shadow-red-600/30 hover:bg-red-700 transition-all active:scale-95 disabled:opacity-70 disabled:active:scale-100 flex items-center justify-center gap-2"
+          >
+            {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Updating</> : 'Update'}
+          </button>
         </div>
       </div>
     </div>
