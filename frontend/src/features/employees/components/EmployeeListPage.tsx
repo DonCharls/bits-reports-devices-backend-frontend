@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useToast } from '@/hooks/useToast';
 import ToastContainer from '@/components/ui/ToastContainer';
 import { Card } from '@/components/ui/card';
@@ -10,7 +10,7 @@ import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import { useEmployees } from '../hooks/useEmployees';
 import { EmployeeTable } from './EmployeeTable';
 import { EmployeeEditModal } from './EmployeeEditModal';
-import { ConfirmDeactivateDialog, ConfirmResetPasswordDialog } from './EmployeeConfirmDialogs';
+import { ConfirmDeactivateDialog, ConfirmResetPasswordDialog, ConfirmRestoreDialog, ConfirmPermanentDeleteDialog } from './EmployeeConfirmDialogs';
 import { ScanNowModal, EnrollmentLoadingOverlay } from './EmployeeScanModals';
 import RFIDCardEnrollmentModal from '@/features/biometrics/components/RFIDCardEnrollmentModal';
 import FingerprintDashboardModal from '@/features/biometrics/components/FingerprintDashboardModal';
@@ -41,6 +41,12 @@ export function EmployeeListPage({ role, statusFilter = 'Active' }: EmployeeList
   const [confirmResetPassword, setConfirmResetPassword] = useState<Employee | null>(null);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
+
+  // Inactive-only actions
+  const [confirmRestore, setConfirmRestore] = useState<Employee | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [confirmPermanentDelete, setConfirmPermanentDelete] = useState<Employee | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const [scanModal, setScanModal] = useState({ open: false, employeeName: '', countdown: 60 });
   const [enrollStatus, setEnrollStatus] = useState<Record<number, 'idle' | 'loading' | 'success' | 'error'>>({});
@@ -60,6 +66,46 @@ export function EmployeeListPage({ role, statusFilter = 'Active' }: EmployeeList
     if (!confirmDeactivate) return;
     const success = await actions.deactivateEmployee(confirmDeactivate.id as number);
     if (success) setConfirmDeactivate(null);
+  };
+
+  const handleRestore = async () => {
+    if (!confirmRestore) return;
+    setIsRestoring(true);
+    try {
+      const res = await fetch(`/api/employees/${confirmRestore.id}/reactivate`, { method: 'PATCH' });
+      const data = await res.json();
+      if (data.success) {
+        await refresh();
+        showToast('success', 'Employee Restored', `${confirmRestore.firstName} ${confirmRestore.lastName} restored to active status`);
+        setConfirmRestore(null);
+      } else {
+        showToast('error', 'Restore Failed', data.message || 'Unknown error');
+      }
+    } catch {
+      showToast('error', 'Restore Failed', 'Could not reach the server. Please try again.');
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
+  const handlePermanentDelete = async () => {
+    if (!confirmPermanentDelete) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/employees/${confirmPermanentDelete.id}/permanent`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        await refresh();
+        showToast('success', 'Employee Deleted', `${confirmPermanentDelete.firstName} ${confirmPermanentDelete.lastName} permanently deleted`);
+        setConfirmPermanentDelete(null);
+      } else {
+        showToast('error', 'Delete Failed', data.message || 'Unknown error');
+      }
+    } catch {
+      showToast('error', 'Delete Failed', 'Could not reach the server. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleResetPassword = async () => {
@@ -112,8 +158,18 @@ export function EmployeeListPage({ role, statusFilter = 'Active' }: EmployeeList
       if (filters.selectedBranch !== 'all') params.set('branch', filters.selectedBranch);
       const res = await fetch(`/api/employees/export${params.toString() ? `?${params}` : ''}`);
       if (!res.ok) throw new Error('Export failed');
+      const disposition = res.headers.get('Content-Disposition');
+      const filenameMatch = disposition && disposition.match(/filename="?([^"]+)"?/);
+      const filename = filenameMatch?.[1] || `employees_export_${new Date().toISOString().split('T')[0]}.xlsx`;
+      
       const blob = await res.blob();
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `employees_${statusFilter}.xlsx`; document.body.appendChild(a); a.click(); URL.revokeObjectURL(a.href);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      URL.revokeObjectURL(a.href);
+      document.body.removeChild(a);
       showToast('success', 'Export Complete', `Downloaded employees`);
     } catch {
       showToast('error', 'Export Failed', 'Could not export employees');
@@ -131,15 +187,21 @@ export function EmployeeListPage({ role, statusFilter = 'Active' }: EmployeeList
           <h2 className="text-2xl sm:text-3xl font-bold text-foreground">{statusFilter} Employees</h2>
           <p className="text-muted-foreground text-sm mt-1">{statusFilter === 'Active' ? 'Manage your active workforce' : 'Review offboarded personnel'}</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" className="border-border hover:bg-slate-50 text-foreground" disabled={isExporting} onClick={handleExport}>
+        <div className="flex gap-2 items-center">
+          {statusFilter === 'Inactive' && (
+            <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm">
+              <span className="text-amber-500">⚠</span>
+              <span>Permanent deletion cannot be undone</span>
+            </div>
+          )}
+          <Button variant="outline" className="border-border text-foreground hover:bg-red-700 hover:text-white gap-2 transition-all active:scale-95" disabled={isExporting} onClick={handleExport}>
             {isExporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />} Export
           </Button>
-          {(role === 'admin' || role === 'hr') && statusFilter === 'Active' && (
-            <EmployeeAddModal departments={departments} branches={branches} shifts={shifts} onSave={actions.registerEmployee} isOpen={isAddOpen} setIsOpen={setIsAddOpen} />
-          )}
           {role === 'admin' && statusFilter === 'Active' && (
             <EmployeeImportModal departments={departments} branches={branches} shifts={shifts} onImportComplete={refresh} />
+          )}
+          {(role === 'admin' || role === 'hr') && statusFilter === 'Active' && (
+            <EmployeeAddModal departments={departments} branches={branches} shifts={shifts} onSave={actions.registerEmployee} isOpen={isAddOpen} setIsOpen={setIsAddOpen} />
           )}
         </div>
       </div>
@@ -165,20 +227,34 @@ export function EmployeeListPage({ role, statusFilter = 'Active' }: EmployeeList
         employees={paginatedEmployees} loading={loading} filteredCount={employees.length}
         currentPage={currentPage} totalPages={totalPages}
         sortKey={tableSort.sortKey as string} sortOrder={tableSort.sortOrder} onSort={tableSort.handleSort} onPageChange={setCurrentPage}
+        pageSize={rowsPerPage}
         onEdit={(emp) => { setEditingEmployee(emp); setEditForm({ ...emp }); }}
         onResetPassword={setConfirmResetPassword}
         onFingerprintOpen={(id, name) => setFingerprintDashboardOpen({ open: true, employeeId: id, employeeName: name })}
         onCardEnrollOpen={(id, name, card) => setCardEnrollOpen({ open: true, employeeId: id, employeeName: name, currentCard: card ?? null })}
         enrollStatus={enrollStatus} dragScrollRef={dragScrollRef}
+        {...(statusFilter === 'Inactive' ? { onRestore: setConfirmRestore, onPermanentDelete: setConfirmPermanentDelete } : {})}
       />
 
-      {editingEmployee && <EmployeeEditModal employee={editingEmployee} editForm={editForm} departments={departments} branches={branches} shifts={shifts} onFormChange={setEditForm} onSave={handleUpdateEmployee} onClose={() => setEditingEmployee(null)} onEmailBlur={() => {}} />}
+      {editingEmployee && <EmployeeEditModal employee={editingEmployee} editForm={editForm} departments={departments} branches={branches} shifts={shifts} onFormChange={setEditForm} onSave={handleUpdateEmployee} onClose={() => setEditingEmployee(null)} onEmailBlur={async () => {
+        const email = editForm.email?.trim();
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
+        try {
+          const res = await fetch(`/api/employees/check-email?email=${encodeURIComponent(email)}&excludeId=${editingEmployee.id}`);
+          const data = await res.json();
+          if (data.success && !data.available) {
+            showToast('warning', 'Email In Use', 'This email is already assigned to another employee.');
+          }
+        } catch { /* ignore network error on blur */ }
+      }} />}
       {confirmDeactivate && <ConfirmDeactivateDialog employee={confirmDeactivate} isDeactivating={false} onConfirm={handleDeactivate} onCancel={() => setConfirmDeactivate(null)} />}
       {confirmResetPassword && <ConfirmResetPasswordDialog employee={confirmResetPassword} isResetting={isResettingPassword} onConfirm={handleResetPassword} onCancel={() => setConfirmResetPassword(null)} />}
       <ScanNowModal open={scanModal.open} employeeName={scanModal.employeeName} countdown={scanModal.countdown} onClose={() => setScanModal(p => ({ ...p, open: false }))} />
       <EnrollmentLoadingOverlay enrollStatus={enrollStatus} enrollMsg={enrollMsg} />
       <FingerprintDashboardModal isOpen={fingerprintDashboardOpen.open} employeeId={fingerprintDashboardOpen.employeeId} employeeName={fingerprintDashboardOpen.employeeName} onClose={() => setFingerprintDashboardOpen({ open: false, employeeId: null, employeeName: '' })} onScanNow={(fi, di) => fingerprintDashboardOpen.employeeId && handleEnrollFingerprint(fingerprintDashboardOpen.employeeId, di, fi)} />
       <RFIDCardEnrollmentModal isOpen={cardEnrollOpen.open} employeeId={cardEnrollOpen.employeeId} employeeName={cardEnrollOpen.employeeName} currentCard={cardEnrollOpen.currentCard} onClose={() => setCardEnrollOpen({ open: false, employeeId: null, employeeName: '', currentCard: null })} onSuccess={(m) => { showToast('success', 'Badge Updated', m); refresh(); }} onError={(m) => showToast('error', 'Badge Operation Failed', m)} />
+      {confirmRestore && <ConfirmRestoreDialog employee={confirmRestore} isRestoring={isRestoring} onConfirm={handleRestore} onCancel={() => setConfirmRestore(null)} />}
+      {confirmPermanentDelete && <ConfirmPermanentDeleteDialog employee={confirmPermanentDelete} isDeleting={isDeleting} onConfirm={handlePermanentDelete} onCancel={() => setConfirmPermanentDelete(null)} />}
     </div>
   );
 }

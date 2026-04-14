@@ -3,7 +3,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/useToast';
 import ToastContainer from '@/components/ui/ToastContainer';
-import { Search, CalendarSearch, Loader2, CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight, AlertCircle, X } from 'lucide-react';
+import { Search, CalendarSearch, Loader2, CheckCircle2, XCircle, Clock, AlertCircle, X } from 'lucide-react';
+import { DataTablePagination } from '@/components/ui/DataTablePagination';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/ui/SortableHeader';
@@ -331,32 +332,16 @@ export function AdjustmentListPage({ role }: AdjustmentListPageProps) {
                     </table>
                 </div>
 
-                {totalPages > 1 && (
-                    <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                            Page <span className="text-slate-700">{currentPage}</span> of <span className="text-slate-700">{totalPages}</span> · {totalCount} total
-                        </p>
-                        <div className="flex items-center gap-1">
-                            <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1}
-                                className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-red-50 disabled:opacity-40 transition-all">
-                                <ChevronLeft size={16} />
-                            </button>
-                            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                                const page = totalPages <= 5 ? i + 1 : currentPage <= 3 ? i + 1 : currentPage >= totalPages - 2 ? totalPages - 4 + i : currentPage - 2 + i;
-                                return (
-                                    <button key={page} onClick={() => setCurrentPage(page)}
-                                        className={`h-8 w-8 flex items-center justify-center rounded-lg text-xs font-bold transition-all ${currentPage === page ? 'bg-red-600 text-white shadow-md shadow-red-600/20' : 'border border-slate-200 text-slate-600 hover:bg-red-50'}`}>
-                                        {page}
-                                    </button>
-                                );
-                            })}
-                            <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage >= totalPages}
-                                className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-red-50 disabled:opacity-40 transition-all">
-                                <ChevronRight size={16} />
-                            </button>
-                        </div>
-                    </div>
-                )}
+                {/* Pagination */}
+                <DataTablePagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={setCurrentPage}
+                    totalCount={totalCount}
+                    pageSize={itemsPerPage}
+                    entityName="adjustments"
+                    loading={loading}
+                />
             </div>
 
             {/* Reject Modal */}

@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/useToast'
 import ToastContainer from '@/components/ui/ToastContainer'
 import { useTableSort } from '@/hooks/useTableSort'
 import { SortableHeader } from '@/components/ui/SortableHeader'
+import { DataTablePagination } from '@/components/ui/DataTablePagination'
 
 interface Shift {
     id: number
@@ -99,6 +100,9 @@ export default function HRShiftsPage() {
     const [deleteLoading, setDeleteLoading] = useState(false)
     const { toasts, showToast, dismissToast } = useToast()
 
+    const [currentPage, setCurrentPage] = useState(1)
+    const rowsPerPage = 10
+
     const fetchShifts = useCallback(async () => {
         try {
             const res = await fetch('/api/shifts', { credentials: 'include' })
@@ -171,6 +175,11 @@ export default function HRShiftsPage() {
     }
 
     const activeCount = shifts.filter(s => s.isActive).length
+
+    // Reset page on filter change
+    useEffect(() => { setCurrentPage(1) }, [searchTerm, filterActive])
+
+    const paginatedShifts = sortedShifts.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
 
     // Break validation helper
     const toMinutes = (t: string) => {
@@ -414,7 +423,7 @@ export default function HRShiftsPage() {
                     <tbody className="divide-y divide-slate-100">
                         {loading ? (
                             <tr><td colSpan={7} className="px-6 py-24 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">Loading shifts…</td></tr>
-                        ) : sortedShifts.length > 0 ? sortedShifts.map(s => (
+                        ) : paginatedShifts.length > 0 ? paginatedShifts.map(s => (
                             <tr key={s.id} className="hover:bg-red-50/30 transition-colors duration-200">
                                 <td className="px-6 py-4">
                                     <div className="flex items-center gap-3">
@@ -480,6 +489,17 @@ export default function HRShiftsPage() {
                     </tbody>
                 </table>
             </div>
+
+            <DataTablePagination
+                currentPage={currentPage}
+                totalPages={Math.ceil(filtered.length / rowsPerPage)}
+                onPageChange={setCurrentPage}
+                totalCount={filtered.length}
+                pageSize={rowsPerPage}
+                entityName="shifts"
+                loading={loading}
+            />
+
             <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         </div>
     )

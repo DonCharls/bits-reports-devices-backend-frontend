@@ -1,9 +1,10 @@
 "use client"
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { History, Search, CalendarSearch, X, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { History, Search, CalendarSearch, X, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/ui/SortableHeader';
+import { DataTablePagination } from '@/components/ui/DataTablePagination';
 
 interface AuditLog {
   id: number;
@@ -382,43 +383,16 @@ export default function AdjustmentsPage() {
           </table>
         </div>
 
-        {totalPages > 1 && (
-          <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              Showing <span className="text-slate-700">{((currentPage - 1) * itemsPerPage) + 1}</span> to <span className="text-slate-700">{Math.min(currentPage * itemsPerPage, totalCount)}</span> of <span className="text-slate-700">{totalCount}</span> records
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-red-600 disabled:opacity-50 disabled:hover:text-slate-400 transition-all shadow-sm"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <div className="flex items-center gap-1">
-                {[...Array(Math.min(totalPages, 5))].map((_, i) => {
-                  const pageNum = totalPages <= 5 ? i + 1 : Math.max(1, Math.min(currentPage - 2, totalPages - 4)) + i;
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className={`w-8 h-8 rounded-lg text-xs font-black transition-all ${currentPage === pageNum ? 'bg-red-600 text-white shadow-md shadow-red-200' : 'bg-white border border-slate-200 text-slate-400 hover:bg-slate-50'}`}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-              </div>
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                disabled={currentPage === totalPages || totalPages === 0}
-                className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-red-600 disabled:opacity-50 disabled:hover:text-slate-400 transition-all shadow-sm"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Pagination */}
+        <DataTablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          totalCount={totalCount}
+          pageSize={itemsPerPage}
+          entityName="records"
+          loading={loading}
+        />
       </div>
     </div>
   );

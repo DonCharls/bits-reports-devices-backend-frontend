@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { CalendarDays, Filter } from 'lucide-react'
+import { DataTablePagination } from '@/components/ui/DataTablePagination'
 
 import { employeeSelfApi } from '@/lib/api'
 
@@ -35,6 +36,9 @@ export default function MyAttendancePage() {
   const [startDate, setStartDate] = useState(phtStr(firstDay))
   const [endDate, setEndDate] = useState(phtStr(lastDay))
 
+  const [currentPage, setCurrentPage] = useState(1)
+  const rowsPerPage = 10
+
   const fetchRecords = async () => {
     setLoading(true)
     try {
@@ -54,8 +58,11 @@ export default function MyAttendancePage() {
   }, [])
 
   const handleApplyFilter = () => {
+    setCurrentPage(1)
     fetchRecords()
   }
+
+  const paginatedRecords = records.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
 
   const formatTime = (timeStr?: string | null) => {
     if (!timeStr) return '--:--'
@@ -143,8 +150,8 @@ export default function MyAttendancePage() {
                   <th className="px-6 py-4 font-black">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {records.map((r) => (
+               <tbody className="divide-y divide-slate-100">
+                {paginatedRecords.map((r) => (
                   <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="font-bold text-slate-800">
@@ -189,6 +196,16 @@ export default function MyAttendancePage() {
           </div>
         </div>
       )}
+
+      <DataTablePagination
+        currentPage={currentPage}
+        totalPages={Math.ceil(records.length / rowsPerPage)}
+        onPageChange={setCurrentPage}
+        totalCount={records.length}
+        pageSize={rowsPerPage}
+        entityName="records"
+        loading={loading}
+      />
     </div>
   )
 }

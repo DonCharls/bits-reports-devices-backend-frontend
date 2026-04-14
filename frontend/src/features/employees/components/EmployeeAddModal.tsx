@@ -63,9 +63,14 @@ export function EmployeeAddModal({ departments, branches, shifts, onSave, isOpen
         <Button className="flex-1 sm:flex-none bg-primary hover:bg-primary/90 gap-2"><Plus className="w-4 h-4" /> Add Employee</Button>
       </DialogTrigger>
       <DialogContent showCloseButton={false} className="bg-white border-0 max-w-lg p-0 rounded-2xl overflow-hidden shadow-xl">
-        <div className="bg-red-600 px-6 py-4 flex items-center justify-between">
-          <div><DialogTitle className="text-white font-bold text-lg">New Employee Registration</DialogTitle><DialogDescription className="text-white/80 text-[10px] uppercase tracking-widest font-bold mt-1">Add to directory</DialogDescription></div>
-          <button onClick={() => setIsOpen(false)} className="text-white/80 hover:text-white"><XIcon className="w-5 h-5" /></button>
+        <div className="bg-red-600 px-6 py-4 flex items-center justify-between shrink-0">
+          <div>
+            <DialogTitle className="text-white font-bold text-lg">New Employee Registration</DialogTitle>
+            <DialogDescription className="text-white/80 text-[10px] uppercase tracking-widest font-bold mt-1">Add to directory</DialogDescription>
+          </div>
+          <button onClick={() => setIsOpen(false)} className="text-white/80 hover:text-white transition-colors">
+            <XIcon className="w-5 h-5" />
+          </button>
         </div>
         <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
           <div><label className="text-slate-400 text-[10px] uppercase font-bold">Employee ID *</label><input placeholder="e.g. 10001" className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.employeeNumber ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.employeeNumber} onChange={e => { setNewEmployee(p => ({ ...p, employeeNumber: e.target.value })); setFormErrors(p => ({ ...p, employeeNumber: '' })) }} />{formErrors.employeeNumber && <p className="text-[11px] text-red-500">{formErrors.employeeNumber}</p>}</div>
@@ -74,12 +79,32 @@ export function EmployeeAddModal({ departments, branches, shifts, onSave, isOpen
             <div><label className="text-slate-400 text-[10px] uppercase font-bold">Last Name *</label><input placeholder="Last Name" className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.lastName ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.lastName} onChange={e => { setNewEmployee(p => ({ ...p, lastName: e.target.value })); setFormErrors(p => ({ ...p, lastName: '' })) }} />{formErrors.lastName && <p className="text-[11px] text-red-500">{formErrors.lastName}</p>}</div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="text-slate-400 text-[10px] uppercase font-bold">Email Address</label><input type="email" placeholder="Email" className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.email ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.email} onChange={e => { setNewEmployee(p => ({ ...p, email: e.target.value })); setFormErrors(p => ({ ...p, email: '' })) }} onBlur={async () => { const email = newEmployee.email.trim(); if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return; setEmailChecking(true); try { const res = await fetch(`/api/employees/check-email?email=${encodeURIComponent(email)}`); const data = await res.json(); if (data.success && !data.available) setFormErrors(p => ({ ...p, email: '⚠️ Email already in use.' })) } finally { setEmailChecking(false) } }} />{formErrors.email && <p className="text-[11px] text-red-500">{formErrors.email}</p>}</div>
+            <div><label className="text-slate-400 text-[10px] uppercase font-bold">Middle Name</label><input placeholder="Middle Name (optional)" className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none" value={newEmployee.middleName} onChange={e => setNewEmployee(p => ({ ...p, middleName: e.target.value }))} /></div>
+            <div><label className="text-slate-400 text-[10px] uppercase font-bold">Suffix</label><select className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none" value={newEmployee.suffix} onChange={e => setNewEmployee(p => ({ ...p, suffix: e.target.value }))}><option value="">None</option>{SUFFIX_OPTIONS.filter(Boolean).map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-slate-400 text-[10px] uppercase font-bold">Gender</label>
+              <select className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none" value={newEmployee.gender} onChange={e => setNewEmployee(p => ({ ...p, gender: e.target.value }))}>
+                <option value="">Select Gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Prefer not to say">Prefer not to say</option>
+              </select>
+            </div>
+            <div><label className="text-slate-400 text-[10px] uppercase font-bold">Date of Birth</label><input type="date" className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none" value={newEmployee.dateOfBirth} onChange={e => setNewEmployee(p => ({ ...p, dateOfBirth: e.target.value }))} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="text-slate-400 text-[10px] uppercase font-bold">Email Address *</label><input type="email" placeholder="Email" className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.email ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.email} onChange={e => { setNewEmployee(p => ({ ...p, email: e.target.value })); setFormErrors(p => ({ ...p, email: '' })) }} onBlur={async () => { const email = newEmployee.email.trim(); if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return; setEmailChecking(true); try { const res = await fetch(`/api/employees/check-email?email=${encodeURIComponent(email)}`); const data = await res.json(); if (data.success && !data.available) setFormErrors(p => ({ ...p, email: '⚠️ Email already in use.' })) } finally { setEmailChecking(false) } }} />{formErrors.email && <p className="text-[11px] text-red-500">{formErrors.email}</p>}</div>
             <div><label className="text-slate-400 text-[10px] uppercase font-bold">Contact Number *</label><input type="tel" placeholder="Contact" maxLength={13} className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.contactNumber ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.contactNumber} onChange={e => { setNewEmployee(p => ({ ...p, contactNumber: formatPhoneNumber(e.target.value) })); setFormErrors(p => ({ ...p, contactNumber: '' })) }} />{formErrors.contactNumber && <p className="text-[11px] text-red-500">{formErrors.contactNumber}</p>}</div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-slate-400 text-[10px] uppercase font-bold">Department *</label><select className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.department ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.department} onChange={e => { setNewEmployee(p => ({ ...p, department: e.target.value })); setFormErrors(p => ({ ...p, department: '' })) }}><option value="">Select Dept</option>{departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select>{formErrors.department && <p className="text-[11px] text-red-500">{formErrors.department}</p>}</div>
             <div><label className="text-slate-400 text-[10px] uppercase font-bold">Branch *</label><select className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.branch ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.branch} onChange={e => { setNewEmployee(p => ({ ...p, branch: e.target.value })); setFormErrors(p => ({ ...p, branch: '' })) }}><option value="">Select Branch</option>{branches.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}</select>{formErrors.branch && <p className="text-[11px] text-red-500">{formErrors.branch}</p>}</div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="text-slate-400 text-[10px] uppercase font-bold">Date Hired</label><input type="date" className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none" value={newEmployee.hireDate} onChange={e => setNewEmployee(p => ({ ...p, hireDate: e.target.value }))} /></div>
+            <div><label className="text-slate-400 text-[10px] uppercase font-bold">Work Shift</label><select className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none" value={newEmployee.shiftId} onChange={e => setNewEmployee(p => ({ ...p, shiftId: e.target.value }))}><option value="">No shift assigned</option>{shifts.map(s => <option key={s.id} value={s.id}>[{s.shiftCode}] {s.name}</option>)}</select></div>
           </div>
         </div>
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">

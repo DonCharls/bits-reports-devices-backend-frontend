@@ -14,6 +14,7 @@ import { AttendanceTable } from '@/features/attendance/components/AttendanceTabl
 import { AttendanceEditModal } from '@/features/attendance/components/AttendanceEditModal';
 import { fmtHours, formatLate, fmtMins, toTimeInput } from '@/features/attendance/utils/attendance-formatters';
 import { AttendanceRecord } from '@/features/attendance/types';
+import { useAttendanceStream, AttendanceStreamPayload } from '@/features/attendance/hooks/useAttendanceStream';
 
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/ui/SortableHeader';
@@ -181,8 +182,13 @@ function AttendanceContent({ role }: AttendanceDashboardProps) {
           const overtimeMinutes: number = log.overtimeMinutes ?? 0;
           const undertimeMinutes: number = log.undertimeMinutes ?? 0;
           const shiftCode: string | null = log.shiftCode ?? emp.Shift?.shiftCode ?? null;
-          const dbStatus = (log.status || '').toLowerCase();
-          const status = dbStatus === 'absent' ? 'absent' : (lateMinutes > 0 ? 'late' : 'present');
+          const isAnomaly: boolean = log.isAnomaly ?? false;
+          const isEarlyOut: boolean = log.isEarlyOut ?? false;
+          const isShiftActive: boolean = log.isShiftActive ?? false;
+          const gracePeriodApplied: boolean = log.gracePeriodApplied ?? false;
+          const status = isEarlyOut ? 'early-out' : isAnomaly ? 'anomaly' : lateMinutes > 0 ? 'late' : undertimeMinutes > 0 ? 'undertime' : (log.status || 'present');
+          const displayStatus = isShiftActive ? 'IN_PROGRESS' : status;
+
           return {
             id: log.id,
             employeeId: log.employeeId,
@@ -192,9 +198,12 @@ function AttendanceContent({ role }: AttendanceDashboardProps) {
             date: new Date(log.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }),
             checkIn: checkIn.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true }),
             checkOut: checkOut ? checkOut.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true }) : '—',
-            status, lateMinutes, totalHours, overtimeMinutes, undertimeMinutes, shiftCode,
+            status, displayStatus, lateMinutes, totalHours, overtimeMinutes, undertimeMinutes, shiftCode,
             isNightShift: emp.Shift?.isNightShift ?? false,
+            isAnomaly, isEarlyOut, isShiftActive, gracePeriodApplied,
             notes: log.notes || null,
+            checkInDevice: log.checkInDeviceName ?? null,
+            checkOutDevice: log.checkOutDeviceName ?? null,
           };
         });
 
@@ -218,10 +227,11 @@ function AttendanceContent({ role }: AttendanceDashboardProps) {
             department: e.Department?.name || e.department || 'General',
             branchName: e.branch || '—',
             date: selectedDate,
-            checkIn: '—', checkOut: '—', status: 'absent',
+            checkIn: '—', checkOut: '—', status: 'absent', displayStatus: 'absent',
             lateMinutes: 0, totalHours: 0, overtimeMinutes: 0, undertimeMinutes: 0,
             shiftCode: e.Shift?.shiftCode ?? null,
             isNightShift: e.Shift?.isNightShift ?? false,
+            isAnomaly: false, isEarlyOut: false, isShiftActive: false, gracePeriodApplied: false,
           }));
 
         let full = (statusFilter === 'all' || statusFilter === 'absent')
@@ -255,6 +265,16 @@ function AttendanceContent({ role }: AttendanceDashboardProps) {
       setLoading(false);
     }
   }, [selectedDate, statusFilter, debouncedSearch, branchFilter, deptFilter]);
+
+  const handleStreamRecord = useCallback((payload: AttendanceStreamPayload) => {
+    const recordDateStr = new Date(payload.record.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+    if (recordDateStr === selectedDate) fetchRecords();
+  }, [selectedDate, fetchRecords]);
+
+  useAttendanceStream({
+    onRecord: handleStreamRecord,
+    onConnected: fetchRecords,
+  });
 
   useEffect(() => { fetchRecords(); }, [fetchRecords]);
 
@@ -343,7 +363,7 @@ function AttendanceContent({ role }: AttendanceDashboardProps) {
     ]);
 
     sortedRecords.forEach((r, i) => {
-      const statusLabel = r.status.charAt(0).toUpperCase() + r.status.slice(1);
+      const statusLabel = r.isAnomaly ? 'Anomaly' : r.displayStatus === 'IN_PROGRESS' ? 'In Progress' : r.status.charAt(0).toUpperCase() + r.status.slice(1);
       allRows.push([
         i + 1,
         r.employeeName,
@@ -351,8 +371,8 @@ function AttendanceContent({ role }: AttendanceDashboardProps) {
         r.department,
         r.shiftCode || 'No Shift',
         r.checkIn,
-        r.checkOut,
-        r.totalHours > 0 ? fmtHours(r.totalHours) : '—',
+        r.isShiftActive ? 'ACTIVE' : r.checkOut,
+        r.isShiftActive ? 'LIVE' : (r.totalHours > 0 ? fmtHours(r.totalHours) : '—'),
         formatLate(r.lateMinutes),
         r.overtimeMinutes > 0 ? `+${fmtMins(r.overtimeMinutes)}` : '—',
         r.undertimeMinutes > 0 ? `-${fmtMins(r.undertimeMinutes)}` : '—',

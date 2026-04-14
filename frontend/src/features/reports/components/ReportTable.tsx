@@ -1,5 +1,6 @@
 import React from 'react';
-import { ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
+import { DataTablePagination } from '@/components/ui/DataTablePagination';
 import { ReportRow } from '@/types/reports';
 import { formatHrsMins, formatShiftTime, formatLateHrs } from '@/features/reports/lib/formatters';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
@@ -32,25 +33,6 @@ export const ReportTable: React.FC<ReportTableProps> = ({
   sortOrder,
   handleSort,
 }) => {
-  // Generate windowed page numbers
-  const getPageNumbers = () => {
-    const pages = [];
-    const maxVisible = 5;
-    
-    let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
-    let end = start + maxVisible - 1;
-
-    if (end > totalPages) {
-      end = totalPages;
-      start = Math.max(1, end - maxVisible + 1);
-    }
-
-    for (let i = start; i <= end; i++) {
-      pages.push(i);
-    }
-    return pages;
-  };
-
   const dragScrollRef = useHorizontalDragScroll();
 
   // Variant-specific styling
@@ -192,45 +174,15 @@ export const ReportTable: React.FC<ReportTableProps> = ({
       </div>
 
       {/* Pagination */}
-      <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-        <span className="text-xs text-slate-400 font-bold">
-          Showing {paginatedData.length} of {filteredDataLength} records · Page{' '}
-          {currentPage} of {totalPages}
-        </span>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-            disabled={currentPage === 1}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          
-          {getPageNumbers().map((page) => (
-            <button
-              key={page}
-              onClick={() => setCurrentPage(page)}
-              className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${
-                currentPage === page
-                  ? 'bg-red-600 text-white'
-                  : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
-              }`}
-            >
-              {page}
-            </button>
-          ))}
-
-          <button
-            onClick={() =>
-              setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-            }
-            disabled={currentPage === totalPages}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      <DataTablePagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={setCurrentPage}
+        totalCount={filteredDataLength}
+        pageSize={10}
+        entityName="records"
+        loading={loading}
+      />
     </div>
   );
 };

@@ -1,5 +1,6 @@
 import React from 'react';
-import { AlertCircle, ChevronLeft, ChevronRight, Edit2 } from 'lucide-react';
+import { AlertCircle, Edit2, Fingerprint } from 'lucide-react';
+import { DataTablePagination } from '@/components/ui/DataTablePagination';
 import { SortableHeader } from '@/components/ui/SortableHeader';
 import { fmtHours, formatLate, fmtMins } from '../utils/attendance-formatters';
 import { AttendanceRecord } from '../types';
@@ -54,11 +55,12 @@ export function AttendanceTable({
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{row.department} • {row.branchName}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${row.status === 'present' ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
-                      : row.status === 'late' ? 'text-yellow-600 bg-yellow-50 border-yellow-100'
+                    <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${row.displayStatus === 'present' ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
+                      : row.displayStatus === 'IN_PROGRESS' ? 'text-blue-500 bg-blue-500/10 border-blue-500/20'
+                      : row.displayStatus === 'late' ? 'text-yellow-600 bg-yellow-50 border-yellow-100'
                         : 'text-red-600 bg-red-50 border-red-100'
                     }`}>
-                      {row.status === 'present' ? 'On Time' : row.status}
+                      {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus}
                     </span>
                     <button onClick={() => handleEditClick(row)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
                       <Edit2 size={14} />
@@ -66,20 +68,37 @@ export function AttendanceTable({
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                  <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Clock In</p><p className="font-mono text-emerald-600 font-black text-sm">{row.checkIn}</p></div>
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Clock In</p>
+                    <p className="font-mono text-emerald-600 font-black text-sm">{row.checkIn}</p>
+                    {row.checkIn !== '—' && (
+                      <div title={row.checkInDevice ?? 'Manual'} className="inline-flex items-center gap-1 mt-1 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
+                        <Fingerprint className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-80" />
+                        <span className="text-[9px] text-slate-500 font-bold truncate leading-none pt-px">{row.checkInDevice ?? 'Manual'}</span>
+                      </div>
+                    )}
+                  </div>
                   <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Clock Out</p>
                     {row.notes?.includes('Early punch detected') ? (
                       <span className="text-[10px] font-bold text-orange-500">🔶 Early punch flagged</span>
                     ) : row.checkOut === '—' && row.notes?.includes('No checkout recorded') ? (
                       <span className="text-[10px] font-bold text-amber-600">⚠️ No checkout</span>
                     ) : (
-                      <p className="font-mono text-slate-600 font-black text-sm">{row.checkOut}</p>
+                      <>
+                        <p className="font-mono text-slate-600 font-black text-sm">{row.checkOut}</p>
+                        {row.checkOut !== '—' && (
+                          <div title={row.checkOutDevice ?? 'Manual'} className="inline-flex items-center gap-1 mt-1 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
+                            <Fingerprint className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-80" />
+                            <span className="text-[9px] text-slate-500 font-bold truncate leading-none pt-px">{row.checkOutDevice ?? 'Manual'}</span>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                   <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Shift</p>
                     {row.shiftCode ? <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${row.isNightShift ? 'bg-purple-100 text-purple-600 border-purple-200' : 'bg-blue-100 text-blue-600 border-blue-200'}`}>{row.shiftCode}</span> : <span className="text-[10px] text-slate-400 italic font-medium">No shift</span>}
                   </div>
-                  <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Hours</p><p className="font-mono text-slate-700 font-black text-sm">{fmtHours(row.totalHours)}</p></div>
+                  <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Hours</p><p className="font-mono text-slate-700 font-black text-sm">{row.isShiftActive ? <span className="text-slate-400 text-xs italic">Live</span> : fmtHours(row.totalHours)}</p></div>
                 </div>
                 {(row.lateMinutes > 0 || row.overtimeMinutes > 0 || row.undertimeMinutes > 0) && (
                   <div className="flex items-center gap-3 mt-2 pt-2 border-t border-slate-50">
@@ -142,33 +161,64 @@ export function AttendanceTable({
                       <span className="text-[10px] text-slate-400 italic font-medium">No Shift</span>
                     )}
                   </td>
-                  <td className={`px-4 py-4 text-sm font-mono font-bold ${row.status === 'late' ? 'text-yellow-600' : row.status === 'present' ? 'text-emerald-600' : 'text-slate-400'}`}>{row.checkIn}</td>
+                  <td className={`px-4 py-4 text-sm font-mono font-bold ${row.status === 'late' ? 'text-yellow-600' : row.status === 'present' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    <div className="flex flex-col">
+                      <span>{row.checkIn}</span>
+                      {row.gracePeriodApplied && (
+                        <span className="text-[9px] text-slate-400 mt-0.5" title="Check-in was late but within allowed grace period">Grace Period</span>
+                      )}
+                      {row.checkIn !== '—' && (
+                        <div title={row.checkInDevice ?? 'Manual'} className="inline-flex items-center gap-1 mt-1 bg-slate-50 hover:bg-slate-100/50 border border-slate-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
+                          <Fingerprint className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-80" />
+                          <span className="text-[9px] text-slate-500 font-bold truncate leading-none pt-px">{row.checkInDevice ?? 'Manual'}</span>
+                        </div>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-4 py-4 text-sm font-mono text-slate-600 font-bold">
                     {(row as any).notes?.includes('Early punch detected') ? (
                       <div className="flex flex-col">
-                        {row.checkOut !== '—' ? (
+                        {row.isShiftActive ? (
+                          <span className="inline-flex items-center gap-2 text-blue-500 font-bold text-[10px] uppercase tracking-wider">
+                            <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span></span>Active
+                          </span>
+                        ) : row.checkOut !== '—' ? (
                           <span>{row.checkOut}</span>
                         ) : null}
                         <span className="inline-flex items-center gap-1 text-orange-500 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap mt-0.5" title={(row as any).notes}>
-                          <AlertCircle className="w-3 h-3" />
-                          Early punch flagged
+                          <AlertCircle className="w-3 h-3" /> Early punch flagged
                         </span>
                       </div>
+                    ) : row.isShiftActive ? (
+                      <span className="inline-flex items-center gap-2 text-blue-500 font-bold text-[10px] uppercase tracking-wider">
+                        <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span></span>Active
+                      </span>
                     ) : row.checkOut === '—' && (row as any).notes?.includes('No checkout recorded') ? (
                       <span className="inline-flex items-center gap-1 text-amber-600 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title={(row as any).notes}>
-                        <AlertCircle className="w-3 h-3" />
-                        No checkout
+                        <AlertCircle className="w-3 h-3" /> No checkout
                       </span>
                     ) : (
-                      row.checkOut
+                      <div className="flex flex-col">
+                        <span>{row.checkOut}</span>
+                        {row.checkOut !== '—' && (
+                          <div title={row.checkOutDevice ?? 'Manual'} className="inline-flex items-center gap-1 mt-1 bg-slate-50 hover:bg-slate-100/50 border border-slate-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
+                            <Fingerprint className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-80" />
+                            <span className="text-[9px] text-slate-500 font-bold truncate leading-none pt-px">{row.checkOutDevice ?? 'Manual'}</span>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-4 text-center">
                     {row.lateMinutes > 0 ? (
                       <span className="text-[10px] font-black text-yellow-600 bg-yellow-50 border border-yellow-100 px-2.5 py-1 rounded-full whitespace-nowrap">{formatLate(row.lateMinutes)}</span>
+                    ) : row.gracePeriodApplied ? (
+                      <span className="text-[10px] text-slate-400 font-bold whitespace-nowrap">0m (Grace)</span>
                     ) : <span className="text-[10px] text-slate-300 font-black">—</span>}
                   </td>
-                  <td className="px-4 py-4 text-sm font-mono text-slate-700 font-bold text-center">{fmtHours(row.totalHours)}</td>
+                  <td className="px-4 py-4 text-sm font-mono text-slate-700 font-bold text-center">
+                    {row.isShiftActive ? <span className="text-slate-400 text-xs italic">Live</span> : fmtHours(row.totalHours)}
+                  </td>
                   <td className="px-4 py-4 text-center">
                     <span className={`text-sm font-bold ${row.overtimeMinutes > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
                       {row.overtimeMinutes > 0 ? `+${fmtMins(row.overtimeMinutes)}` : '—'}
@@ -180,12 +230,13 @@ export function AttendanceTable({
                     </span>
                   </td>
                   <td className="px-4 py-4 text-center">
-                    <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${row.status === 'present' ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
-                      : row.status === 'late' ? 'text-yellow-600 bg-yellow-50 border-yellow-100'
-                        : row.status === 'incomplete' ? 'text-amber-600 bg-amber-50 border-amber-100'
-                          : 'text-red-600 bg-red-50 border-red-100'
+                    <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${row.displayStatus === 'present' ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
+                      : row.displayStatus === 'IN_PROGRESS' ? 'text-blue-500 bg-blue-500/10 border-blue-500/20'
+                        : row.displayStatus === 'late' ? 'text-yellow-600 bg-yellow-50 border-yellow-100'
+                          : row.displayStatus === 'incomplete' ? 'text-amber-600 bg-amber-50 border-amber-100'
+                            : 'text-red-600 bg-red-50 border-red-100'
                     }`}>
-                      {row.status === 'present' ? 'On Time' : row.status}
+                      {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus}
                     </span>
                   </td>
                   <td className="px-4 py-4 text-center">
@@ -201,32 +252,15 @@ export function AttendanceTable({
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-          <span className="text-xs font-medium text-slate-400">
-            Page {currentPage} of {totalPages} &middot; {records.length} employees
-          </span>
-          <div className="flex items-center gap-1">
-            <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1}
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-red-50 hover:border-red-200 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
-              <ChevronLeft size={16} />
-            </button>
-            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-              const page = totalPages <= 5 ? i + 1 : currentPage <= 3 ? i + 1 : currentPage >= totalPages - 2 ? totalPages - 4 + i : currentPage - 2 + i;
-              return (
-                <button key={page} onClick={() => setCurrentPage(page)}
-                  className={`h-8 w-8 flex items-center justify-center rounded-lg text-xs font-bold transition-all ${currentPage === page ? 'bg-red-600 text-white border border-red-600 shadow-md shadow-red-600/20' : 'border border-slate-200 text-slate-600 hover:bg-red-50 hover:border-red-200 hover:text-red-600'}`}>
-                  {page}
-                </button>
-              );
-            })}
-            <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage >= totalPages}
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-red-50 hover:border-red-200 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
-      )}
+      <DataTablePagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={setCurrentPage}
+        totalCount={records.length}
+        pageSize={rowsPerPage}
+        entityName="attendance records"
+        loading={loading}
+      />
     </div>
   );
 }

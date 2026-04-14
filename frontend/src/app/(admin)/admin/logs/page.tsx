@@ -3,12 +3,13 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-    ScrollText, ChevronLeft, ChevronRight,
+    ScrollText,
     LogIn, LogOut, Fingerprint, Clock, CalendarDays,
     Search, RefreshCw, UserPlus, Trash2, Edit, Shield, Bot,
     Info, Wifi, WifiOff, Copy, ClipboardCheck, ClipboardX, FileText,
     Settings, Users, Radio, KeyRound, ChevronDown, AlertTriangle
 } from 'lucide-react'
+import { DataTablePagination } from '@/components/ui/DataTablePagination'
 
 /* ── Types ── */
 interface LogEntry {
@@ -584,32 +585,16 @@ export default function SystemLogsPage() {
                 </div>
 
                 {/* Pagination Footer */}
-                {meta && meta.totalPages > 1 && (
-                    <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-t border-slate-100 shrink-0">
-                        <p className="text-xs text-slate-500 font-semibold">
-                            <span className="hidden sm:inline">Showing </span><span className="font-bold text-slate-700">{(page - 1) * limit + 1}–{Math.min(page * limit, meta.total)}</span> of{' '}
-                            <span className="font-bold text-slate-700">{meta.total}</span>
-                        </p>
-                        <div className="flex items-center gap-1">
-                            <button
-                                onClick={() => setPage(p => Math.max(1, p - 1))}
-                                disabled={page <= 1}
-                                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors"
-                            >
-                                <ChevronLeft className="w-3.5 h-3.5" />
-                            </button>
-                            <span className="text-xs font-bold text-slate-700 px-2">
-                                {page} / {meta.totalPages}
-                            </span>
-                            <button
-                                onClick={() => setPage(p => Math.min(meta.totalPages, p + 1))}
-                                disabled={page >= meta.totalPages}
-                                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors"
-                            >
-                                <ChevronRight className="w-3.5 h-3.5" />
-                            </button>
-                        </div>
-                    </div>
+                {meta && (
+                    <DataTablePagination
+                        currentPage={page}
+                        totalPages={meta.totalPages}
+                        onPageChange={setPage}
+                        totalCount={meta.total}
+                        pageSize={limit}
+                        entityName="logs"
+                        loading={loading}
+                    />
                 )}
             </div>
         </div>

@@ -15,6 +15,13 @@ export interface AttendanceRecord {
   undertimeMinutes: number;
   shiftCode: string | null;
   isNightShift: boolean;
+  isAnomaly?: boolean;
+  isEarlyOut?: boolean;
+  isShiftActive?: boolean;
+  gracePeriodApplied?: boolean;
+  displayStatus?: string;
+  checkInDevice?: string | null;
+  checkOutDevice?: string | null;
 }
 
 export interface AttendanceStats {

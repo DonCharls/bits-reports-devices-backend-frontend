@@ -67,19 +67,26 @@ export function EmployeeImportModal({ departments, branches, shifts, onImportCom
 
       const deptNames = departments.map(d => d.name);
       const branchNames = branches.map(b => b.name);
+      const seenEmpNums = new Set<string>();
+      const seenEmails = new Set<string>();
       
       const parsed = dataRows.map((raw, idx) => {
         const n: Record<string, string> = {};
         for (const [k, v] of Object.entries(raw)) n[k.replace(/[\s_]+/g, '').toLowerCase()] = v instanceof Date ? v.toISOString() : String(v ?? '').trim();
         
         const errors: string[] = [];
-        const empNum = n['employeenumber'] || n['employeeid'] || '';
+        const empNum = n['employeenumber'] || n['employeeid'] || n['empid'] || '';
         const firstName = n['firstname'] || '';
         const lastName = n['lastname'] || '';
+        const middleName = n['middlename'];
+        const suffix = n['suffix'];
+        const gender = n['gender'];
+        const dateOfBirth = n['dateofbirth'] || n['dob'] || n['birthday'];
         const email = n['email'] || n['emailaddress'] || '';
-        const contactNumber = (n['contactnumber'] || '').replace(/\s/g, '');
-        const department = n['department'] || '';
+        const contactNumber = (n['contactnumber'] || n['phonenumber'] || n['phone'] || n['contact'] || '').replace(/\s/g, '');
+        const department = n['department'] || n['dept'] || '';
         const branch = n['branch'] || '';
+        const hireDate = n['hiredate'] || n['datehired'];
         const shiftCode = n['shiftcode'] || n['shift'] || undefined;
 
         if (!empNum) errors.push('Missing emp#');
@@ -89,21 +96,36 @@ export function EmployeeImportModal({ departments, branches, shifts, onImportCom
         if (!contactNumber) errors.push('Missing contact');
         if (!department) errors.push('Missing department');
         if (!branch) errors.push('Missing branch');
-        if (department && !deptNames.includes(department)) errors.push('Invalid dept');
-        if (branch && !branchNames.includes(branch)) errors.push('Invalid branch');
+        
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Invalid email format');
+        if (contactNumber && contactNumber.replace(/\D/g, '').length !== 11) errors.push('Contact must be 11 digits');
+        if (dateOfBirth && isNaN(Date.parse(dateOfBirth))) errors.push('Invalid date of birth');
+        if (hireDate && isNaN(Date.parse(hireDate))) errors.push('Invalid hire date');
+
+        if (department && !deptNames.includes(department)) errors.push(`Invalid dept: ${department}`);
+        if (branch && !branchNames.includes(branch)) errors.push(`Invalid branch: ${branch}`);
         
         let resolvedShiftId: number | null = null;
         if (shiftCode) {
           const ms = shifts.find(s => s.shiftCode === shiftCode);
-          if (!ms) errors.push('Invalid shift'); else resolvedShiftId = ms.id;
+          if (!ms) errors.push(`Invalid shift: ${shiftCode}`); else resolvedShiftId = ms.id;
+        }
+
+        if (empNum) {
+          if (seenEmpNums.has(empNum)) errors.push('Duplicate employee number in file');
+          else seenEmpNums.add(empNum);
+        }
+        if (email) {
+          const lowerEmail = email.toLowerCase();
+          if (seenEmails.has(lowerEmail)) errors.push('Duplicate email in file');
+          else seenEmails.add(lowerEmail);
         }
 
         return {
           _rowNumber: idx + 2, employeeNumber: empNum, firstName, lastName,
-          middleName: n['middlename'], suffix: n['suffix'], gender: n['gender'],
-          dateOfBirth: n['dateofbirth'], email, contactNumber, department, branch,
-          hireDate: n['hiredate'], shiftCode, shiftId: resolvedShiftId,
-          status: errors.length === 0 ? 'valid' : 'invalid', reason: errors.join('; ')
+          middleName, suffix, gender, dateOfBirth, email, contactNumber, department, branch,
+          hireDate, shiftCode, shiftId: resolvedShiftId,
+          status: errors.length === 0 ? 'valid' : 'invalid', reason: errors.length > 0 ? errors.join('; ') : undefined
         };
       });
       setImportParsedRows(parsed);
@@ -118,10 +140,26 @@ export function EmployeeImportModal({ departments, branches, shifts, onImportCom
     if (validRows.length === 0) return;
     setIsImporting(true);
     try {
+      const payload = validRows.map(r => ({
+        _rowNumber: r._rowNumber,
+        employeeNumber: r.employeeNumber,
+        firstName: r.firstName,
+        lastName: r.lastName,
+        middleName: r.middleName || undefined,
+        suffix: r.suffix || undefined,
+        gender: r.gender || undefined,
+        dateOfBirth: r.dateOfBirth || undefined,
+        email: r.email,
+        contactNumber: r.contactNumber || undefined,
+        department: r.department,
+        branch: r.branch,
+        hireDate: r.hireDate || undefined,
+        shiftId: r.shiftId || undefined,
+      }));
       const res = await fetch('/api/employees/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employees: validRows })
+        body: JSON.stringify({ employees: payload })
       });
       const data = await res.json();
       if (data.success && data.results) {
@@ -141,69 +179,196 @@ export function EmployeeImportModal({ departments, branches, shifts, onImportCom
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { setIsOpen(open); if (!open) resetState(); }}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="flex-1 sm:flex-none border-border hover:bg-slate-50 gap-2 text-foreground">
+        <Button variant="outline" className="flex-1 sm:flex-none border-border text-foreground hover:bg-red-700 hover:text-white gap-2 transition-all active:scale-95">
           <Upload className="w-4 h-4" /> Import
         </Button>
       </DialogTrigger>
-      <DialogContent showCloseButton={false} className={`bg-white border-0 p-0 rounded-2xl overflow-hidden shadow-xl ${importStep === 'select' ? 'sm:max-w-md' : 'sm:max-w-4xl'}`}>
-        <div className="bg-red-600 px-6 py-4 flex items-center justify-between">
+      <DialogContent showCloseButton={false} className={`bg-white border-0 p-0 rounded-2xl overflow-hidden shadow-xl transition-all ${importStep === 'select' ? 'sm:max-w-md' : importStep === 'preview' ? 'sm:max-w-5xl' : 'sm:max-w-3xl'}`}>
+        <div className="bg-red-600 px-6 py-4 flex items-center justify-between shrink-0">
           <div>
             <DialogTitle className="text-white font-bold text-lg">Import Employees</DialogTitle>
-            <DialogDescription className="text-white/80 text-[10px] uppercase font-bold mt-1">Upload from Excel</DialogDescription>
+            <DialogDescription className="text-white/80 text-[10px] uppercase tracking-widest font-bold mt-1">
+              {importStep === 'select' ? 'Upload from Excel or CSV' : importStep === 'preview' ? 'Review before importing' : 'Import results'}
+            </DialogDescription>
           </div>
-          <button onClick={() => { setIsOpen(false); resetState(); }} className="text-white/80 hover:text-white"><XIcon className="w-5 h-5" /></button>
+          <button onClick={() => { setIsOpen(false); resetState(); }} className="text-white/80 hover:text-white transition-colors">
+            <XIcon className="w-5 h-5" />
+          </button>
         </div>
 
         {importStep === 'select' && (
-          <div className="p-6">
-            <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center mb-4">
-              <Upload className="w-8 h-8 mx-auto text-slate-300 mb-2" />
-              <label htmlFor="excel-upload" className="cursor-pointer text-sm text-red-500 font-bold hover:underline">
-                Click to select file
-                <input id="excel-upload" type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { setImportFile(f); parseAndValidateFile(f); } }} />
-              </label>
-              <p className="text-xs text-slate-400 mt-1">Max {MAX_IMPORT_ROWS} rows</p>
+          <>
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-slate-500 font-medium">
+                Upload an Excel file (.xlsx, .xls) or CSV (.csv) to bulk import employee records.
+              </p>
+              <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-red-300 transition-colors">
+                <Upload className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+                <label htmlFor="excel-upload" className="cursor-pointer">
+                  <span className="text-sm text-red-500 font-bold hover:underline">Click to select file</span>
+                  <input
+                    id="excel-upload"
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) {
+                        setImportFile(file)
+                        parseAndValidateFile(file)
+                      }
+                    }}
+                  />
+                </label>
+                <p className="text-xs text-slate-400 mt-1">Supports .xlsx, .xls, .csv · Max {MAX_IMPORT_ROWS} rows</p>
+              </div>
+              {importFile && !importFileError && (
+                <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl">
+                  <FileSpreadsheet className="w-4 h-4 text-red-500" />
+                  <span className="text-sm text-slate-700 font-medium flex-1 truncate">{importFile.name}</span>
+                  <span className="text-xs text-slate-400">{(importFile.size / 1024).toFixed(1)} KB</span>
+                </div>
+              )}
+              {importFileError && (
+                <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl">
+                  <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                  <span className="text-sm text-red-700 font-medium">{importFileError}</span>
+                </div>
+              )}
+              {/* Download Template */}
+              <div className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3">
+                <span className="text-xs text-slate-500 font-medium">Not sure about the format?</span>
+                <button
+                  onClick={handleDownloadTemplate}
+                  disabled={isDownloadingTemplate}
+                  className="flex items-center gap-1.5 text-xs font-bold text-red-600 hover:text-red-700 transition-colors disabled:opacity-50"
+                >
+                  {isDownloadingTemplate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                  Download template
+                </button>
+              </div>
             </div>
-            {importFileError && <p className="text-sm text-red-500 bg-red-50 p-2 rounded mb-4">{importFileError}</p>}
-            <Button variant="ghost" className="w-full text-red-600 font-bold" onClick={handleDownloadTemplate} disabled={isDownloadingTemplate}>
-              {isDownloadingTemplate ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Download Template'}
-            </Button>
-          </div>
+            <div className="flex items-center justify-center gap-6 px-6 py-4 border-t border-slate-100">
+              <button
+                className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                onClick={() => { setIsOpen(false); resetState(); }}
+              >
+                Discard
+              </button>
+            </div>
+          </>
         )}
 
-        {importStep === 'preview' && (
-          <div className="p-6">
-            <div className="flex justify-between mb-4">
-              <span className="font-bold">{importParsedRows.filter(r => r.status === 'valid').length} Valid Rows</span>
-              <Button variant="ghost" size="sm" onClick={resetState}><RotateCcw className="w-4 h-4 mr-1"/> Check Another</Button>
+        {importStep === 'preview' && (() => {
+          const validCount = importParsedRows.filter(r => r.status === 'valid').length;
+          const invalidCount = importParsedRows.filter(r => r.status === 'invalid').length;
+          return (
+          <div className="p-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-slate-600 font-medium">
+                <span className="text-green-600 font-bold">{validCount}</span> row{validCount !== 1 ? 's' : ''} ready{invalidCount > 0 && <>, <span className="text-red-500 font-bold">{invalidCount}</span> row{invalidCount !== 1 ? 's' : ''} {invalidCount !== 1 ? 'have' : 'has'} errors</>}.
+              </p>
+              <Button variant="ghost" size="sm" onClick={resetState}><RotateCcw className="w-4 h-4 mr-1"/> Change file</Button>
             </div>
-            <div className="max-h-[50vh] overflow-y-auto mb-4 border rounded">
+            <div className="max-h-[50vh] overflow-y-auto mb-4 border border-slate-200 rounded-xl">
               <table className="w-full text-xs">
-                <thead className="bg-slate-50 sticky top-0">
-                  <tr><th className="p-2">Row</th><th className="p-2">Emp#</th><th className="p-2">Name</th><th className="p-2">Status</th></tr>
+                <thead className="bg-slate-50 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">Row</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">Emp. No.</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">First Name</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">Last Name</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">Department</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">Branch</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">Status</th>
+                  </tr>
                 </thead>
-                <tbody>
-                  {importParsedRows.map(r => (
-                    <tr key={r._rowNumber} className={r.status === 'invalid' ? 'bg-red-50' : ''}>
-                      <td className="p-2">{r._rowNumber}</td><td className="p-2">{r.employeeNumber}</td><td className="p-2">{r.firstName} {r.lastName}</td>
-                      <td className="p-2">{r.status === 'valid' ? <CheckCircle className="w-4 h-4 text-green-500"/> : <span title={r.reason}><XCircle className="w-4 h-4 text-red-500" /></span>}</td>
+                <tbody className="divide-y divide-slate-100">
+                  {importParsedRows.map((row, idx) => (
+                    <tr key={idx} className={row.status === 'invalid' ? 'bg-red-50' : 'hover:bg-slate-50'}>
+                      <td className="px-3 py-2 text-slate-400 font-mono">{row._rowNumber}</td>
+                      <td className="px-3 py-2 font-bold text-slate-700">{row.employeeNumber || '\u2014'}</td>
+                      <td className="px-3 py-2 text-slate-600">{row.firstName || '\u2014'}</td>
+                      <td className="px-3 py-2 text-slate-600">{row.lastName || '\u2014'}</td>
+                      <td className="px-3 py-2 text-slate-600">{row.department || '\u2014'}</td>
+                      <td className="px-3 py-2 text-slate-600">{row.branch || '\u2014'}</td>
+                      <td className="px-3 py-2">
+                        {row.status === 'valid' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-bold">
+                            <CheckCircle className="w-3 h-3" /> Ready
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-start gap-1 px-2 py-1 rounded-lg bg-red-100 text-red-700 text-[10px] font-bold" title={row.reason}>
+                            <XCircle className="w-3 h-3 shrink-0 mt-0.5" /> <span className="break-words">{row.reason}</span>
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <Button className="w-full bg-red-600 hover:bg-red-700" onClick={handleBulkImport} disabled={isImporting || importParsedRows.filter(r => r.status === 'valid').length === 0}>
-              {isImporting ? 'Importing...' : 'Upload & Import'}
+            <Button className="w-full bg-red-600 hover:bg-red-700 font-bold" onClick={handleBulkImport} disabled={isImporting || validCount === 0}>
+              {isImporting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Importing...</> : `Upload & Import ${validCount} Row${validCount !== 1 ? 's' : ''}`}
             </Button>
           </div>
-        )}
+          );
+        })()}
 
-        {importStep === 'results' && (
-          <div className="p-6 text-center">
-            <h3 className="text-2xl font-black text-green-600 mb-2">{importResults.filter(r => r.status === 'success').length} Imported</h3>
-            <Button className="w-full" onClick={() => { setIsOpen(false); resetState(); onImportComplete(); }}>Done</Button>
+        {importStep === 'results' && (() => {
+          const succeeded = importResults.filter(r => r.status === 'success').length;
+          const failed = importResults.filter(r => r.status === 'failed').length;
+          const skippedInvalid = importParsedRows.filter(r => r.status === 'invalid').length;
+          return (
+          <div className="px-6 py-5 space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-black text-slate-700">{importResults.length}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Attempted</p>
+              </div>
+              <div className="bg-green-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-black text-green-600">{succeeded}</p>
+                <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Succeeded</p>
+              </div>
+              <div className={`rounded-xl p-3 text-center ${failed > 0 ? 'bg-red-50' : 'bg-slate-50'}`}>
+                <p className={`text-2xl font-black ${failed > 0 ? 'text-red-600' : 'text-slate-400'}`}>{failed}</p>
+                <p className={`text-[10px] font-bold uppercase tracking-wider ${failed > 0 ? 'text-red-400' : 'text-slate-400'}`}>Failed</p>
+              </div>
+            </div>
+            {skippedInvalid > 0 && (
+              <p className="text-xs text-slate-400 text-center">{skippedInvalid} invalid row{skippedInvalid !== 1 ? 's were' : ' was'} skipped before sending.</p>
+            )}
+            {failed > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-red-600 uppercase tracking-wider">Failed Rows</p>
+                <div className="max-h-[30vh] overflow-auto border border-red-200 rounded-xl">
+                  <table className="w-full text-xs">
+                    <thead className="bg-red-50 sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-[10px] font-black text-red-400 uppercase">Row</th>
+                        <th className="px-3 py-2 text-left text-[10px] font-black text-red-400 uppercase">Emp. No.</th>
+                        <th className="px-3 py-2 text-left text-[10px] font-black text-red-400 uppercase">Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-red-100">
+                      {importResults.filter(r => r.status === 'failed').map((r, idx) => (
+                        <tr key={idx} className="bg-red-50/50">
+                          <td className="px-3 py-2 text-slate-500 font-mono">{r.row}</td>
+                          <td className="px-3 py-2 font-bold text-slate-700">{r.employeeNumber || '\u2014'}</td>
+                          <td className="px-3 py-2 text-red-600">{r.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            <div className="flex items-center justify-center pt-2 border-t border-slate-100">
+              <Button className="px-10 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl" onClick={() => { setIsOpen(false); resetState(); onImportComplete(); }}>Done</Button>
+            </div>
           </div>
-        )}
+          );
+        })()}
       </DialogContent>
     </Dialog>
   );

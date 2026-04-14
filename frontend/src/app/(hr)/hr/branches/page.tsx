@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { useTableSort } from '@/hooks/useTableSort'
 import { SortableHeader } from '@/components/ui/SortableHeader'
+import { DataTablePagination } from '@/components/ui/DataTablePagination'
 
 // ── Types ──────────────────────────────────────────────────────────
 interface Department { id: number; name: string }
@@ -46,6 +47,9 @@ export default function HRBranchesPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [branchFilter, setBranchFilter] = useState('all')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+
+  const [currentPage, setCurrentPage] = useState(1)
+  const rowsPerPage = 10
 
   // Add dialog
   const [isAddOpen, setIsAddOpen] = useState(false)
@@ -131,6 +135,11 @@ export default function HRBranchesPage() {
     initialData: filteredDepts
   })
   const sortKeyStr = sortKey as string | null
+
+  // Reset page when filters change
+  useEffect(() => { setCurrentPage(1) }, [searchTerm, branchFilter])
+
+  const paginatedDepts = sortedDepts.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
 
   // ── Add ──
   const handleAdd = async () => {
@@ -585,8 +594,9 @@ export default function HRBranchesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {sortedDepts.map((dept, index) => {
-                const color = getColor(index)
+              {paginatedDepts.map((dept, index) => {
+                const globalIndex = (currentPage - 1) * rowsPerPage + index
+                const color = getColor(globalIndex)
                 const count = deptCounts[dept.name] || 0
                 const initials = getInitials(dept.name)
                 const displayName = dept.name.replace(' DEPARTMENT', '')
@@ -651,6 +661,17 @@ export default function HRBranchesPage() {
           </table>
         </div>
       </div>
+
+      <DataTablePagination
+        currentPage={currentPage}
+        totalPages={Math.ceil(filteredDepts.length / rowsPerPage)}
+        onPageChange={setCurrentPage}
+        totalCount={filteredDepts.length}
+        pageSize={rowsPerPage}
+        entityName="departments"
+        loading={loading}
+      />
+
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   )

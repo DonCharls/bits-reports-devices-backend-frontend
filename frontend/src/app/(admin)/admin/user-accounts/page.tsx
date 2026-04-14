@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { useTableSort } from '@/hooks/useTableSort'
 import { SortableHeader } from '@/components/ui/SortableHeader'
+import { DataTablePagination } from '@/components/ui/DataTablePagination'
 
 interface UserAccount {
   id: number
@@ -550,40 +551,15 @@ export default function UserAccountsPage() {
         </div>
 
         {/* Pagination */}
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-          <span className="text-xs text-slate-400 font-bold">
-            Showing {filteredUsers.length > 0 ? (currentPage - 1) * rowsPerPage + 1 : 0} to {Math.min(currentPage * rowsPerPage, filteredUsers.length)} of {filteredUsers.length} users
-          </span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setCurrentPage(p => p - 1)}
-              disabled={currentPage === 1}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(page => (
-              <button
-                key={page}
-                onClick={() => setCurrentPage(page)}
-                className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${
-                  currentPage === page
-                    ? 'bg-red-600 text-white'
-                    : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
-                }`}
-              >
-                {page}
-              </button>
-            ))}
-            <button
-              onClick={() => setCurrentPage(p => p + 1)}
-              disabled={currentPage === totalPages}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+        <DataTablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          totalCount={filteredUsers.length}
+          pageSize={rowsPerPage}
+          entityName="users"
+          loading={loading}
+        />
       </div>
 
       {/* Status Toggle Confirmation Modal */}

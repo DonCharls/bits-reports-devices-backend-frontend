@@ -1,7 +1,8 @@
 'use client'
 
 import React from 'react'
-import { Edit2, Fingerprint, CreditCard, Key, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Edit2, Fingerprint, CreditCard, Key, RotateCcw, UserX } from 'lucide-react'
+import { DataTablePagination } from '@/components/ui/DataTablePagination'
 import { SortableHeader } from '@/components/ui/SortableHeader'
 import { Employee, formatFullName, formatPhoneNumber, formatTime } from '../utils/employee-types'
 
@@ -21,14 +22,21 @@ interface EmployeeTableProps {
   onCardEnrollOpen: (employeeId: number, name: string, currentCard: number | null) => void
   enrollStatus: Record<number, 'idle' | 'loading' | 'success' | 'error'>
   dragScrollRef: React.RefObject<HTMLDivElement | null>
+  pageSize?: number
+  // Inactive-only actions
+  onRestore?: (employee: Employee) => void
+  onPermanentDelete?: (employee: Employee) => void
 }
 
 export function EmployeeTable({
   employees, loading, filteredCount, currentPage, totalPages,
   sortKey, sortOrder, onSort, onPageChange,
   onEdit, onResetPassword, onFingerprintOpen, onCardEnrollOpen,
-  enrollStatus, dragScrollRef
+  enrollStatus, dragScrollRef,
+  onRestore, onPermanentDelete,
+  pageSize = 10,
 }: EmployeeTableProps) {
+  const isInactiveMode = !!(onRestore || onPermanentDelete)
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       <div ref={dragScrollRef} className="overflow-x-auto scrollbar-hide">
@@ -98,29 +106,50 @@ export function EmployeeTable({
                   <td className="px-6 py-4"><span className="text-xs font-medium text-slate-500">{employee.hireDate ? new Date(employee.hireDate).toLocaleDateString('en-CA') : '—'}</span></td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-1">
-                      <button onClick={() => onEdit(employee)} className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90" title="Edit employee">
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      {(() => {
-                        const status = enrollStatus[employee.id] || 'idle'
-                        if (status === 'loading') {
-                          return (<button disabled className="p-2.5 rounded-xl bg-blue-50 text-blue-400 cursor-wait" title="Enrolling..."><Fingerprint className="w-4 h-4 animate-pulse" /></button>)
-                        }
-                        return (
-                          <button onClick={() => { onFingerprintOpen(employee.id, `${employee.firstName} ${employee.lastName}`) }}
-                            className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-100 rounded-xl transition-all active:scale-90" title="Manage Fingerprints">
-                            <Fingerprint className="w-4 h-4" />
+                      {isInactiveMode ? (
+                        <>
+                          <button
+                            onClick={() => onRestore?.(employee)}
+                            title="Restore to Active"
+                            className="p-2.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-xl transition-all active:scale-90"
+                          >
+                            <RotateCcw className="w-4 h-4" />
                           </button>
-                        )
-                      })()}
-                      <button onClick={() => { onCardEnrollOpen(employee.id, `${employee.firstName} ${employee.lastName}`, employee.cardNumber || null) }}
-                        className={`p-2.5 rounded-xl transition-all active:scale-90 ${employee.cardNumber ? 'text-blue-500 hover:text-blue-700 hover:bg-blue-50' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}
-                        title={employee.cardNumber ? `Badge #${employee.cardNumber}` : 'Enroll RFID Badge'}>
-                        <CreditCard className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => onResetPassword(employee)} className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90" title="Reset Password">
-                        <Key className="w-4 h-4" />
-                      </button>
+                          <button
+                            onClick={() => onPermanentDelete?.(employee)}
+                            title="Delete Permanently"
+                            className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90"
+                          >
+                            <UserX className="w-4 h-4" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => onEdit(employee)} className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90" title="Edit employee">
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          {(() => {
+                            const status = enrollStatus[employee.id] || 'idle'
+                            if (status === 'loading') {
+                              return (<button disabled className="p-2.5 rounded-xl bg-blue-50 text-blue-400 cursor-wait" title="Enrolling..."><Fingerprint className="w-4 h-4 animate-pulse" /></button>)
+                            }
+                            return (
+                              <button onClick={() => { onFingerprintOpen(employee.id, `${employee.firstName} ${employee.lastName}`) }}
+                                className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-100 rounded-xl transition-all active:scale-90" title="Manage Fingerprints">
+                                <Fingerprint className="w-4 h-4" />
+                              </button>
+                            )
+                          })()}
+                          <button onClick={() => { onCardEnrollOpen(employee.id, `${employee.firstName} ${employee.lastName}`, employee.cardNumber || null) }}
+                            className={`p-2.5 rounded-xl transition-all active:scale-90 ${employee.cardNumber ? 'text-blue-500 hover:text-blue-700 hover:bg-blue-50' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}
+                            title={employee.cardNumber ? `Badge #${employee.cardNumber}` : 'Enroll RFID Badge'}>
+                            <CreditCard className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => onResetPassword(employee)} className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90" title="Reset Password">
+                            <Key className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -132,27 +161,15 @@ export function EmployeeTable({
         </table>
       </div>
       {/* Pagination */}
-      <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-        <span className="text-xs text-slate-400 font-bold">
-          Showing {employees.length} of {filteredCount} employees · Page {currentPage} of {totalPages || 1}
-        </span>
-        <div className="flex items-center gap-1">
-          <button onClick={() => onPageChange(Math.max(currentPage - 1, 1))} disabled={currentPage === 1}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(page => (
-            <button key={page} onClick={() => onPageChange(page)}
-              className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${currentPage === page ? 'bg-red-600 text-white' : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'}`}>
-              {page}
-            </button>
-          ))}
-          <button onClick={() => onPageChange(Math.min(currentPage + 1, totalPages))} disabled={currentPage === totalPages || totalPages === 0}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      <DataTablePagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={onPageChange}
+        totalCount={filteredCount}
+        pageSize={pageSize}
+        entityName="employees"
+        loading={loading}
+      />
     </div>
   )
 }

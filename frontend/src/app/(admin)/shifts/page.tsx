@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useTableSort } from '@/hooks/useTableSort'
 import { SortableHeader } from '@/components/ui/SortableHeader'
+import { DataTablePagination } from '@/components/ui/DataTablePagination'
 
 interface Shift {
     id: number
@@ -106,6 +107,9 @@ export default function AdminShiftsPage() {
     const [deleteTarget, setDeleteTarget] = useState<Shift | null>(null)
     const [deleteLoading, setDeleteLoading] = useState(false)
 
+    const [currentPage, setCurrentPage] = useState(1)
+    const rowsPerPage = 10
+
     const { toasts, showToast, dismissToast } = useToast()
 
     const fetchShifts = useCallback(async () => {
@@ -132,6 +136,11 @@ export default function AdminShiftsPage() {
     const { sortedData, sortKey, sortOrder, handleSort } = useTableSort<Shift>({
         initialData: filtered
     })
+
+    // Reset page on filter change
+    useEffect(() => { setCurrentPage(1) }, [searchTerm, filterActive])
+
+    const paginatedShifts = sortedData.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
 
     const openCreate = () => {
         setEditingShift(null)
@@ -621,7 +630,7 @@ export default function AdminShiftsPage() {
                         <tbody className="divide-y divide-slate-100">
                             {loading ? (
                                 <tr><td colSpan={7} className="px-6 py-24 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">Loading shifts…</td></tr>
-                            ) : sortedData.length > 0 ? sortedData.map(s => (
+                            ) : paginatedShifts.length > 0 ? paginatedShifts.map(s => (
                                 <tr key={s.id} className="hover:bg-red-50/30 transition-colors duration-200">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
@@ -711,9 +720,9 @@ export default function AdminShiftsPage() {
                 <div className="lg:hidden">
                     {loading ? (
                         <div className="px-4 py-16 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">Loading shifts…</div>
-                    ) : sortedData.length > 0 ? (
+                    ) : paginatedShifts.length > 0 ? (
                         <div className="divide-y divide-slate-100">
-                            {sortedData.map(s => {
+                            {paginatedShifts.map(s => {
                                 let days: string[] = []
                                 let halfs: string[] = []
                                 try { days = JSON.parse(s.workDays || '[]') } catch { }
@@ -795,6 +804,16 @@ export default function AdminShiftsPage() {
                     )}
                 </div>
             </div>
+
+            <DataTablePagination
+                currentPage={currentPage}
+                totalPages={Math.ceil(filtered.length / rowsPerPage)}
+                onPageChange={setCurrentPage}
+                totalCount={filtered.length}
+                pageSize={rowsPerPage}
+                entityName="shifts"
+                loading={loading}
+            />
         </div>
     )
 }
