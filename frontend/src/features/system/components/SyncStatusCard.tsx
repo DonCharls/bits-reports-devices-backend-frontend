@@ -1,18 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Server, Activity, Clock, Play, AlertTriangle, XCircle, HeartPulse, Trash2 } from 'lucide-react';
-import { useToast } from '@/components/ui/use-toast';
-import { format } from 'date-fns';
-import {
-    Dialog, DialogContent, DialogHeader, DialogTitle,
-    DialogDescription, DialogFooter
-} from '@/components/ui/dialog';
+import { Server } from 'lucide-react';
+import { useSyncActions } from '../hooks/useSyncActions';
+import { SyncStatsGrid } from './SyncStatsGrid';
+import { SyncResultModal } from './SyncResultModal';
 
 interface SyncStatus {
     isActive: boolean;
@@ -31,21 +25,6 @@ interface SyncStatus {
     };
 }
 
-interface FailedDevice {
-    id: number;
-    name: string;
-    error: string;
-}
-
-interface SyncResultData {
-    status: 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'NO_DEVICES';
-    message: string;
-    totalDevices: number;
-    successfulDevices: number;
-    failedDevices: FailedDevice[];
-    newLogs: number;
-}
-
 interface SyncStatusCardProps {
     status: SyncStatus | null;
     loading: boolean;
@@ -54,131 +33,14 @@ interface SyncStatusCardProps {
 }
 
 export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusCardProps) {
-    const [syncing, setSyncing] = useState(false);
-    const [syncingTime, setSyncingTime] = useState(false);
-    const [clearingLogs, setClearingLogs] = useState(false);
-    const [toggling, setToggling] = useState(false);
-    const [syncResult, setSyncResult] = useState<SyncResultData | null>(null);
-    const [showResultModal, setShowResultModal] = useState(false);
-    const { toast } = useToast();
-
-    const handleToggle = async (checked: boolean) => {
-        setToggling(true);
-        try {
-            const res = await axios.post('/api/system/sync-toggle', { enabled: checked }, { withCredentials: true });
-            if (res.data.success) {
-                onStatusRefresh();
-                toast({
-                    title: `Global Sync ${checked ? 'Enabled' : 'Disabled'}`,
-                    description: res.data.message,
-                });
-            }
-        } catch (error: unknown) {
-            const axiosErr = error as { response?: { data?: { message?: string } } };
-            toast({
-                title: 'Error toggling sync',
-                description: axiosErr.response?.data?.message || 'Unknown error occurred',
-                variant: 'destructive',
-            });
-        } finally {
-            setToggling(false);
-        }
-    };
-
-    const handleManualSync = async () => {
-        setSyncing(true);
-        try {
-            const res = await axios.post('/api/system/sync-now', {}, { withCredentials: true });
-            onStatusRefresh();
-            
-            const data: SyncResultData | undefined = res.data.data;
-
-            if (res.data.success && data?.status === 'SUCCESS') {
-                // Lightweight toast for full success
-                toast({
-                    title: 'Sync Complete ✅',
-                    description: `${data.newLogs} new attendance logs synced across ${data.totalDevices} device(s).`,
-                });
-            } else if (data?.status === 'NO_DEVICES') {
-                toast({
-                    title: 'No Devices',
-                    description: 'There are no active devices configured to sync.',
-                });
-            } else if (data?.status === 'PARTIAL' || data?.status === 'FAILED') {
-                // Open rich modal for failures
-                setSyncResult(data);
-                setShowResultModal(true);
-            } else {
-                toast({
-                    title: res.data.success ? 'Sync Complete' : 'Sync Issue',
-                    description: res.data.message,
-                    variant: res.data.success ? 'default' : 'destructive',
-                });
-            }
-        } catch (error: unknown) {
-            const axiosErr = error as { response?: { data?: { message?: string } } };
-            toast({
-                title: 'Manual Sync Failed',
-                description: axiosErr.response?.data?.message || 'Server error occurred.',
-                variant: 'destructive',
-            });
-        } finally {
-            setSyncing(false);
-        }
-    };
-
-    const handleManualTimeSync = async () => {
-        setSyncingTime(true);
-        try {
-            const res = await axios.post('/api/system/time-sync-now', {}, { withCredentials: true });
-            
-            toast({
-                title: res.data.success ? 'Time Sync Sent' : 'Time Sync Issue',
-                description: res.data.message,
-                variant: res.data.success ? 'default' : 'destructive',
-            });
-        } catch (error: unknown) {
-            const axiosErr = error as { response?: { data?: { message?: string } } };
-            toast({
-                title: 'Time Sync Failed',
-                description: axiosErr.response?.data?.message || 'Server error occurred.',
-                variant: 'destructive',
-            });
-        } finally {
-            setSyncingTime(false);
-        }
-    };
-
-    const handleManualClearLogs = async () => {
-        if (!confirm('Are you sure you want to clear the log buffers on all active devices right now?\nThis is normally done automatically during off-hours to prevent data loss races.')) {
-            return;
-        }
-        
-        setClearingLogs(true);
-        try {
-            const res = await axios.post('/api/system/clear-device-logs', {}, { withCredentials: true });
-            
-            toast({
-                title: res.data.success ? 'Logs Cleared' : 'Clear Logs Issue',
-                description: res.data.message,
-                variant: res.data.success ? 'default' : 'destructive',
-            });
-        } catch (error: unknown) {
-            const axiosErr = error as { response?: { data?: { message?: string } } };
-            toast({
-                title: 'Clear Logs Failed',
-                description: axiosErr.response?.data?.message || 'Server error occurred.',
-                variant: 'destructive',
-            });
-        } finally {
-            setClearingLogs(false);
-        }
-    };
+    const {
+        syncing, syncingTime, clearingLogs, toggling,
+        syncResult, showResultModal, setShowResultModal,
+        handleToggle, handleManualSync, handleManualTimeSync, handleManualClearLogs,
+    } = useSyncActions({ onStatusRefresh });
 
     if (loading) return <div>Loading status...</div>;
     if (!status) return <div>Error loading status.</div>;
-
-    const isPartial = syncResult?.status === 'PARTIAL';
 
     return (
         <>
@@ -206,145 +68,24 @@ export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusC
                     </div>
                 </CardHeader>
                 <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-4">
-                        <div className="flex flex-col gap-2">
-                            <div className="text-sm text-muted-foreground flex items-center gap-1">
-                                <Activity className="h-4 w-4" /> Current Interval
-                            </div>
-                            <div className="text-2xl font-semibold flex items-center gap-2">
-                                {status.intervalSec} sec
-                                {status.shiftAwareMode && status.currentMode === 'PEAK' && (
-                                    <Badge variant="destructive" className="text-xs px-2 py-0 h-5">PEAK ⚡</Badge>
-                                )}
-                                {status.shiftAwareMode && status.currentMode === 'OFF-PEAK' && (
-                                    <Badge variant="secondary" className="text-xs px-2 py-0 h-5 border">OFF-PEAK 💤</Badge>
-                                )}
-                            </div>
-                            {status.shiftAwareMode && (
-                                <div className="text-xs text-blue-500 font-medium">Shift-Aware Mode Active</div>
-                            )}
-                        </div>
-
-                        <div className="flex flex-col gap-2">
-                            <div className="text-sm text-muted-foreground flex items-center gap-1">
-                                <Clock className="h-4 w-4" /> Last Synchronized
-                            </div>
-                            <div className="text-lg font-medium">
-                                {status.lastSyncAt ? format(new Date(status.lastSyncAt), 'PPpp') : 'Never'}
-                            </div>
-                        </div>
-
-                        <div className="flex flex-col gap-2">
-                            <div className="text-sm text-muted-foreground flex items-center gap-1">
-                                <HeartPulse className="h-4 w-4" /> Health Monitor
-                            </div>
-                            {status.healthCheck?.isActive ? (
-                                <div className="text-lg font-medium flex items-center gap-2">
-                                    <div className="h-2.5 w-2.5 rounded-full bg-green-500 animate-pulse" />
-                                    Active <span className="text-sm text-muted-foreground font-normal">({status.healthCheck.intervalSec}s)</span>
-                                </div>
-                            ) : (
-                                <div className="text-lg font-medium flex items-center gap-2 text-muted-foreground">
-                                    <div className="h-2.5 w-2.5 rounded-full bg-gray-400" />
-                                    Disabled
-                                </div>
-                            )}
-                            <div className="text-xs text-muted-foreground">
-                                {status.healthCheck?.isActive 
-                                    ? `Last check: ${status.healthCheck.lastCheckAt ? format(new Date(status.healthCheck.lastCheckAt), 'HH:mm:ss') : 'Pending...'}`
-                                    : 'Offline'}
-                            </div>
-                        </div>
-
-                         <div className="flex flex-col gap-2 items-start justify-center">
-                            <Button 
-                                onClick={handleManualSync} 
-                                disabled={syncing || syncingTime || !status.globalSyncEnabled}
-                                className="w-full"
-                            >
-                                {syncing ? 'Syncing...' : (
-                                    <>
-                                        <Play className="h-4 w-4 mr-2" /> Sync Data Now
-                                    </>
-                                )}
-                            </Button>
-                            <Button 
-                                onClick={handleManualTimeSync} 
-                                disabled={syncingTime || syncing || clearingLogs || !status.globalSyncEnabled}
-                                variant="outline"
-                                className="w-full"
-                            >
-                                {syncingTime ? 'Aligning Clocks...' : (
-                                    <>
-                                        <Clock className="h-4 w-4 mr-2" /> Sync Time Now
-                                    </>
-                                )}
-                            </Button>
-                            
-                            <Button 
-                                onClick={handleManualClearLogs} 
-                                disabled={clearingLogs || syncing || syncingTime}
-                                variant="outline"
-                                className="w-full border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-                            >
-                                {clearingLogs ? 'Clearing Logs...' : (
-                                    <>
-                                        <Trash2 className="h-4 w-4 mr-2" /> Clear Logs Now
-                                    </>
-                                )}
-                            </Button>
-                        </div>
-                    </div>
+                    <SyncStatsGrid
+                        status={status}
+                        syncing={syncing}
+                        syncingTime={syncingTime}
+                        clearingLogs={clearingLogs}
+                        onManualSync={handleManualSync}
+                        onManualTimeSync={handleManualTimeSync}
+                        onManualClearLogs={handleManualClearLogs}
+                    />
                 </CardContent>
             </Card>
 
-            {/* Sync Result Modal (PARTIAL / FAILED) */}
-            <Dialog open={showResultModal} onOpenChange={setShowResultModal}>
-                <DialogContent className="sm:max-w-lg">
-                    <DialogHeader>
-                        <DialogTitle className={`flex items-center gap-2 ${isPartial ? 'text-amber-600' : 'text-red-600'}`}>
-                            {isPartial
-                                ? <><AlertTriangle className="h-5 w-5" /> Sync Partially Completed</>
-                                : <><XCircle className="h-5 w-5" /> Sync Failed</>
-                            }
-                        </DialogTitle>
-                        <DialogDescription>
-                            {syncResult?.message}
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    {syncResult && syncResult.failedDevices.length > 0 && (
-                        <div className="space-y-3 py-2">
-                            <p className="text-sm font-medium">Failed Devices:</p>
-                            <div className="space-y-2 max-h-[200px] overflow-auto">
-                                {syncResult.failedDevices.map((device) => (
-                                    <div key={device.id} className="flex items-start gap-3 rounded-lg border border-red-100 bg-red-50 p-3">
-                                        <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-semibold text-red-800">{device.name}</p>
-                                            <p className="text-xs text-red-600 break-words">{device.error}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                            {syncResult.status === 'PARTIAL' && (
-                                <p className="text-xs text-muted-foreground">
-                                    {syncResult.successfulDevices} of {syncResult.totalDevices} device(s) synced successfully ({syncResult.newLogs} new logs).
-                                </p>
-                            )}
-                        </div>
-                    )}
-
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowResultModal(false)}>
-                            Close
-                        </Button>
-                        <Button onClick={() => { setShowResultModal(false); handleManualSync(); }}>
-                            <Play className="h-4 w-4 mr-2" /> Retry Sync
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            <SyncResultModal
+                open={showResultModal}
+                onOpenChange={setShowResultModal}
+                syncResult={syncResult}
+                onRetry={handleManualSync}
+            />
         </>
     );
 }
