@@ -1,16 +1,17 @@
-"use client";
+'use client'
+
 import React, { useState } from 'react';
-import { Download } from 'lucide-react';
-import { useReportData } from '@/features/reports/hooks/useReportData';
+import { Download, FileText } from 'lucide-react';
+import { useReportData } from '../hooks/useReportData';
 import { useTableSort } from '@/hooks/useTableSort';
-import { ReportFilters } from '@/features/reports/components/ReportFilters';
-import { ReportTable } from '@/features/reports/components/ReportTable';
-import { EmployeeModal } from '@/features/reports/components/EmployeeModal';
-import { handleExport, handleExportIndividual } from '@/features/reports/lib/exportReport';
-import { formatDateShort } from '@/features/reports/lib/formatters';
+import { ReportFilters } from './ReportFilters';
+import { ReportTable } from './ReportTable';
+import { EmployeeModal } from './EmployeeModal';
+import { handleExport, handleExportIndividual } from '../lib/exportReport';
+import { formatDateShort } from '../lib/formatters';
 import { ReportRow } from '@/types/reports';
 
-export default function ReportsPage() {
+export function ReportsDashboard() {
   // Use Asia/Manila for default dates to avoid shifting to previous day
   const [startDate, setStartDate] = useState(() => {
     const now = new Date();
@@ -81,7 +82,7 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-6 pb-6">
+    <div className="space-y-6 pb-6 p-4 lg:p-6">
       {/* Individual Employee Report Modal */}
       {selectedEmployee && (
         <EmployeeModal
@@ -105,17 +106,22 @@ export default function ReportsPage() {
 
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl sm:text-3xl font-black text-slate-800">
-            Attendance Reports
-          </h2>
-          <p className="text-slate-400 text-sm mt-0.5">
-            Export overall attendance records
-          </p>
+        <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-red-600/10 flex items-center justify-center">
+                <FileText className="w-5 h-5 text-red-600" />
+            </div>
+            <div>
+                <h2 className="text-2xl sm:text-3xl font-black text-slate-800">
+                    Attendance Reports
+                </h2>
+                <p className="text-slate-400 text-sm mt-0.5">
+                    Export overall attendance records
+                </p>
+            </div>
         </div>
         <button
           onClick={() => handleExport(filteredData, startDate, endDate, 'admin-panel')}
-          className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl transition-colors shadow-lg shadow-red-600/20"
+          className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl transition-colors shadow-lg shadow-red-600/20 w-full sm:w-auto justify-center"
         >
           <Download className="w-4 h-4" />
           Attendance Report: {formatDateShort(startDate)} –{' '}

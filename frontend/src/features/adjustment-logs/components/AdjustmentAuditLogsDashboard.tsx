@@ -1,39 +1,15 @@
-"use client"
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { History, Search, CalendarSearch, X, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
+'use client'
+
+import React, { useRef, useState } from 'react';
+import { Search, CalendarSearch, X, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/ui/SortableHeader';
 import { DataTablePagination } from '@/components/ui/DataTablePagination';
+import { useAdjustmentLogs } from '../hooks/useAdjustmentLogs';
+import { fieldLabels, GroupedAuditLog } from '../utils/adjustment-log-types';
 
-interface AuditLog {
-  id: number;
-  field: string;
-  oldValue: string | null;
-  newValue: string | null;
-  reason: string | null;
-  createdAt: string;
-  attendance: {
-    employee: {
-      firstName: string;
-      lastName: string;
-      branch: string | null;
-      role: string;
-    };
-  };
-  adjustedBy: {
-    firstName: string;
-    lastName: string;
-    role: string;
-  };
-}
-
-const fieldLabels: Record<string, string> = {
-  checkInTime: 'Time-In',
-  checkOutTime: 'Time-Out',
-  status: 'Status',
-};
-
+/* ── Helpers ── */
 function formatValue(field: string, value: string | null): string {
   if (!value) return 'None';
   if (field === 'status') {
@@ -93,134 +69,27 @@ function getChangeColor(field: string, newValue: string | null): string {
   return 'text-emerald-600';
 }
 
-export default function AdjustmentsPage() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [branchFilter, setBranchFilter] = useState("All Branches");
-  const [logDate, setLogDate] = useState("");
+export function AdjustmentAuditLogsDashboard() {
+  const {
+    groupedLogs, loading, totalCount, totalPages, currentPage,
+    searchQuery, branchFilter, logDate, branches, itemsPerPage,
+    setCurrentPage, setSearchQuery, setBranchFilter, setLogDate
+  } = useAdjustmentLogs();
+
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const logDateRef = useRef<HTMLInputElement>(null);
-
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 15;
-
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [branches, setBranches] = useState<string[]>(["All Branches"]);
   const dragScrollRef = useHorizontalDragScroll();
-  const [loading, setLoading] = useState(true);
-  const [totalCount, setTotalCount] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
 
-  const fetchLogs = useCallback(async () => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      params.set('page', String(currentPage));
-      params.set('limit', String(itemsPerPage));
-      if (searchQuery) params.set('search', searchQuery);
-      if (branchFilter && branchFilter !== 'All Branches') params.set('branch', branchFilter);
-      if (logDate) params.set('date', logDate);
-
-      const res = await fetch(`/api/attendance/audit-logs?${params.toString()}`, { credentials: 'include' });
-      if (res.status === 401) { window.location.href = '/login'; return; }
-      if (!res.ok) {
-        const errData = await res.json().catch(() => null);
-        throw new Error(errData?.message || `Server error ${res.status}`);
-      }
-      const data = await res.json();
-
-      if (data.success) {
-        setAuditLogs(data.data);
-        setTotalCount(data.meta.total);
-        setTotalPages(data.meta.totalPages);
-
-        // Extract unique branches for the filter
-        const branchSet = new Set<string>();
-        data.data.forEach((log: AuditLog) => {
-          if (log.attendance?.employee?.branch) {
-            branchSet.add(log.attendance.employee.branch);
-          }
-        });
-        setBranches(prev => {
-          const merged = new Set([...prev, ...branchSet]);
-          return Array.from(merged).sort();
-        });
-      }
-    } catch (err) {
-      console.error('Failed to fetch audit logs:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [currentPage, searchQuery, branchFilter, logDate]);
-
-  // Also fetch all branches on mount
-  useEffect(() => {
-    fetch('/api/branches', { credentials: 'include' })
-      .then(r => r.json())
-      .then(d => {
-        if (d.success) {
-          const names = (d.branches || d.data || []).map((b: any) => b.name);
-          setBranches(names);
-        }
-      })
-      .catch(() => { });
-  }, []);
-
-  useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, branchFilter, logDate]);
+  const { sortedData: sortedGroupedLogs, sortKey, sortOrder, handleSort } = useTableSort({
+    initialData: groupedLogs
+  });
+  const sortKeyStr = sortKey as string | null;
 
   const formatDateLabel = (dateStr: string) => {
     if (!dateStr) return "Select Date";
     const [year, month, day] = dateStr.split("-");
     return `${day}/${month}/${year}`;
   };
-
-  const groupedLogs = useMemo(() => {
-    const groups: { key: string; logs: AuditLog[] }[] = [];
-    const groupMap = new Map<string, AuditLog[]>();
-    auditLogs.forEach((log) => {
-      const emp = log.attendance?.employee;
-      const adj = log.adjustedBy;
-      const key = `${adj?.firstName}_${adj?.lastName}_${emp?.firstName}_${emp?.lastName}_${log.createdAt.slice(0, 16)}`;
-      if (!groupMap.has(key)) {
-        const arr: AuditLog[] = [];
-        groupMap.set(key, arr);
-        groups.push({ key, logs: arr });
-      }
-      if (log.oldValue !== log.newValue) {
-        groupMap.get(key)!.push(log);
-      }
-    });
-
-    return groups.filter(g => g.logs.length > 0).map(group => {
-      const first = group.logs[0];
-      const emp = first.attendance?.employee;
-      const adjuster = first.adjustedBy;
-      const employeeName = emp ? `${emp.firstName}${(emp as any).middleName ? ` ${(emp as any).middleName[0]}.` : ''} ${emp.lastName}${(emp as any).suffix ? ` ${(emp as any).suffix}` : ''}` : 'Unknown';
-      const adjusterName = adjuster ? `${adjuster.firstName} ${adjuster.lastName}` : 'System';
-      const branch = emp?.branch || '—';
-      const reason = group.logs.find(l => l.reason)?.reason || '—';
-
-      return {
-        ...group,
-        createdAt: first.createdAt,
-        adjusterName,
-        employeeName,
-        branch,
-        reason,
-        first
-      };
-    });
-  }, [auditLogs]);
-
-  const { sortedData: sortedGroupedLogs, sortKey, sortOrder, handleSort } = useTableSort({
-    initialData: groupedLogs
-  });
-  const sortKeyStr = sortKey as string | null;
 
   const CustomSelect = ({ value, options, onChange, id }: any) => {
     const isOpen = openDropdown === id;
@@ -337,7 +206,7 @@ export default function AdjustmentsPage() {
                     </div>
                   </td>
                 </tr>
-              ) : sortedGroupedLogs.length > 0 ? sortedGroupedLogs.map((group) => (
+              ) : sortedGroupedLogs.length > 0 ? sortedGroupedLogs.map((group: GroupedAuditLog) => (
                 <tr key={group.key} className="hover:bg-red-50 transition-colors duration-200 group cursor-default">
                   <td className="px-4 py-2.5 font-mono text-[10px] text-slate-500 whitespace-nowrap align-top">{formatTimestamp(group.createdAt)}</td>
                   <td className="px-4 py-2.5 font-bold text-slate-700 underline decoration-red-100 underline-offset-4 decoration-2 align-top">{group.adjusterName}</td>

@@ -1,4 +1,4 @@
-import { SystemDashboard } from './components/SystemDashboard';
+import { SystemDashboard } from '@/features/system/components/SystemDashboard';
 
 export const metadata = {
     title: 'System Settings - Admin Panel',

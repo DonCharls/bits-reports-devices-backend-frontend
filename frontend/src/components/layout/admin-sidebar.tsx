@@ -41,7 +41,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
   }, [fetchPendingCount])
 
   const isOnEmployees = pathname.startsWith('/employees')
-  const isOnReports = pathname.startsWith('/admin/reports') || pathname === '/admin/adjust' || pathname.startsWith('/admin/adjust/')
+  const isOnReports = pathname.startsWith('/reports') || pathname === '/adjust' || pathname.startsWith('/adjust/')
 
   const [inactiveOpen, setInactiveOpen] = useState(isOnEmployees)
   const [reportsOpen, setReportsOpen] = useState(isOnReports)
@@ -50,15 +50,15 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
   const allItems = [
     { href: '/dashboard' },
     { href: '/attendance' },
-    { href: '/admin/adjustments' },
+    { href: '/adjustments' },
     { href: '/employees', matchPrefix: '/employees' },
     { href: '/shifts' },
     { href: '/organization' },
     { href: '/devices' },
-    { href: '/admin/reports', matchFn: () => isOnReports },
-    { href: '/admin/logs' },
-    { href: '/admin/system' },
-    { href: '/admin/user-accounts' },
+    { href: '/reports', matchFn: () => isOnReports },
+    { href: '/logs' },
+    { href: '/system' },
+    { href: '/user-accounts' },
   ]
 
   const activeIndex = allItems.findIndex(item =>
@@ -86,17 +86,17 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
 
       {/* Approval Queue */}
       <SidebarNavItem
-        href="/admin/adjustments"
+        href="/adjustments"
         label="Approval Queue"
         icon={FileCheck}
-        active={pathname === '/admin/adjustments'}
+        active={pathname === '/adjustments'}
         collapsed={collapsed}
         labelStyle={labelStyle}
         onClick={onClose}
         badge={!collapsed && pendingCount > 0 ? (
           <span
             style={labelStyle}
-            className={`ml-auto mr-4 px-2 py-0.5 text-[10px] font-black rounded-full shadow-sm transition-colors duration-300 ${pathname === '/admin/adjustments' ? 'bg-[#E60000] text-white' : 'bg-white text-[#E60000]'}`}
+            className={`ml-auto mr-4 px-2 py-0.5 text-[10px] font-black rounded-full shadow-sm transition-colors duration-300 ${pathname === '/adjustments' ? 'bg-[#E60000] text-white' : 'bg-white text-[#E60000]'}`}
           >
             {pendingCount > 99 ? '99+' : pendingCount}
           </span>
@@ -135,7 +135,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
 
       {/* Reports (with submenu) */}
       <SidebarSubMenu
-        href="/admin/reports"
+        href="/reports"
         label="Reports"
         icon={FileText}
         isGroupActive={isOnReports}
@@ -146,22 +146,22 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
         onClose={onClose}
         subItems={[
           {
-            href: '/admin/adjust',
+            href: '/adjust',
             label: 'Adjustment Logs',
             icon: History,
-            isActive: pathname === '/admin/adjust',
+            isActive: pathname === '/adjust',
           },
         ]}
       />
 
       {/* System Logs */}
-      <SidebarNavItem href="/admin/logs" label="System Logs" icon={ScrollText} active={pathname === '/admin/logs'} collapsed={collapsed} labelStyle={labelStyle} onClick={onClose} />
+      <SidebarNavItem href="/logs" label="System Logs" icon={ScrollText} active={pathname === '/logs'} collapsed={collapsed} labelStyle={labelStyle} onClick={onClose} />
 
       {/* System Settings */}
-      <SidebarNavItem href="/admin/system" label="System Settings" icon={Server} active={pathname === '/admin/system'} collapsed={collapsed} labelStyle={labelStyle} onClick={onClose} />
+      <SidebarNavItem href="/system" label="System Settings" icon={Server} active={pathname === '/system'} collapsed={collapsed} labelStyle={labelStyle} onClick={onClose} />
 
       {/* User Accounts */}
-      <SidebarNavItem href="/admin/user-accounts" label="User Accounts" icon={UserCog} active={pathname === '/admin/user-accounts'} collapsed={collapsed} labelStyle={labelStyle} onClick={onClose} />
+      <SidebarNavItem href="/user-accounts" label="User Accounts" icon={UserCog} active={pathname === '/user-accounts'} collapsed={collapsed} labelStyle={labelStyle} onClick={onClose} />
     </BaseSidebar>
   )
 }
