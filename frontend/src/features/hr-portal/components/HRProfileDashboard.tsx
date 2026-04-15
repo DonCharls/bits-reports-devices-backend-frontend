@@ -1,106 +1,24 @@
-"use client";
-import React, { useState, useEffect } from 'react';
-import { User, Mail, Shield, MapPin, Calendar, Camera, Check, X, CheckCircle, Trash2, Phone } from 'lucide-react';
-import { useToast } from '@/hooks/useToast';
-import ToastContainer from '@/components/ui/ToastContainer';
+import React from 'react'
+import { User, Mail, Shield, MapPin, Calendar, Camera, Check, X, Trash2, Phone } from 'lucide-react'
+import { useToast } from '@/hooks/useToast'
+import ToastContainer from '@/components/ui/ToastContainer'
+import { useHRProfile } from '../hooks/useHRProfile'
 
-export default function ProfilePage() {
-  const [profileImage, setProfileImage] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const { toasts, showToast, dismissToast } = useToast();
-  const [saving, setSaving] = useState(false);
+export function HRProfileDashboard() {
+  const { toasts, showToast, dismissToast } = useToast()
+  const {
+    profileImage,
+    isEditing,
+    setIsEditing,
+    saving,
+    userData,
+    setUserData,
+    handleImageUpload,
+    handleClearPhoto,
+    handleSave,
+  } = useHRProfile()
 
-  const [userData, setUserData] = useState({
-    firstName: "",
-    lastName: "",
-    middleName: "" as string,
-    suffix: "" as string,
-    role: "HR",
-    email: "",
-    phone: "",
-    branch: "",
-    hireDate: "",
-  });
-
-
-
-  useEffect(() => {
-    const savedImage = localStorage.getItem('userProfileImage');
-    if (savedImage) setProfileImage(savedImage);
-
-    const fetchUser = async () => {
-      try {
-        const res = await fetch('/api/auth/me', { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          const emp = data.employee ?? data;
-          setUserData({
-            firstName: emp.firstName || '',
-            lastName: emp.lastName || '',
-            middleName: emp.middleName || '',
-            suffix: emp.suffix || '',
-            role: emp.role || 'HR',
-            email: emp.email || '',
-            phone: emp.contactNumber || emp.phone || '',
-            branch: emp.branch || '',
-            hireDate: emp.hireDate ? new Date(emp.hireDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '',
-          });
-        }
-      } catch { /* fallback */ }
-    };
-    fetchUser();
-  }, []);
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        setProfileImage(base64String);
-        localStorage.setItem('userProfileImage', base64String);
-        window.dispatchEvent(new Event('profileUpdate'));
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleClearPhoto = () => {
-    setProfileImage(null);
-    localStorage.removeItem('userProfileImage');
-    window.dispatchEvent(new Event('profileUpdate'));
-    showToast('success', 'Photo Removed', 'Profile photo removed!');
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const res = await fetch('/api/users/profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: userData.firstName,
-          lastName: userData.lastName,
-          contactNumber: userData.phone,
-        })
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        setIsEditing(false);
-        showToast('success', 'Profile Updated', 'Profile updated successfully!');
-      } else {
-        showToast('error', 'Update Failed', data.message || 'Failed to update profile');
-      }
-    } catch (error) {
-      console.error('Error saving profile:', error);
-      showToast('error', 'Update Failed', 'Failed to update profile');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const displayRole = userData.role === 'HR' ? 'HR Payroll Officer' : userData.role;
+  const displayRole = userData.role === 'HR' ? 'HR Payroll Officer' : userData.role
 
   return (
     <div className="space-y-6 relative">
@@ -132,7 +50,7 @@ export default function ProfilePage() {
 
               {profileImage && (
                 <button
-                  onClick={handleClearPhoto}
+                  onClick={() => handleClearPhoto(showToast)}
                   className="p-3 bg-white border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-100 rounded-2xl transition-all shadow-sm group"
                   title="Remove Photo"
                 >
@@ -157,7 +75,7 @@ export default function ProfilePage() {
                   <X size={16} /> Cancel
                 </button>
                 <button
-                  onClick={handleSave}
+                  onClick={() => handleSave(showToast)}
                   disabled={saving}
                   className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 flex items-center gap-2 disabled:opacity-50"
                 >
@@ -247,5 +165,5 @@ export default function ProfilePage() {
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
-  );
+  )
 }

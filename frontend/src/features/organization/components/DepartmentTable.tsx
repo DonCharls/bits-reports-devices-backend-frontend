@@ -10,8 +10,8 @@ interface DepartmentTableProps {
   rowsPerPage: number
   totalCount: number
   sortKey: string | null
-  sortOrder: 'asc' | 'desc'
-  handleSort: (key: string) => void
+  sortOrder: 'asc' | 'desc' | null
+  handleSort: (key: any) => void
   onEditDept: (dept: Department) => void
   onDeleteDept: (dept: Department) => void
 }

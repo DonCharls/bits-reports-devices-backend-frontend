@@ -10,8 +10,8 @@ interface ShiftTableProps {
   paginatedShifts: Shift[]
   loading: boolean
   sortKey: string | null
-  sortOrder: 'asc' | 'desc'
-  handleSort: (key: string) => void
+  sortOrder: 'asc' | 'desc' | null
+  handleSort: (key: any) => void
   onToggle: (s: Shift) => void
   onEdit: (s: Shift) => void
   onDelete: (s: Shift) => void

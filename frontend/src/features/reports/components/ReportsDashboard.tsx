@@ -11,7 +11,7 @@ import { handleExport, handleExportIndividual } from '../lib/exportReport';
 import { formatDateShort } from '../lib/formatters';
 import { ReportRow } from '@/types/reports';
 
-export function ReportsDashboard() {
+export function ReportsDashboard({ role = 'admin' }: { role?: 'admin' | 'hr' }) {
   // Use Asia/Manila for default dates to avoid shifting to previous day
   const [startDate, setStartDate] = useState(() => {
     const now = new Date();
@@ -86,8 +86,8 @@ export function ReportsDashboard() {
       {/* Individual Employee Report Modal */}
       {selectedEmployee && (
         <EmployeeModal
-          variant="admin"
-          exportSource="admin-panel"
+          variant={role}
+          exportSource={role === 'hr' ? 'hr-panel' : 'admin-panel'}
           employee={selectedEmployee}
           records={allRecords
             .filter((r) => r.employeeId === selectedEmployee.id)
@@ -120,7 +120,7 @@ export function ReportsDashboard() {
             </div>
         </div>
         <button
-          onClick={() => handleExport(filteredData, startDate, endDate, 'admin-panel')}
+          onClick={() => handleExport(filteredData, startDate, endDate, role === 'hr' ? 'hr-panel' : 'admin-panel')}
           className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl transition-colors shadow-lg shadow-red-600/20 w-full sm:w-auto justify-center"
         >
           <Download className="w-4 h-4" />
@@ -131,7 +131,7 @@ export function ReportsDashboard() {
 
       {/* Filter Bar */}
       <ReportFilters
-        variant="admin"
+        variant={role}
         startDate={startDate}
         setStartDate={setStartDate}
         endDate={endDate}
@@ -149,7 +149,7 @@ export function ReportsDashboard() {
 
       {/* Preview Records Table */}
       <ReportTable
-        variant="admin"
+        variant={role}
         paginatedData={paginatedData}
         filteredDataLength={filteredData.length}
         loading={loading}
