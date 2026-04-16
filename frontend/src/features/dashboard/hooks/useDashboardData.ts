@@ -56,7 +56,7 @@ function getWeekDates(): { day: string; date: Date }[] {
     const monday = new Date(now);
     monday.setDate(now.getDate() - ((todayIndex === 0 ? 7 : todayIndex) - 1));
     monday.setHours(0, 0, 0, 0);
-    return Array.from({ length: 5 }, (_, i) => {
+    return Array.from({ length: 7 }, (_, i) => {
         const d = new Date(monday);
         d.setDate(monday.getDate() + i);
         return { day: dayNames[d.getDay()], date: d };
@@ -85,7 +85,7 @@ export function useDashboardData(role: 'admin' | 'hr') {
             const todayStr = phtStr(new Date());
             const weekDates = getWeekDates();
             const weekStart = phtStr(weekDates[0].date);
-            const weekEnd = phtStr(weekDates[4].date);
+            const weekEnd = phtStr(weekDates[6].date);
 
             const [bRes, dRes, eRes, aRes, wRes, sRes] = await Promise.all([
                 fetch('/api/branches', { credentials: 'include' }),
@@ -121,7 +121,7 @@ export function useDashboardData(role: 'admin' | 'hr') {
             setTotalEmployees(activeCount);
 
             const todayPHTStr = phtStr(new Date());
-            const weekly: WeekDay[] = weekDates.map(({ day, date }) => {
+            const weeklyAll: WeekDay[] = weekDates.map(({ day, date }) => {
                 const dateStr = phtStr(date);
                 const dayAtts = weekAtts.filter(a => {
                     const recDate = a.date ? phtStr(new Date(a.date)) : '';
@@ -132,6 +132,11 @@ export function useDashboardData(role: 'admin' | 'hr') {
                 const present = dayAtts.filter(a => a.checkInTime && (!a.lateMinutes || a.lateMinutes === 0)).length;
                 const absent = dateStr <= todayPHTStr ? Math.max(0, activeCount - present - late) : 0;
                 return { day, present, late, absent };
+            });
+            // Always show Mon–Sat; only show Sun if there is attendance data
+            const weekly = weeklyAll.filter(d => {
+                if (d.day !== 'Sun') return true;
+                return d.present > 0 || d.late > 0;
             });
             setWeeklyData(weekly);
 

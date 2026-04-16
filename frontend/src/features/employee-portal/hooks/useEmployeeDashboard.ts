@@ -12,12 +12,12 @@ function getWeekDates(): { start: string, end: string } {
   monday.setDate(now.getDate() - ((todayIndex === 0 ? 7 : todayIndex) - 1))
   monday.setHours(0, 0, 0, 0)
   
-  const friday = new Date(monday)
-  friday.setDate(monday.getDate() + 4)
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
   
   return {
     start: phtStr(monday),
-    end: phtStr(friday)
+    end: phtStr(sunday)
   }
 }
 
