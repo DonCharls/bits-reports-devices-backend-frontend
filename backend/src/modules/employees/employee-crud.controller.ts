@@ -271,11 +271,23 @@ export const createEmployee = async (req: Request, res: Response) => {
             });
         }
 
-        // Validate role
-        if (role && !['USER', 'ADMIN', 'HR'].includes(role)) {
-            return res.status(400).json({
+        // Enforce USER role — Admin/HR must be created via /api/users
+        // This is the second line of defense after the validator
+        if (role && role !== 'USER') {
+            void audit({
+                action: 'CREATE',
+                level: 'WARN',
+                entityType: 'Employee',
+                performedBy: req.user?.employeeId,
+                source: 'admin-panel',
+                details: `Blocked role escalation attempt: tried to create employee with role "${role}"`,
+                metadata: { attemptedRole: role, email },
+                correlationId: req.correlationId
+            });
+
+            return res.status(403).json({
                 success: false,
-                message: 'Invalid role. Must be USER, ADMIN, or HR'
+                message: 'Employee registration only supports USER role. Admin/HR accounts must be created via User Accounts.'
             });
         }
 
@@ -340,7 +352,7 @@ export const createEmployee = async (req: Request, res: Response) => {
                     dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
                     email,
                     password: hashedPassword,
-                    role: role || 'USER',
+                    role: 'USER',
                     department,
                     position,
                     branch,
@@ -531,6 +543,26 @@ export const updateEmployee = async (req: Request, res: Response) => {
                     message: 'This email address is already in use by another employee'
                 });
             }
+        }
+
+        // Block role escalation — prevent promoting USER to ADMIN/HR via this endpoint
+        if (req.body.role && ['ADMIN', 'HR'].includes(req.body.role) && existingEmployee.role === 'USER') {
+            void audit({
+                action: 'UPDATE',
+                level: 'WARN',
+                entityType: 'Employee',
+                entityId: employeeId,
+                performedBy: req.user?.employeeId,
+                source: 'admin-panel',
+                details: `Blocked role escalation attempt on employee ID ${employeeId}: tried to change from USER to ${req.body.role}`,
+                metadata: { attemptedRole: req.body.role },
+                correlationId: req.correlationId
+            });
+
+            return res.status(403).json({
+                success: false,
+                message: 'Role escalation not allowed. Admin/HR accounts must be managed via User Accounts.'
+            });
         }
 
         // Prepare data for update

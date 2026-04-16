@@ -96,7 +96,7 @@ async function main() {
             branch: 'NRA',
             contactNumber: '09171234567',
             employeeNumber: 'EMP001',
-            preferredZkId: 2,
+            preferredZkId: null, // Admin doesn't need a ZK ID
         },
         {
             email: 'hr@avegabros.com',
@@ -108,7 +108,7 @@ async function main() {
             branch: 'NRA',
             contactNumber: '09179876543',
             employeeNumber: 'EMP002',
-            preferredZkId: 3,
+            preferredZkId: null, // HR doesn't need a ZK ID
         },
     ]
 
@@ -116,12 +116,16 @@ async function main() {
         const existing = await prisma.employee.findUnique({ where: { email: u.email } })
 
         if (!existing) {
-            // Determine safe zkId — never use 1 (device SUPER ADMIN)
-            const zkCheck = await prisma.employee.findUnique({ where: { zkId: u.preferredZkId } })
-            let finalZkId = u.preferredZkId
-            if (zkCheck) {
-                const max = await prisma.employee.findFirst({ orderBy: { zkId: 'desc' } })
-                finalZkId = Math.max((max?.zkId || 1) + 1, 2)
+            // Determine safe zkId if provided — never use 1 (device SUPER ADMIN)
+            let finalZkId: number | null = null
+            
+            if (u.preferredZkId) {
+                const zkCheck = await prisma.employee.findUnique({ where: { zkId: u.preferredZkId } })
+                finalZkId = u.preferredZkId
+                if (zkCheck) {
+                    const max = await prisma.employee.findFirst({ orderBy: { zkId: 'desc' } })
+                    finalZkId = Math.max((max?.zkId || 1) + 1, 2)
+                }
             }
 
             // Look up the branch and department IDs so we can set both the
@@ -152,7 +156,16 @@ async function main() {
             })
             console.log(`👤 Created: ${u.firstName} ${u.lastName} (${u.role}, zkId: ${finalZkId})`)
         } else {
-            console.log(`👤 Already exists: ${u.email}`)
+            // Ensure existing admin/hr don't have a zkId if we are running seed again
+            if (u.preferredZkId === null && existing.zkId !== null) {
+                await prisma.employee.update({
+                    where: { id: existing.id },
+                    data: { zkId: null }
+                })
+                console.log(`👤 Updated: ${u.firstName} ${u.lastName} (Removed zkId)`)
+            } else {
+                console.log(`👤 Already exists: ${u.email}`)
+            }
         }
     }
 

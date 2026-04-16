@@ -84,12 +84,6 @@ export function useUserAccounts() {
       })
       const data = await res.json()
       if (data.success) {
-        if (data.selfDeactivated) {
-          // Admin deactivated their own account — force logout
-          await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
-          window.location.href = '/login'
-          return { success: true }
-        }
         await fetchUsers()
         showToast(
           'success', 

@@ -2,6 +2,25 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../../shared/lib/prisma';
 import { audit } from '../../shared/lib/auditLogger';
+import { enqueueGlobalDeleteUser, processDeviceSyncQueue } from '../devices/deviceSyncQueue.service';
+
+// ── Guards ────────────────────────────────────────────────────────────────────
+
+/**
+ * Ensures at least one active ADMIN remains after excluding the given ID.
+ * Prevents system lockout by blocking deactivation/deletion/role-change
+ * of the last active admin.
+ */
+async function ensureMinimumAdmins(excludeId: number): Promise<boolean> {
+    const activeAdminCount = await prisma.employee.count({
+        where: {
+            role: 'ADMIN',
+            employmentStatus: 'ACTIVE',
+            id: { not: excludeId }
+        }
+    });
+    return activeAdminCount >= 1;
+}
 
 /**
  * Get all ADMIN and HR users (for User Accounts page)
@@ -154,6 +173,18 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
             }
         }
 
+        // Guard: if changing ADMIN → HR, ensure at least one admin remains
+        if (role && role !== user.role && user.role === 'ADMIN') {
+            const safeToChange = await ensureMinimumAdmins(id);
+            if (!safeToChange) {
+                res.status(400).json({
+                    success: false,
+                    message: 'Cannot change role: this is the last active admin. At least one admin must remain.'
+                });
+                return;
+            }
+        }
+
         const updateData: Record<string, unknown> = {
             ...(firstName && { firstName }),
             ...(lastName && { lastName }),
@@ -241,10 +272,25 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
             return;
         }
 
+        // Guard: prevent deactivating the last active admin
+        if (user.role === 'ADMIN') {
+            const safeToDelete = await ensureMinimumAdmins(id);
+            if (!safeToDelete) {
+                res.status(400).json({
+                    success: false,
+                    message: 'Cannot deactivate the last active admin. At least one admin must remain to prevent system lockout.'
+                });
+                return;
+            }
+        }
+
         await prisma.employee.update({
             where: { id },
             data: { employmentStatus: 'INACTIVE' },
         });
+
+        // Invalidate all sessions
+        await prisma.refreshToken.deleteMany({ where: { employeeId: id } });
 
         void audit({
             action: 'DELETE',
@@ -256,6 +302,24 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
             details: `Deactivated (soft-deleted) user account ID ${id}`,
             correlationId: req.correlationId
         });
+
+        // Clean up from devices if they have a zkId
+        if (user.zkId) {
+            setImmediate(async () => {
+                try {
+                    await enqueueGlobalDeleteUser(user.zkId!);
+                    const devices = await prisma.device.findMany({
+                        where: { isActive: true, syncEnabled: true },
+                        select: { id: true },
+                    });
+                    for (const d of devices) {
+                        try { await processDeviceSyncQueue(d.id); } catch { /* retry later */ }
+                    }
+                } catch (err: unknown) {
+                    console.error(`[API] (background) Failed to queue device deletion for user ${id}:`, err);
+                }
+            });
+        }
 
         res.json({ success: true, message: 'User deleted successfully' });
     } catch (error: unknown) {
@@ -279,6 +343,27 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
 
         const newStatus = user.employmentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
 
+        // Block self-deactivation — server-side enforcement
+        if (newStatus === 'INACTIVE' && req.user?.employeeId === id) {
+            res.status(400).json({
+                success: false,
+                message: 'You cannot deactivate your own account'
+            });
+            return;
+        }
+
+        // Guard: prevent deactivating the last active admin
+        if (newStatus === 'INACTIVE' && user.role === 'ADMIN') {
+            const safeToDeactivate = await ensureMinimumAdmins(id);
+            if (!safeToDeactivate) {
+                res.status(400).json({
+                    success: false,
+                    message: 'Cannot deactivate the last active admin. At least one admin must remain to prevent system lockout.'
+                });
+                return;
+            }
+        }
+
         const updated = await prisma.employee.update({
             where: { id },
             data: { employmentStatus: newStatus },
@@ -296,6 +381,24 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
         // When deactivating, invalidate all sessions by deleting refresh tokens
         if (newStatus === 'INACTIVE') {
             await prisma.refreshToken.deleteMany({ where: { employeeId: id } });
+
+            // Clean up from devices if they have a zkId
+            if (user.zkId) {
+                setImmediate(async () => {
+                    try {
+                        await enqueueGlobalDeleteUser(user.zkId!);
+                        const devices = await prisma.device.findMany({
+                            where: { isActive: true, syncEnabled: true },
+                            select: { id: true },
+                        });
+                        for (const d of devices) {
+                            try { await processDeviceSyncQueue(d.id); } catch { /* retry later */ }
+                        }
+                    } catch (err: unknown) {
+                        console.error(`[API] (background) Failed to queue device deletion for user ${id}:`, err);
+                    }
+                });
+            }
         }
 
         void audit({
@@ -308,12 +411,9 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
             correlationId: req.correlationId
         });
 
-        const selfDeactivated = newStatus === 'INACTIVE' && req.user?.employeeId === id;
-
         res.json({
             success: true,
             message: `User status changed to ${newStatus}`,
-            selfDeactivated,
             user: {
                 ...updated,
                 status: updated.employmentStatus === 'ACTIVE' ? 'active' : 'inactive',
@@ -421,5 +521,93 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
     } catch (error: unknown) {
         console.error('Change password failed:', error);
         res.status(500).json({ success: false, message: 'Failed to change password' });
+    }
+};
+
+/**
+ * Permanently delete an INACTIVE user account.
+ * Only allowed for already-deactivated accounts. Protects last admin.
+ */
+export const permanentDeleteUser = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const id = parseInt(req.params.id as string);
+
+        // Prevent self-deletion
+        if (req.user?.employeeId === id) {
+            res.status(400).json({ success: false, message: 'You cannot permanently delete your own account' });
+            return;
+        }
+
+        const user = await prisma.employee.findUnique({
+            where: { id },
+            select: { id: true, firstName: true, lastName: true, email: true, role: true, employmentStatus: true, zkId: true },
+        });
+
+        if (!user || !['ADMIN', 'HR'].includes(user.role)) {
+            res.status(404).json({ success: false, message: 'User not found' });
+            return;
+        }
+
+        // Only allow permanent deletion of inactive accounts
+        if (user.employmentStatus === 'ACTIVE') {
+            res.status(400).json({
+                success: false,
+                message: 'Cannot permanently delete an active user. Please deactivate them first.'
+            });
+            return;
+        }
+
+        // Guard: protect last admin even if inactive (they could be reactivated)
+        if (user.role === 'ADMIN') {
+            const totalAdmins = await prisma.employee.count({ where: { role: 'ADMIN' } });
+            if (totalAdmins <= 1) {
+                res.status(400).json({
+                    success: false,
+                    message: 'Cannot permanently delete the last admin account. The system requires at least one admin.'
+                });
+                return;
+            }
+        }
+
+        // Transaction: clean up related data, then delete
+        await prisma.$transaction(async (tx) => {
+            await tx.refreshToken.deleteMany({ where: { employeeId: id } });
+            await tx.employee.delete({ where: { id } });
+        });
+
+        void audit({
+            action: 'DELETE',
+            entityType: 'User Account',
+            entityId: id,
+            performedBy: req.user?.employeeId,
+            source: 'admin-panel',
+            level: 'WARN',
+            details: `Permanently deleted user account: ${user.firstName} ${user.lastName} (${user.role})`,
+            metadata: { email: user.email, role: user.role },
+            correlationId: req.correlationId
+        });
+
+        res.json({ success: true, message: `User "${user.firstName} ${user.lastName}" permanently deleted` });
+
+        // Fire-and-forget: queue deletion from biometric devices
+        if (user.zkId) {
+            setImmediate(async () => {
+                try {
+                    await enqueueGlobalDeleteUser(user.zkId!);
+                    const devices = await prisma.device.findMany({
+                        where: { isActive: true, syncEnabled: true },
+                        select: { id: true },
+                    });
+                    for (const d of devices) {
+                        try { await processDeviceSyncQueue(d.id); } catch { /* retry later */ }
+                    }
+                } catch (err: unknown) {
+                    console.error(`[API] (background) Failed to queue device deletion for permanently deleted user ${id}:`, err);
+                }
+            });
+        }
+    } catch (error: unknown) {
+        console.error('Permanent delete user failed:', error);
+        res.status(500).json({ success: false, message: 'Failed to permanently delete user' });
     }
 };

@@ -4,7 +4,7 @@ export const createEmployeeValidator = [
     body('firstName').notEmpty().withMessage('First Name is required').trim(),
     body('lastName').notEmpty().withMessage('Last Name is required').trim(),
     body('email').optional().isEmail().withMessage('Valid email is required').normalizeEmail(),
-    body('role').optional().isIn(['USER', 'ADMIN', 'HR']).withMessage('Invalid role'),
+    body('role').optional().isIn(['USER']).withMessage('Employee registration only supports USER role. Admin/HR accounts must be created via User Accounts.'),
     body('zkId').optional().isInt().withMessage('ZK ID must be an integer'),
 ];
 
