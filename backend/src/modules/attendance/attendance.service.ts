@@ -178,13 +178,38 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                 // If existing check-out exists, only update if this new log is LATER (user left later)
                 if (existingAttendance.checkOutTime) {
                     if (log.timestamp > existingAttendance.checkOutTime) {
+                        const updateData: Record<string, unknown> = {
+                            checkOutTime: log.timestamp,
+                            updatedAt: new Date(),
+                            checkOutDeviceId: log.deviceId,
+                            checkoutSource: 'device',
+                        };
+
+                        if (existingAttendance.status === 'incomplete') {
+                            const empShift = log.employee?.Shift;
+                            if (empShift) {
+                                const [startH, startM] = empShift.startTime.split(':').map(Number);
+                                const grace = empShift.graceMinutes ?? 0;
+                                const checkInPHT = new Date(existingAttendance.checkInTime.getTime() + 8 * 60 * 60 * 1000);
+                                const checkInMins = checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes();
+                                updateData.status = checkInMins <= (startH * 60 + startM + grace) ? 'present' : 'late';
+                            } else {
+                                updateData.status = 'present';
+                            }
+
+                            if (existingAttendance.notes?.includes('No checkout recorded')) {
+                                updateData.notes = existingAttendance.notes.replace(/\s*\|?\s*No checkout recorded.*$/i, '') || null;
+                            }
+
+                            console.log(
+                                `[Attendance] Self-healed: employee ${existingAttendance.employeeId} ` +
+                                `record restored from 'incomplete' to '${updateData.status}' via delayed device scan`
+                            );
+                        }
+
                         const updatedRecord = await prisma.attendance.update({
                             where: { id: existingAttendance.id },
-                            data: {
-                                checkOutTime: log.timestamp,
-                                updatedAt: new Date(),
-                                checkOutDeviceId: log.deviceId
-                            },
+                            data: updateData,
                             include: {
                                 employee: {
                                     select: {
@@ -228,14 +253,38 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         });
                     }
                 } else {
-                    // No check-out yet, and > 2 hours have passed -> Valid Check-Out
+                    const updateData: Record<string, unknown> = {
+                        checkOutTime: log.timestamp,
+                        updatedAt: new Date(),
+                        checkOutDeviceId: log.deviceId,
+                        checkoutSource: 'device',
+                    };
+
+                    if (existingAttendance.status === 'incomplete') {
+                        const empShift = log.employee?.Shift;
+                        if (empShift) {
+                            const [startH, startM] = empShift.startTime.split(':').map(Number);
+                            const grace = empShift.graceMinutes ?? 0;
+                            const checkInPHT = new Date(existingAttendance.checkInTime.getTime() + 8 * 60 * 60 * 1000);
+                            const checkInMins = checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes();
+                            updateData.status = checkInMins <= (startH * 60 + startM + grace) ? 'present' : 'late';
+                        } else {
+                            updateData.status = 'present';
+                        }
+
+                        if (existingAttendance.notes?.includes('No checkout recorded')) {
+                            updateData.notes = existingAttendance.notes.replace(/\s*\|?\s*No checkout recorded.*$/i, '') || null;
+                        }
+
+                        console.log(
+                            `[Attendance] Self-healed: employee ${existingAttendance.employeeId} ` +
+                            `record restored from 'incomplete' to '${updateData.status}' via delayed device scan`
+                        );
+                    }
+
                     const updatedRecord2 = await prisma.attendance.update({
                         where: { id: existingAttendance.id },
-                        data: {
-                            checkOutTime: log.timestamp,
-                            updatedAt: new Date(),
-                            checkOutDeviceId: log.deviceId
-                        },
+                        data: updateData,
                         include: {
                             employee: {
                                 select: {
@@ -308,13 +357,14 @@ export const autoCloseIncompleteAttendance = async (): Promise<number> => {
     try {
         const today = getTodayPHT();
 
-        // Find all records before today with no check-out time that haven't been flagged yet
         const incompleteRecords = await prisma.attendance.findMany({
             where: {
                 date: { lt: today },
                 checkOutTime: null,
-                NOT: { notes: { contains: 'No checkout recorded' } }
-            }
+                checkoutSource: null,
+                status: { not: 'incomplete' }
+            },
+            include: { employee: { include: { Shift: true } } }
         });
 
         if (incompleteRecords.length === 0) return 0;
@@ -322,6 +372,21 @@ export const autoCloseIncompleteAttendance = async (): Promise<number> => {
         let flaggedCount = 0;
 
         for (const record of incompleteRecords) {
+            const shift = record.employee?.Shift;
+
+            if (shift?.isNightShift) {
+                const [endH, endM] = shift.endTime.split(':').map(Number);
+                const recordDateMs = record.date.getTime() + 8 * 60 * 60 * 1000;
+                const shiftEndAbsolute = new Date(
+                    recordDateMs + 24 * 60 * 60 * 1000
+                    + (endH * 60 + endM) * 60 * 1000
+                    - 8 * 60 * 60 * 1000
+                );
+                if (Date.now() < shiftEndAbsolute.getTime()) {
+                    continue;
+                }
+            }
+
             const existingNotes = record.notes || '';
             const flagNote = 'No checkout recorded \u2014 please review and adjust manually';
             const newNotes = existingNotes
@@ -337,6 +402,15 @@ export const autoCloseIncompleteAttendance = async (): Promise<number> => {
                 }
             });
             flaggedCount++;
+        }
+
+        if (flaggedCount > 0) {
+            void audit({
+                action: 'FLAG_MISSING_CHECKOUT',
+                entityType: 'System',
+                source: 'cron',
+                details: `Flagged ${flaggedCount} incomplete records (no checkout) for manual review`
+            });
         }
 
         console.log(`[Attendance] Flagged ${flaggedCount} incomplete records (no checkout) for manual review`);
@@ -459,8 +533,10 @@ export const repairMissingCheckouts = async (): Promise<number> => {
             where: {
                 date: { lt: today },
                 checkOutTime: null,
-                NOT: { notes: { contains: 'No checkout recorded' } }
-            }
+                checkoutSource: null,
+                status: { not: 'incomplete' }
+            },
+            include: { employee: { include: { Shift: true } } }
         });
 
         if (records.length === 0) return 0;
@@ -468,6 +544,21 @@ export const repairMissingCheckouts = async (): Promise<number> => {
         let flaggedCount = 0;
 
         for (const record of records) {
+            const shift = record.employee?.Shift;
+
+            if (shift?.isNightShift) {
+                const [endH, endM] = shift.endTime.split(':').map(Number);
+                const recordDateMs = record.date.getTime() + 8 * 60 * 60 * 1000;
+                const shiftEndAbsolute = new Date(
+                    recordDateMs + 24 * 60 * 60 * 1000
+                    + (endH * 60 + endM) * 60 * 1000
+                    - 8 * 60 * 60 * 1000
+                );
+                if (Date.now() < shiftEndAbsolute.getTime()) {
+                    continue;
+                }
+            }
+
             const existingNotes = record.notes || '';
             const flagNote = 'No checkout recorded \u2014 please review and adjust manually';
             const newNotes = existingNotes
@@ -632,7 +723,11 @@ export function calculateAttendanceMetrics(record: BasicAttendanceRecord, shift:
         const diffMins = Math.abs(checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes() - 8 * 60);
         const isAnomaly = diffMins > ANOMALY_THRESHOLD_MINS;
 
-        const isShiftActive = !!record.checkInTime && !record.checkOutTime;
+        const today = getTodayPHT();
+        const recordDateStr = new Date(record.date.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const todayStr = new Date(today.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const isToday = recordDateStr === todayStr;
+        const isShiftActive = !!record.checkInTime && !record.checkOutTime && isToday;
         const status = isShiftActive ? "IN_PROGRESS" : record.status;
 
         return { 
@@ -802,7 +897,11 @@ export function calculateAttendanceMetrics(record: BasicAttendanceRecord, shift:
         overtimeMinutes = parseFloat((otMs / (1000 * 60)).toFixed(1));
     }
 
-    const isShiftActive = !!checkIn && !checkOut;
+    const today = getTodayPHT();
+    const recordDateStr = new Date(record.date.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const todayStr = new Date(today.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const isToday = recordDateStr === todayStr;
+    const isShiftActive = !!checkIn && !checkOut && isToday;
     const status = isShiftActive ? "IN_PROGRESS" : record.status;
     const gracePeriodApplied = checkIn.getTime() > expectedStart.getTime() && lateMinutes === 0;
 

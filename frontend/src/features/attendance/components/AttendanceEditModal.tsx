@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { Clock, AlertCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import { AttendanceRecord } from '../types';
 
 interface AttendanceEditModalProps {
@@ -54,6 +54,21 @@ export function AttendanceEditModal({
               <div className="bg-amber-50 border border-amber-100 p-3 rounded-xl flex gap-3">
                 <AlertCircle size={16} className="text-amber-500 shrink-0 mt-0.5" />
                 <p className="text-xs font-medium text-amber-800">This employee has no existing clock-in record for this day. Changes cannot be saved.</p>
+              </div>
+            )}
+            {(editingLog.displayStatus === 'missing_checkout' || editingLog.status === 'incomplete') && !String(editingLog.id).startsWith('absent-') && (
+              <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl flex gap-3">
+                <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                <div className="text-[10px] text-amber-800 leading-relaxed font-medium">
+                  <strong className="block mb-0.5 tracking-tight uppercase">Missing Checkout</strong>
+                  This record has no recorded checkout time. Adding a checkout time will resolve this record and update the status automatically.
+                </div>
+              </div>
+            )}
+            {editingLog.notes?.includes('No checkout recorded') && (
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl">
+                <p className="text-[9px] text-slate-400 font-black uppercase tracking-wider mb-1">System Note</p>
+                <p className="text-[10px] text-slate-600 font-medium">{editingLog.notes}</p>
               </div>
             )}
             <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl flex gap-3">

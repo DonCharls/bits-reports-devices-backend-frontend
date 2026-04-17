@@ -22,6 +22,7 @@ export interface AttendanceRecord {
   displayStatus?: string;
   checkInDevice?: string | null;
   checkOutDevice?: string | null;
+  checkoutSource?: string | null;
 }
 
 export interface AttendanceStats {
@@ -30,4 +31,5 @@ export interface AttendanceStats {
   late: number;
   absent: number;
   onLeave: number;
+  incomplete: number;
 }

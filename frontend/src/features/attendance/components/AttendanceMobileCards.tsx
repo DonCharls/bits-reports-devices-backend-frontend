@@ -1,5 +1,5 @@
 import React from 'react'
-import { Edit2, Fingerprint } from 'lucide-react'
+import { Edit2, Fingerprint, PenLine, AlertTriangle } from 'lucide-react'
 import { fmtHours, formatLate, fmtMins } from '../utils/attendance-formatters'
 import { AttendanceRecord } from '../types'
 
@@ -53,9 +53,10 @@ export function AttendanceMobileCards({
                 row.displayStatus === 'present' ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
                 : row.displayStatus === 'IN_PROGRESS' ? 'text-blue-500 bg-blue-500/10 border-blue-500/20'
                 : row.displayStatus === 'late' ? 'text-yellow-600 bg-yellow-50 border-yellow-100'
+                : row.displayStatus === 'missing_checkout' ? 'text-amber-700 bg-amber-50 border-amber-200'
                 : 'text-red-600 bg-red-50 border-red-100'
               }`}>
-                {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus}
+                {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus === 'missing_checkout' ? 'Missing Checkout' : row.displayStatus}
               </span>
               <button onClick={() => handleEditClick(row)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
                 <Edit2 size={14} />
@@ -76,17 +77,41 @@ export function AttendanceMobileCards({
             <div>
               <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Clock Out</p>
               {row.notes?.includes('Early punch detected') ? (
-                <span className="text-[10px] font-bold text-orange-500">🔶 Early punch flagged</span>
+                <span className="text-[10px] font-bold text-orange-500">Early punch flagged</span>
+              ) : row.displayStatus === 'missing_checkout' ? (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-amber-600">No checkout</span>
+                  <button onClick={() => handleEditClick(row)} className="text-[10px] font-bold text-red-600 hover:text-red-700 hover:underline transition-colors">Resolve</button>
+                </div>
               ) : row.checkOut === '—' && row.notes?.includes('No checkout recorded') ? (
-                <span className="text-[10px] font-bold text-amber-600">⚠️ No checkout</span>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-amber-600">No checkout</span>
+                  <button onClick={() => handleEditClick(row)} className="text-[10px] font-bold text-red-600 hover:text-red-700 hover:underline transition-colors">Resolve</button>
+                </div>
               ) : (
                 <>
-                  <p className="font-mono text-slate-600 font-black text-sm">{row.checkOut}</p>
+                  <p className="font-mono text-slate-600 font-black text-sm">
+                    {row.checkoutSource === 'auto_closed' && <span title="Auto-closed (estimated)"><AlertTriangle className="w-3 h-3 text-amber-500 inline mr-0.5" /></span>}
+                    {row.checkOut}
+                    {row.checkoutSource === 'auto_closed' && <span className="text-[9px] text-amber-600 font-bold ml-1">(estimated)</span>}
+                  </p>
                   {row.checkOut !== '—' && (
-                    <div title={row.checkOutDevice ?? 'Manual'} className="inline-flex items-center gap-1 mt-1 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
-                      <Fingerprint className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-80" />
-                      <span className="text-[9px] text-slate-500 font-bold truncate leading-none pt-px">{row.checkOutDevice ?? 'Manual'}</span>
-                    </div>
+                    row.checkoutSource === 'manual' ? (
+                      <div title="Manually set" className="inline-flex items-center gap-1 mt-1 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
+                        <PenLine className="w-2.5 h-2.5 text-amber-500 shrink-0 opacity-80" />
+                        <span className="text-[9px] text-amber-600 font-bold truncate leading-none pt-px">Manual</span>
+                      </div>
+                    ) : row.checkoutSource === 'auto_closed' ? (
+                      <div title="Auto-closed — estimated checkout" className="inline-flex items-center gap-1 mt-1 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
+                        <AlertTriangle className="w-2.5 h-2.5 text-amber-500 shrink-0 opacity-80" />
+                        <span className="text-[9px] text-amber-600 font-bold truncate leading-none pt-px">Auto-Closed</span>
+                      </div>
+                    ) : (
+                      <div title={row.checkOutDevice ?? 'Manual'} className="inline-flex items-center gap-1 mt-1 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
+                        <Fingerprint className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-80" />
+                        <span className="text-[9px] text-slate-500 font-bold truncate leading-none pt-px">{row.checkOutDevice ?? 'Manual'}</span>
+                      </div>
+                    )
                   )}
                 </>
               )}

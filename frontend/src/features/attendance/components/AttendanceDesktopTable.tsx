@@ -1,5 +1,5 @@
 import React from 'react'
-import { AlertCircle, Edit2, Fingerprint } from 'lucide-react'
+import { AlertCircle, Edit2, Fingerprint, PenLine, AlertTriangle } from 'lucide-react'
 import { SortableHeader } from '@/components/ui/SortableHeader'
 import { fmtHours, formatLate, fmtMins } from '../utils/attendance-formatters'
 import { AttendanceRecord } from '../types'
@@ -110,18 +110,53 @@ export function AttendanceDesktopTable({
                   <span className="inline-flex items-center gap-2 text-blue-500 font-bold text-[10px] uppercase tracking-wider">
                     <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span></span>Active
                   </span>
+                ) : row.displayStatus === 'missing_checkout' ? (
+                  <div className="flex flex-col gap-1">
+                    <span className="inline-flex items-center gap-1 text-amber-600 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title={(row as any).notes}>
+                      <AlertCircle className="w-3 h-3" /> No checkout
+                    </span>
+                    <button onClick={() => handleEditClick(row)} className="inline-flex items-center gap-1 text-red-600 hover:text-red-700 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap hover:underline transition-colors">
+                      Resolve
+                    </button>
+                  </div>
                 ) : row.checkOut === '—' && (row as any).notes?.includes('No checkout recorded') ? (
-                  <span className="inline-flex items-center gap-1 text-amber-600 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title={(row as any).notes}>
-                    <AlertCircle className="w-3 h-3" /> No checkout
-                  </span>
+                  <div className="flex flex-col gap-1">
+                    <span className="inline-flex items-center gap-1 text-amber-600 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title={(row as any).notes}>
+                      <AlertCircle className="w-3 h-3" /> No checkout
+                    </span>
+                    <button onClick={() => handleEditClick(row)} className="inline-flex items-center gap-1 text-red-600 hover:text-red-700 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap hover:underline transition-colors">
+                      Resolve
+                    </button>
+                  </div>
                 ) : (
                   <div className="flex flex-col">
-                    <span>{row.checkOut}</span>
+                    <span className="inline-flex items-center gap-1">
+                      {row.checkoutSource === 'auto_closed' && (
+                        <span title="Auto-closed (estimated)"><AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" /></span>
+                      )}
+                      {row.checkoutSource === 'manual' ? (
+                        <span>{row.checkOut} <span className="text-[9px] text-amber-600 font-bold">(estimated)</span></span>
+                      ) : (
+                        <span>{row.checkOut}</span>
+                      )}
+                    </span>
                     {row.checkOut !== '—' && (
-                      <div title={row.checkOutDevice ?? 'Manual'} className="inline-flex items-center gap-1 mt-1 bg-slate-50 hover:bg-slate-100/50 border border-slate-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
-                        <Fingerprint className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-80" />
-                        <span className="text-[9px] text-slate-500 font-bold truncate leading-none pt-px">{row.checkOutDevice ?? 'Manual'}</span>
-                      </div>
+                      row.checkoutSource === 'manual' ? (
+                        <div title="Manually set" className="inline-flex items-center gap-1 mt-1 bg-amber-50 hover:bg-amber-100/50 border border-amber-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
+                          <PenLine className="w-2.5 h-2.5 text-amber-500 shrink-0 opacity-80" />
+                          <span className="text-[9px] text-amber-600 font-bold truncate leading-none pt-px">Manual</span>
+                        </div>
+                      ) : row.checkoutSource === 'auto_closed' ? (
+                        <div title="Auto-closed — estimated checkout" className="inline-flex items-center gap-1 mt-1 bg-amber-50 hover:bg-amber-100/50 border border-amber-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
+                          <AlertTriangle className="w-2.5 h-2.5 text-amber-500 shrink-0 opacity-80" />
+                          <span className="text-[9px] text-amber-600 font-bold truncate leading-none pt-px">Auto-Closed</span>
+                        </div>
+                      ) : (
+                        <div title={row.checkOutDevice ?? 'Manual'} className="inline-flex items-center gap-1 mt-1 bg-slate-50 hover:bg-slate-100/50 border border-slate-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
+                          <Fingerprint className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-80" />
+                          <span className="text-[9px] text-slate-500 font-bold truncate leading-none pt-px">{row.checkOutDevice ?? 'Manual'}</span>
+                        </div>
+                      )
                     )}
                   </div>
                 )}
@@ -156,10 +191,11 @@ export function AttendanceDesktopTable({
                   row.displayStatus === 'present'     ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
                   : row.displayStatus === 'IN_PROGRESS' ? 'text-blue-500 bg-blue-500/10 border-blue-500/20'
                   : row.displayStatus === 'late'        ? 'text-yellow-600 bg-yellow-50 border-yellow-100'
+                  : row.displayStatus === 'missing_checkout' ? 'text-amber-700 bg-amber-50 border-amber-200'
                   : row.displayStatus === 'incomplete'  ? 'text-amber-600 bg-amber-50 border-amber-100'
                   : 'text-red-600 bg-red-50 border-red-100'
                 }`}>
-                  {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus}
+                  {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus === 'missing_checkout' ? 'Missing Checkout' : row.displayStatus}
                 </span>
               </td>
               {/* Actions */}

@@ -34,7 +34,7 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
   const [error, setError] = useState<string | null>(null)
   const [branchesList, setBranchesList] = useState<{ id: number; name: string }[]>([])
   const [departmentsList, setDepartmentsList] = useState<{ id: number; name: string }[]>([])
-  const [stats, setStats] = useState({ onTime: 0, late: 0, absent: 0, total: 0, avgHours: '0', totalOT: '0', totalUT: '0' })
+  const [stats, setStats] = useState({ onTime: 0, late: 0, absent: 0, incomplete: 0, total: 0, avgHours: '0', totalOT: '0', totalUT: '0' })
 
   // ── Pagination ────────────────────────────────────────────────────────────
   const [currentPage, setCurrentPage] = useState(1)
@@ -66,6 +66,7 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
     { value: 'present', label: 'On Time' },
     { value: 'late', label: 'Late' },
     { value: 'absent', label: 'Absent' },
+    { value: 'incomplete', label: 'Missing Checkout' },
   ]
 
   // ── Effects ───────────────────────────────────────────────────────────────
@@ -151,7 +152,8 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
           const isShiftActive: boolean = log.isShiftActive ?? false
           const gracePeriodApplied: boolean = log.gracePeriodApplied ?? false
           const status = isEarlyOut ? 'early-out' : isAnomaly ? 'anomaly' : lateMinutes > 0 ? 'late' : undertimeMinutes > 0 ? 'undertime' : (log.status || 'present')
-          const displayStatus = isShiftActive ? 'IN_PROGRESS' : status
+          const hasMissingCheckout = log.checkOutTime === null && log.status === 'incomplete';
+          const displayStatus = isShiftActive ? 'IN_PROGRESS' : hasMissingCheckout ? 'missing_checkout' : status
 
           return {
             id: log.id,
@@ -168,6 +170,7 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
             notes: log.notes || null,
             checkInDevice: log.checkInDeviceName ?? null,
             checkOutDevice: log.checkOutDeviceName ?? null,
+            checkoutSource: log.checkoutSource ?? null,
           }
         })
 
@@ -213,6 +216,7 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
           onTime: full.filter(r => r.status === 'present').length,
           late: full.filter(r => r.status === 'late').length,
           absent: full.filter(r => r.status === 'absent').length,
+          incomplete: full.filter(r => r.status === 'incomplete' || r.displayStatus === 'missing_checkout').length,
           total: full.length,
           avgHours: full.length > 0
             ? (full.filter(r => r.totalHours > 0).reduce((s, r) => s + r.totalHours, 0) /
@@ -295,6 +299,7 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
     const presentCount = records.filter(r => r.status === 'present').length
     const lateCount = records.filter(r => r.status === 'late').length
     const absentCount = records.filter(r => r.status === 'absent').length
+    const incompleteCount = records.filter(r => r.status === 'incomplete' || r.displayStatus === 'missing_checkout').length
 
     const allRows: (string | number)[][] = []
     allRows.push(['BITS Attendance Report'])
@@ -308,15 +313,18 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
     allRows.push(['Present', presentCount, '', 'Overtime Total', `${stats.totalOT}h`])
     allRows.push(['Late', lateCount, '', 'Undertime Total', `${stats.totalUT}h`])
     allRows.push(['Absent', absentCount])
+    allRows.push(['Missing Checkout', incompleteCount])
     allRows.push([])
-    allRows.push(['#', 'Employee', 'Branch', 'Department', 'Shift', 'Check In', 'Check Out', 'Hours Worked', 'Late By', 'Overtime', 'Undertime', 'Status'])
+    allRows.push(['#', 'Employee', 'Branch', 'Department', 'Shift', 'Check In', 'Check Out', 'Checkout Source', 'Hours Worked', 'Late By', 'Overtime', 'Undertime', 'Status'])
 
     sortedRecords.forEach((r, i) => {
-      const statusLabel = r.isAnomaly ? 'Anomaly' : r.displayStatus === 'IN_PROGRESS' ? 'In Progress' : r.status.charAt(0).toUpperCase() + r.status.slice(1)
+      const statusLabel = r.isAnomaly ? 'Anomaly' : r.displayStatus === 'IN_PROGRESS' ? 'In Progress' : r.displayStatus === 'missing_checkout' ? 'Missing Checkout' : r.status.charAt(0).toUpperCase() + r.status.slice(1)
+      const checkoutSourceLabel = r.checkoutSource === 'device' ? '' : r.checkoutSource === 'manual' ? 'Manual' : r.checkoutSource === 'auto_closed' ? 'Auto-Closed' : r.displayStatus === 'missing_checkout' ? 'Missing' : ''
       allRows.push([
         i + 1, r.employeeName, r.branchName, r.department, r.shiftCode || 'No Shift',
         r.checkIn,
         r.isShiftActive ? 'ACTIVE' : r.checkOut,
+        r.isShiftActive ? '' : checkoutSourceLabel,
         r.isShiftActive ? 'LIVE' : (r.totalHours > 0 ? fmtHours(r.totalHours) : '—'),
         formatLate(r.lateMinutes),
         r.overtimeMinutes > 0 ? `+${fmtMins(r.overtimeMinutes)}` : '—',

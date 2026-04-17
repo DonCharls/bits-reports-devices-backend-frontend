@@ -1,11 +1,12 @@
 import React from 'react';
-import { Timer, TrendingUp, TrendingDown } from 'lucide-react';
+import { Timer, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
 
 interface AttendanceStatsProps {
   stats: {
     onTime: number;
     late: number;
     absent: number;
+    incomplete: number;
     total: number;
     avgHours: string;
     totalOT: string;
@@ -22,6 +23,22 @@ export function AttendanceStats({ stats }: AttendanceStatsProps) {
 
   return (
     <>
+      {/* Missing Checkout Alert */}
+      {stats.incomplete > 0 && (
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 px-5 py-3 rounded-2xl shadow-sm">
+          <div className="bg-amber-500/10 p-2 rounded-xl shrink-0">
+            <AlertTriangle className="w-4 h-4 text-amber-500" />
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-amber-600">Missing Checkout</p>
+            <p className="text-xl font-black text-amber-700">{stats.incomplete}</p>
+          </div>
+          <p className="text-[10px] text-amber-600 font-medium ml-auto">
+            {stats.incomplete} employee{stats.incomplete !== 1 ? 's' : ''} forgot to check out
+          </p>
+        </div>
+      )}
+
       {/* Stats Cards */}
       <div className="grid grid-cols-3 gap-3">
         {statCards.map(s => {
@@ -58,6 +75,15 @@ export function AttendanceStats({ stats }: AttendanceStatsProps) {
           <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Absent</p>
           <p className="text-xl font-black text-red-500">{stats.absent}</p>
         </div>
+        {stats.incomplete > 0 && (
+          <>
+            <div className="w-px h-8 bg-slate-100" />
+            <div className="text-center">
+              <p className="text-[9px] font-black uppercase tracking-wider text-amber-500">Missing</p>
+              <p className="text-xl font-black text-amber-600">{stats.incomplete}</p>
+            </div>
+          </>
+        )}
         <div className="w-px h-8 bg-slate-100" />
         <div className="text-center">
           <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Total</p>

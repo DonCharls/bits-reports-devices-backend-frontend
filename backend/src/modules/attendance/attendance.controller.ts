@@ -288,7 +288,23 @@ export const updateAttendance = async (req: Request, res: Response) => {
             const newVal = checkOutTime ? new Date(checkOutTime) : null;
             updateData.checkOutTime = newVal;
             updateData.checkout_updated = new Date();
+            updateData.checkoutSource = 'manual';
             auditEntries.push({ field: 'checkOutTime', oldValue: oldVal, newValue: newVal ? newVal.toISOString() : null });
+        }
+
+        if (updateData.checkOutTime && existing.status === 'incomplete') {
+            const shift = existing.employee?.Shift;
+            if (shift) {
+                const [startH, startM] = shift.startTime.split(':').map(Number);
+                const grace = shift.graceMinutes || 0;
+                const checkInPHT = new Date(existing.checkInTime.getTime() + 8 * 60 * 60 * 1000);
+                const checkInMinutes = checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes();
+                const shiftStartMinutes = startH * 60 + startM + grace;
+                updateData.status = checkInMinutes <= shiftStartMinutes ? 'present' : 'late';
+            } else {
+                updateData.status = 'present';
+            }
+            auditEntries.push({ field: 'status', oldValue: 'incomplete', newValue: String(updateData.status) });
         }
 
 
@@ -632,7 +648,23 @@ export const reviewAdjustment = async (req: Request, res: Response) => {
       const oldVal = existing.checkOutTime ? existing.checkOutTime.toISOString() : null;
       updateData.checkOutTime = adjustment.requestedCheckOut;
       updateData.checkout_updated = new Date();
+      updateData.checkoutSource = 'manual';
       auditEntries.push({ field: 'checkOutTime', oldValue: oldVal, newValue: adjustment.requestedCheckOut.toISOString() });
+    }
+
+    if (updateData.checkOutTime && existing.status === 'incomplete') {
+      const shift = existing.employee?.Shift;
+      if (shift) {
+        const [startH, startM] = shift.startTime.split(':').map(Number);
+        const grace = shift.graceMinutes || 0;
+        const checkInPHT = new Date(existing.checkInTime.getTime() + 8 * 60 * 60 * 1000);
+        const checkInMinutes = checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes();
+        const shiftStartMinutes = startH * 60 + startM + grace;
+        updateData.status = checkInMinutes <= shiftStartMinutes ? 'present' : 'late';
+      } else {
+        updateData.status = 'present';
+      }
+      auditEntries.push({ field: 'status', oldValue: 'incomplete', newValue: String(updateData.status) });
     }
 
     // Clear missing-checkout flag if a checkout is being set
