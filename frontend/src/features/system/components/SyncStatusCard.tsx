@@ -1,6 +1,5 @@
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Server } from 'lucide-react';
@@ -32,6 +31,10 @@ interface SyncStatusCardProps {
     onStatusRefresh: () => void;
 }
 
+function Skeleton({ className }: { className?: string }) {
+    return <div className={`animate-pulse bg-slate-200 rounded-lg ${className ?? ''}`} />;
+}
+
 export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusCardProps) {
     const {
         syncing, syncingTime, clearingLogs, toggling,
@@ -39,25 +42,56 @@ export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusC
         handleToggle, handleManualSync, handleManualTimeSync, handleManualClearLogs,
     } = useSyncActions({ onStatusRefresh });
 
-    if (loading) return <div>Loading status...</div>;
-    if (!status) return <div>Error loading status.</div>;
+    if (loading) {
+        return (
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm px-5 py-4">
+                <div className="flex items-center gap-3">
+                    <Skeleton className="h-5 w-5 rounded" />
+                    <Skeleton className="h-5 w-40" />
+                    <div className="ml-auto flex gap-2">
+                        <Skeleton className="h-8 w-24 rounded-lg" />
+                        <Skeleton className="h-8 w-24 rounded-lg" />
+                    </div>
+                </div>
+                <div className="grid grid-cols-4 gap-6 mt-4">
+                    {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
+                </div>
+            </div>
+        );
+    }
+
+    if (!status) {
+        return (
+            <div className="bg-white rounded-xl border border-red-100 shadow-sm px-5 py-4">
+                <p className="text-sm text-red-600 font-semibold">Failed to load sync status.</p>
+            </div>
+        );
+    }
 
     return (
         <>
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                    <div className="space-y-1">
-                        <CardTitle className="text-xl flex items-center gap-2">
-                            <Server className="h-5 w-5 text-primary" />
-                            System Synchronization
-                        </CardTitle>
-                        <CardDescription>
-                            Manage global device synchronization and schedule
-                        </CardDescription>
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm">
+                {/* ── Header Row ───────────────────────────────────── */}
+                <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-slate-100">
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-900">
+                            <Server className="h-4 w-4 text-white" />
+                        </div>
+                        <div>
+                            <h2 className="text-sm font-black text-slate-800 tracking-tight">Sync Engine</h2>
+                            <p className="text-[10px] text-slate-400 font-semibold">Background device synchronization service</p>
+                        </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Badge variant={status.globalSyncEnabled ? 'default' : 'destructive'} className="text-sm">
-                            {status.globalSyncEnabled ? 'ACTIVE' : 'DISABLED'}
+                    <div className="flex items-center gap-3">
+                        <Badge
+                            variant={status.globalSyncEnabled ? 'default' : 'destructive'}
+                            className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 ${
+                                status.globalSyncEnabled
+                                    ? 'bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                                    : ''
+                            }`}
+                        >
+                            {status.globalSyncEnabled ? '● ACTIVE' : '○ DISABLED'}
                         </Badge>
                         <Switch
                             checked={status.globalSyncEnabled}
@@ -66,8 +100,10 @@ export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusC
                             aria-label="Toggle Global Sync"
                         />
                     </div>
-                </CardHeader>
-                <CardContent>
+                </div>
+
+                {/* ── Stats + Actions ──────────────────────────────── */}
+                <div className="px-5 py-3">
                     <SyncStatsGrid
                         status={status}
                         syncing={syncing}
@@ -77,8 +113,8 @@ export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusC
                         onManualTimeSync={handleManualTimeSync}
                         onManualClearLogs={handleManualClearLogs}
                     />
-                </CardContent>
-            </Card>
+                </div>
+            </div>
 
             <SyncResultModal
                 open={showResultModal}

@@ -1,8 +1,7 @@
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Settings, AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Save } from 'lucide-react';
 import {
     Dialog, DialogContent, DialogHeader, DialogTitle,
     DialogDescription, DialogFooter
@@ -13,68 +12,90 @@ import { TimeSyncConfigSection } from './TimeSyncConfigSection';
 import { AttendanceRulesSection } from './AttendanceRulesSection';
 import { HealthMonitorConfigSection } from './HealthMonitorConfigSection';
 import { LogMaintenanceConfigSection } from './LogMaintenanceConfigSection';
+import { DurationInput } from './DurationInput';
+
+function Skeleton({ className }: { className?: string }) {
+    return <div className={`animate-pulse bg-slate-200 rounded-lg ${className ?? ''}`} />;
+}
 
 export function SyncConfigForm() {
     const { config, setConfig, loading, saving, isDirty, showIntervalWarning, setShowIntervalWarning, saveConfig, handleSubmit } = useSyncConfig();
 
-    if (loading) return <div>Loading configuration...</div>;
-    if (!config) return <div>Error loading configuration.</div>;
+    if (loading) return (
+        <div className="space-y-3">
+            <Skeleton className="h-64 rounded-xl" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
+            </div>
+        </div>
+    );
+
+    if (!config) return (
+        <div className="bg-white rounded-xl border border-red-100 shadow-sm px-5 py-4">
+            <p className="text-sm text-red-600 font-semibold">Error loading configuration.</p>
+        </div>
+    );
 
     const handleChange = (patch: Record<string, unknown>) => setConfig({ ...config, ...patch });
 
     return (
         <>
-            <Card>
-                <CardHeader className="pb-4">
-                    <CardTitle className="text-xl flex items-center gap-2">
-                        <Settings className="h-5 w-5 text-primary" />
-                        Advanced Configuration
-                    </CardTitle>
-                    <CardDescription>
-                        Adjust polling intervals and dynamic shift-aware logic
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <form onSubmit={handleSubmit} className="space-y-6">
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <ShiftAwareConfigSection
-                                defaultIntervalSec={config.defaultIntervalSec}
-                                shiftAwareSyncEnabled={config.shiftAwareSyncEnabled}
-                                highFreqIntervalSec={config.highFreqIntervalSec}
-                                lowFreqIntervalSec={config.lowFreqIntervalSec}
-                                shiftBufferMinutes={config.shiftBufferMinutes}
-                                onChange={handleChange}
-                            />
-                            <TimeSyncConfigSection
-                                autoTimeSyncEnabled={config.autoTimeSyncEnabled}
-                                timeSyncIntervalSec={config.timeSyncIntervalSec}
-                                onChange={handleChange}
-                            />
-                            <AttendanceRulesSection
-                                globalMinCheckoutMinutes={config.globalMinCheckoutMinutes}
-                                onChange={handleChange}
-                            />
-                            <HealthMonitorConfigSection
-                                healthCheckEnabled={config.healthCheckEnabled}
-                                healthCheckIntervalSec={config.healthCheckIntervalSec}
-                                onChange={handleChange}
-                            />
-                            <LogMaintenanceConfigSection
-                                logBufferMaintenanceEnabled={config.logBufferMaintenanceEnabled}
-                                logBufferMaintenanceSchedule={config.logBufferMaintenanceSchedule}
-                                logBufferMaintenanceHour={config.logBufferMaintenanceHour}
-                                onChange={handleChange}
-                            />
-                        </div>
+            <form onSubmit={handleSubmit} className="space-y-3">
+                {/* ── Section 2: Shift-Aware Sync (full width) ──────────── */}
+                <ShiftAwareConfigSection
+                    defaultIntervalSec={config.defaultIntervalSec}
+                    shiftAwareSyncEnabled={config.shiftAwareSyncEnabled}
+                    highFreqIntervalSec={config.highFreqIntervalSec}
+                    lowFreqIntervalSec={config.lowFreqIntervalSec}
+                    shiftBufferMinutes={config.shiftBufferMinutes}
+                    onChange={handleChange}
+                />
 
-                        <div className="flex justify-end mt-4 pt-4 border-t">
-                            <Button type="submit" disabled={saving || !isDirty}>
-                                {saving ? 'Saving...' : 'Save Configuration'}
-                            </Button>
-                        </div>
-                    </form>
-                </CardContent>
-            </Card>
+                {/* ── Section 3: Background Services (4-column grid) ────── */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <AttendanceRulesSection
+                        globalMinCheckoutMinutes={config.globalMinCheckoutMinutes}
+                        onChange={handleChange}
+                    />
+                    <TimeSyncConfigSection
+                        autoTimeSyncEnabled={config.autoTimeSyncEnabled}
+                        timeSyncIntervalSec={config.timeSyncIntervalSec}
+                        onChange={handleChange}
+                    />
+                    <HealthMonitorConfigSection
+                        healthCheckEnabled={config.healthCheckEnabled}
+                        healthCheckIntervalSec={config.healthCheckIntervalSec}
+                        onChange={handleChange}
+                    />
+                    <LogMaintenanceConfigSection
+                        logBufferMaintenanceEnabled={config.logBufferMaintenanceEnabled}
+                        logBufferMaintenanceSchedule={config.logBufferMaintenanceSchedule}
+                        logBufferMaintenanceHour={config.logBufferMaintenanceHour}
+                        onChange={handleChange}
+                    />
+                </div>
+
+                {/* ── Save Bar ──────────────────────────────────────────── */}
+                <div className="flex items-center justify-between bg-white rounded-xl border border-slate-100 shadow-sm px-5 py-3">
+                    <div className="text-xs text-slate-400 font-semibold">
+                        {isDirty ? (
+                            <span className="text-amber-600 flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                Unsaved changes
+                            </span>
+                        ) : (
+                            'All changes saved'
+                        )}
+                    </div>
+                    <Button type="submit" disabled={saving || !isDirty} size="sm" className="text-xs font-bold h-8 px-5">
+                        {saving ? (
+                            'Saving...'
+                        ) : (
+                            <><Save className="h-3.5 w-3.5 mr-1.5" /> Save Configuration</>
+                        )}
+                    </Button>
+                </div>
+            </form>
 
             {/* Low Interval Warning Dialog */}
             <Dialog open={showIntervalWarning} onOpenChange={setShowIntervalWarning}>

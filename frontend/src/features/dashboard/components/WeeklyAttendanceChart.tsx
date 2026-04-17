@@ -38,7 +38,7 @@ export function WeeklyAttendanceChart({ weeklyData }: WeeklyAttendanceChartProps
                 <h2 className="text-xs font-black text-slate-600 uppercase tracking-widest flex items-center gap-1.5">
                     <CalendarDays className="w-3.5 h-3.5 text-red-500" /> Weekly Attendance
                 </h2>
-                <span className="text-xs text-slate-500 font-bold">Mon – Fri</span>
+                <span className="text-xs text-slate-500 font-bold">This Week</span>
             </div>
             <div className="flex-1 min-h-0 p-3">
                 <ResponsiveContainer width="100%" height="100%">

@@ -1,12 +1,10 @@
 'use client';
 
 import axios from 'axios';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { format } from 'date-fns';
-import { MonitorSmartphone, CloudOff } from 'lucide-react';
+import { MonitorSmartphone, CloudOff, Wifi } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
 interface Device {
@@ -25,6 +23,10 @@ interface DeviceSyncTableProps {
     devices: Device[];
     loading: boolean;
     onDevicesChange: React.Dispatch<React.SetStateAction<Device[]>>;
+}
+
+function Skeleton({ className }: { className?: string }) {
+    return <div className={`animate-pulse bg-slate-200 rounded-lg ${className ?? ''}`} />;
 }
 
 export function DeviceSyncTable({ devices, loading, onDevicesChange }: DeviceSyncTableProps) {
@@ -49,82 +51,113 @@ export function DeviceSyncTable({ devices, loading, onDevicesChange }: DeviceSyn
         }
     };
 
-    if (loading) return <div>Loading devices...</div>;
+    if (loading) {
+        return (
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm">
+                <div className="px-5 py-3 border-b border-slate-100">
+                    <Skeleton className="h-5 w-52" />
+                </div>
+                <div className="p-5 space-y-3">
+                    {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}
+                </div>
+            </div>
+        );
+    }
 
     return (
-        <Card>
-            <CardHeader className="pb-4">
-                <CardTitle className="text-xl flex items-center gap-2">
-                    <MonitorSmartphone className="h-5 w-5 text-primary" />
-                    Device Status & Sync Controls
-                </CardTitle>
-                <CardDescription>
-                    Monitor connection status and individual device sync overrides. Changes here affect the next cron cycle.
-                </CardDescription>
-            </CardHeader>
-            <CardContent>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Device Name</TableHead>
-                            <TableHead>IP Address</TableHead>
-                            <TableHead>Connection Health</TableHead>
-                            <TableHead>Latest Attendance Log</TableHead>
-                            <TableHead>Last Server Poll</TableHead>
-                            <TableHead className="text-right">Include in Sync</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center gap-2.5 px-5 py-3 border-b border-slate-100">
+                <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-slate-100">
+                    <MonitorSmartphone className="h-3.5 w-3.5 text-slate-600" />
+                </div>
+                <div>
+                    <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">
+                        Connected Devices
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-semibold">
+                        Per-device connection status and sync overrides
+                    </p>
+                </div>
+                <div className="ml-auto">
+                    <Badge variant="outline" className="text-[10px] font-bold text-slate-500 border-slate-200">
+                        {devices.length} device{devices.length !== 1 ? 's' : ''}
+                    </Badge>
+                </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                    <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50/50">
+                            <th className="px-5 py-2.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Device</th>
+                            <th className="px-5 py-2.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">IP Address</th>
+                            <th className="px-5 py-2.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                            <th className="px-5 py-2.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Attendance Log</th>
+                            <th className="px-5 py-2.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Server Poll</th>
+                            <th className="px-5 py-2.5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Include in Sync</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
                         {devices.length === 0 ? (
-                            <TableRow>
-                                <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
-                                    No devices found.
-                                </TableCell>
-                            </TableRow>
+                            <tr>
+                                <td colSpan={6} className="text-center py-10">
+                                    <MonitorSmartphone className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                                    <p className="text-sm text-slate-400 font-semibold">No devices found</p>
+                                    <p className="text-xs text-slate-300 mt-0.5">Add devices from the Devices page to see them here.</p>
+                                </td>
+                            </tr>
                         ) : (
                             devices.map((device) => (
-                                <TableRow key={device.id}>
-                                    <TableCell className="font-medium">{device.name}</TableCell>
-                                    <TableCell className="text-muted-foreground">{device.ip}</TableCell>
-                                    <TableCell>
-                                        <div className="flex flex-col gap-1.5 items-start">
+                                <tr key={device.id} className="hover:bg-slate-50/50 transition-colors">
+                                    <td className="px-5 py-3">
+                                        <span className="text-sm font-bold text-slate-800">{device.name}</span>
+                                    </td>
+                                    <td className="px-5 py-3">
+                                        <span className="text-xs text-slate-500 font-mono">{device.ip}</span>
+                                    </td>
+                                    <td className="px-5 py-3">
+                                        <div className="flex flex-col gap-1 items-start">
                                             {device.isActive ? (
-                                                <Badge variant="outline" className="border-green-200 bg-green-50 text-green-700">
-                                                    <div className="mr-1 h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                                                    Online
+                                                <Badge variant="outline" className="text-[10px] font-bold border-emerald-200 bg-emerald-50 text-emerald-700 gap-1 px-2 py-0.5">
+                                                    <Wifi className="h-2.5 w-2.5" /> Online
                                                 </Badge>
                                             ) : (
-                                                <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700">
-                                                    <CloudOff className="mr-1 h-3 w-3" />
-                                                    Offline
+                                                <Badge variant="outline" className="text-[10px] font-bold border-red-200 bg-red-50 text-red-700 gap-1 px-2 py-0.5">
+                                                    <CloudOff className="h-2.5 w-2.5" /> Offline
                                                 </Badge>
                                             )}
                                             {device.lastSyncStatus === 'FAILED' && (
-                                                <Badge variant="destructive" className="text-[10px] px-1.5 py-0 items-center gap-1" title={device.lastSyncError || 'Sync failed'}>
+                                                <Badge variant="destructive" className="text-[9px] px-1.5 py-0 font-bold" title={device.lastSyncError || 'Sync failed'}>
                                                     Sync Failed
                                                 </Badge>
                                             )}
                                         </div>
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {device.lastSyncedAt ? format(new Date(device.lastSyncedAt), 'PPp') : 'Never'}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {device.lastPolledAt ? format(new Date(device.lastPolledAt), 'PPp') : 'Never'}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <Switch 
+                                    </td>
+                                    <td className="px-5 py-3">
+                                        <span className="text-xs text-slate-500 font-medium">
+                                            {device.lastSyncedAt ? format(new Date(device.lastSyncedAt), 'MMM d, HH:mm') : '—'}
+                                        </span>
+                                    </td>
+                                    <td className="px-5 py-3">
+                                        <span className="text-xs text-slate-500 font-medium">
+                                            {device.lastPolledAt ? format(new Date(device.lastPolledAt), 'MMM d, HH:mm') : '—'}
+                                        </span>
+                                    </td>
+                                    <td className="px-5 py-3 text-right">
+                                        <Switch
                                             checked={device.syncEnabled}
                                             onCheckedChange={() => toggleDeviceSync(device.id, device.syncEnabled)}
                                             aria-label={`Toggle sync for ${device.name}`}
                                         />
-                                    </TableCell>
-                                </TableRow>
+                                    </td>
+                                </tr>
                             ))
                         )}
-                    </TableBody>
-                </Table>
-            </CardContent>
-        </Card>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     );
 }

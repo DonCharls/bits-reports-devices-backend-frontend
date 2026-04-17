@@ -13,7 +13,7 @@ const updateSyncConfigSchema = z.object({
     highFreqIntervalSec: z.number().min(10, "Interval must be at least 10s").optional(),
     lowFreqIntervalSec: z.number().min(60, "Low frequency interval must be at least 60s").optional(),
     shiftAwareSyncEnabled: z.boolean().optional(),
-    shiftBufferMinutes: z.number().max(240, "Shift buffer cannot exceed 4 hours (240 min)").optional(),
+    shiftBufferMinutes: z.number().max(120, "Shift buffer cannot exceed 2 hours (120 min)").optional(),
     autoTimeSyncEnabled: z.boolean().optional(),
     timeSyncIntervalSec: z.number().min(300, "Time sync interval must be at least 5 minutes (300s)").optional(),
     healthCheckEnabled: z.boolean().optional(),

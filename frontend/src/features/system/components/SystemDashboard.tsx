@@ -20,6 +20,7 @@ interface SyncStatus {
     shiftAwareMode: boolean;
     configUpdatedAt: string | null;
     globalSyncEnabled: boolean;
+    currentMode?: 'PEAK' | 'OFF-PEAK' | 'DEFAULT';
     healthCheck?: {
         isActive: boolean;
         intervalSec: number;
@@ -128,30 +129,33 @@ export function SystemDashboard() {
     });
 
     return (
-        <div className="container mx-auto p-6 max-w-6xl space-y-6">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight">System Configuration</h1>
-                <p className="text-muted-foreground mt-2">
-                    Monitor background sync activity, adjust polling intervals, and view device connectivity health.
+        <div className="flex flex-col gap-3 min-h-[calc(100vh-4rem)] lg:h-[calc(100vh-4rem)] lg:overflow-y-auto">
+            {/* ── Header ────────────────────────────────────────────────── */}
+            <div className="shrink-0">
+                <h1 className="text-lg lg:text-xl font-black text-slate-900 tracking-tight">
+                    System Configuration
+                </h1>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                    Monitor background sync activity, adjust polling intervals, and manage device connectivity.
                 </p>
             </div>
 
-            <div className="grid gap-6">
-                <SyncStatusCard
-                    status={syncStatus}
-                    loading={statusLoading}
-                    onStatusRefresh={fetchSyncStatus}
-                />
+            {/* ── Section 1: Sync Engine Status ─────────────────────────── */}
+            <SyncStatusCard
+                status={syncStatus}
+                loading={statusLoading}
+                onStatusRefresh={fetchSyncStatus}
+            />
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                    <SyncConfigForm />
-                    <DeviceSyncTable
-                        devices={devices}
-                        loading={devicesLoading}
-                        onDevicesChange={setDevices}
-                    />
-                </div>
-            </div>
+            {/* ── Section 2–4: Configuration ────────────────────────────── */}
+            <SyncConfigForm />
+
+            {/* ── Section 5: Device Table ───────────────────────────────── */}
+            <DeviceSyncTable
+                devices={devices}
+                loading={devicesLoading}
+                onDevicesChange={setDevices}
+            />
         </div>
     );
 }

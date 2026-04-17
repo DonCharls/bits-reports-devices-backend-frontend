@@ -1,8 +1,8 @@
 'use client';
 
-import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { DurationInput } from './DurationInput';
+import { HeartPulse } from 'lucide-react';
 
 interface HealthMonitorConfigSectionProps {
     healthCheckEnabled: boolean;
@@ -16,32 +16,37 @@ export function HealthMonitorConfigSection({
     onChange,
 }: HealthMonitorConfigSectionProps) {
     return (
-        <div className="space-y-4 rounded-md border p-4 bg-muted/20 md:col-span-2">
-            <div className="flex items-center justify-between">
-                <Label htmlFor="healthCheck" className="font-semibold text-primary">Device Health Monitoring</Label>
-                <Switch 
-                    id="healthCheck" 
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center w-6 h-6 rounded-md bg-emerald-100">
+                        <HeartPulse className="h-3 w-3 text-emerald-600" />
+                    </div>
+                    <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Health Monitor</h3>
+                </div>
+                <Switch
+                    id="healthCheck"
                     checked={healthCheckEnabled}
-                    onCheckedChange={(c: boolean) => onChange({ healthCheckEnabled: c })} 
+                    onCheckedChange={(c: boolean) => onChange({ healthCheckEnabled: c })}
                 />
             </div>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-                Continuously monitors device connectivity with lightweight TCP pings, independent of the data sync schedule. 
-                Ensures accurate online/offline status even when data sync is disabled or set to a long interval.
-            </p>
-            
-            {healthCheckEnabled && (
-                <div className="space-y-4 pt-2 border-t mt-4">
-                    <div className="w-full md:w-1/2">
-                        <DurationInput
-                            label="Health Check Interval"
-                            description="How often to verify device connectivity (minimum 15s, recommended: 30–60s)."
-                            totalSeconds={healthCheckIntervalSec}
-                            onChange={(sec) => onChange({ healthCheckIntervalSec: sec })}
-                        />
-                    </div>
-                </div>
-            )}
+
+            {/* Body */}
+            <div className="px-4 py-3 flex-1">
+                <p className="text-[10px] text-slate-400 font-medium leading-relaxed mb-3">
+                    Lightweight TCP pings to verify device connectivity — independent of data sync. Does not transfer data or acquire device locks. Ensures accurate online/offline status even when sync is off.
+                </p>
+
+                {healthCheckEnabled && (
+                    <DurationInput
+                        label="Ping Interval"
+                        description="How often to check device connectivity (min 15s, recommended: 30–60s)."
+                        totalSeconds={healthCheckIntervalSec}
+                        onChange={(sec) => onChange({ healthCheckIntervalSec: sec })}
+                    />
+                )}
+            </div>
         </div>
     );
 }
