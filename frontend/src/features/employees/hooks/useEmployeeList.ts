@@ -70,10 +70,12 @@ export function useEmployeeList({ statusFilter = 'Active' }: UseEmployeeListOpti
     }
     setIsUpdating(true);
     try {
-      const success = await actions.updateEmployee(editingEmployee.id as number, editForm);
-      if (success) {
+      const res = await actions.updateEmployee(editingEmployee.id as number, editForm);
+      if (res.success) {
         setEditingEmployee(null);
         showToast('success', 'Profile Updated', `${editForm.firstName} ${editForm.lastName} has been updated.`);
+      } else {
+        showToast('error', 'Update Failed', res.message || 'Unknown error');
       }
     } catch {
       showToast('error', 'Update Failed', 'An unexpected error occurred.');
@@ -84,8 +86,13 @@ export function useEmployeeList({ statusFilter = 'Active' }: UseEmployeeListOpti
 
   const handleDeactivate = async () => {
     if (!confirmDeactivate) return;
-    const success = await actions.deactivateEmployee(confirmDeactivate.id as number);
-    if (success) setConfirmDeactivate(null);
+    const res = await actions.deactivateEmployee(confirmDeactivate.id as number);
+    if (res.success) {
+      setConfirmDeactivate(null);
+      showToast('success', 'Employee Deactivated', 'Employee moved to inactive list');
+    } else {
+      showToast('error', 'Deactivation Failed', res.message || 'Unknown error');
+    }
   };
 
   const handleRestore = async () => {
@@ -201,15 +208,18 @@ export function useEmployeeList({ statusFilter = 'Active' }: UseEmployeeListOpti
     }
   };
 
-  /** Email uniqueness check — called on blur from EmployeeEditModal */
-  const handleEmailBlur = async () => {
-    const email = editForm.email?.trim();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
+  /** Validation uniqueness check — called on blur */
+  const handleDuplicateBlur = async (field: 'email' | 'contactNumber' | 'employeeNumber') => {
+    const value = editForm[field]?.trim();
+    if (!value) return;
+    if (field === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return;
+    
     try {
-      const res = await fetch(`/api/employees/check-email?email=${encodeURIComponent(email)}&excludeId=${editingEmployee?.id}`);
+      const res = await fetch(`/api/employees/check-duplicate?field=${field}&value=${encodeURIComponent(value)}&excludeId=${editingEmployee?.id}`);
       const data = await res.json();
       if (data.success && !data.available) {
-        showToast('warning', 'Email In Use', 'This email is already assigned to another employee.');
+        const fieldName = field.replace(/([A-Z])/g, ' $1').toLowerCase();
+        showToast('warning', 'Duplicate Found', `This ${fieldName} is already assigned to another employee.`);
       }
     } catch { /* ignore network error on blur */ }
   };
@@ -278,6 +288,6 @@ export function useEmployeeList({ statusFilter = 'Active' }: UseEmployeeListOpti
     handleResetPassword,
     handleEnrollFingerprint,
     handleExport,
-    handleEmailBlur,
+    handleDuplicateBlur,
   };
 }

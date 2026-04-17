@@ -7,7 +7,7 @@ interface EditContactSectionProps {
   formErrors: EditFormErrors
   onFormChange: (form: Partial<Employee>) => void
   onClearError: (field: string) => void
-  onEmailBlur: () => void
+  onDuplicateBlur: (field: 'email' | 'contactNumber') => void
 }
 
 const inputBase = 'w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all'
@@ -15,7 +15,7 @@ const inputError = 'border-red-500 ring-1 ring-red-500'
 const inputNormal = 'border-slate-200'
 
 export function EditContactSection({
-  editForm, formErrors, onFormChange, onClearError, onEmailBlur,
+  editForm, formErrors, onFormChange, onClearError, onDuplicateBlur,
 }: EditContactSectionProps) {
   return (
     <div className="grid grid-cols-2 gap-3">
@@ -29,7 +29,7 @@ export function EditContactSection({
             onFormChange({ ...editForm, email: e.target.value })
             if (formErrors.email) onClearError('email')
           }}
-          onBlur={onEmailBlur}
+          onBlur={() => onDuplicateBlur('email')}
           className={`${inputBase} ${formErrors.email ? inputError : inputNormal}`}
         />
         {formErrors.email && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.email}</p>}
@@ -47,6 +47,7 @@ export function EditContactSection({
             onFormChange({ ...editForm, contactNumber: val })
             if (formErrors.contactNumber) onClearError('contactNumber')
           }}
+          onBlur={() => onDuplicateBlur('contactNumber')}
           className={`${inputBase} ${formErrors.contactNumber ? inputError : inputNormal}`}
         />
         {formErrors.contactNumber && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.contactNumber}</p>}

@@ -7,7 +7,7 @@ import { audit } from '../../shared/lib/auditLogger';
 import bcrypt from 'bcryptjs';
 import { generateRandomPassword } from '../../shared/utils/password.utils';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../../shared/lib/email.service';
-import { validateEmployeeId } from './employee.validator';
+
 
 // POST /api/employees/:id/enroll-fingerprint - Enroll fingerprint for employee
 export const enrollEmployeeFingerprintController = async (req: Request, res: Response) => {

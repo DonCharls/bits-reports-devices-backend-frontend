@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useToast } from '@/hooks/useToast';
 import { Employee, ShiftOption } from '../utils/employee-types';
 import { validateEmployeeId } from '@/lib/employeeValidation';
 import { useTableSort } from '@/hooks/useTableSort';
@@ -15,8 +14,6 @@ export function useEmployees({ statusFilter = 'ACTIVE' }: UseEmployeesProps = {}
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [shifts, setShifts] = useState<ShiftOption[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const { showToast } = useToast();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('all');
@@ -85,7 +82,7 @@ export function useEmployees({ statusFilter = 'ACTIVE' }: UseEmployeesProps = {}
 
   const tableSort = useTableSort<Employee>({ initialData: filteredEmployees });
 
-  const registerEmployee = async (formData: any): Promise<boolean> => {
+  const registerEmployee = async (formData: any): Promise<{success: boolean, message?: string, deviceSync?: any, employee?: any}> => {
     try {
       const res = await fetch('/api/employees', {
         method: 'POST',
@@ -96,24 +93,16 @@ export function useEmployees({ statusFilter = 'ACTIVE' }: UseEmployeesProps = {}
       const data = await res.json();
       if (data.success) {
         await fetchEmployees();
-        const name = `${data.employee?.firstName || ''} ${data.employee?.lastName || ''}`.trim();
-        if (data.deviceSync?.success === false) {
-          showToast('warning', 'Registered — Device Offline', `${name} was saved but couldn't sync to the device.`);
-        } else {
-          showToast('success', 'Employee Registered', `${name} has been saved.`);
-        }
-        return true;
+        return { success: true, employee: data.employee, deviceSync: data.deviceSync };
       } else {
-        showToast('error', 'Registration Failed', data.message || 'Unknown error');
-        return false;
+        return { success: false, message: data.message || 'Unknown error' };
       }
     } catch (err) {
-      showToast('error', 'Registration Failed', 'Could not reach the server.');
-      return false;
+      return { success: false, message: 'Could not reach the server.' };
     }
   };
 
-  const updateEmployee = async (id: number, updateData: Partial<Employee>): Promise<boolean> => {
+  const updateEmployee = async (id: number, updateData: Partial<Employee>): Promise<{success: boolean, message?: string}> => {
     try {
       const res = await fetch(`/api/employees/${id}`, {
         method: 'PUT',
@@ -123,33 +112,27 @@ export function useEmployees({ statusFilter = 'ACTIVE' }: UseEmployeesProps = {}
       const data = await res.json();
       if (data.success) {
         await fetchEmployees();
-        showToast('success', 'Profile Updated', 'Employee profile updated successfully!');
-        return true;
+        return { success: true };
       } else {
-        showToast('error', 'Update Failed', data.message || 'Unknown error');
-        return false;
+        return { success: false, message: data.message || 'Unknown error' };
       }
     } catch (e) {
-      showToast('error', 'Update Failed', 'Could not reach the server.');
-      return false;
+      return { success: false, message: 'Could not reach the server.' };
     }
   };
 
-  const deactivateEmployee = async (id: number): Promise<boolean> => {
+  const deactivateEmployee = async (id: number): Promise<{success: boolean, message?: string}> => {
     try {
       const res = await fetch(`/api/employees/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         await fetchEmployees();
-        showToast('success', 'Employee Deactivated', 'Employee moved to inactive list');
-        return true;
+        return { success: true };
       } else {
-        showToast('error', 'Deactivation Failed', data.message || 'Unknown error');
-        return false;
+        return { success: false, message: data.message || 'Unknown error' };
       }
     } catch (e) {
-      showToast('error', 'Deactivation Failed', 'Could not reach the server.');
-      return false;
+      return { success: false, message: 'Could not reach the server.' };
     }
   };
 

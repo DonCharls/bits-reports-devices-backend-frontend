@@ -7,7 +7,7 @@ import { audit } from '../../shared/lib/auditLogger';
 import bcrypt from 'bcryptjs';
 import { generateRandomPassword } from '../../shared/utils/password.utils';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../../shared/lib/email.service';
-import { validateEmployeeId } from './employee.validator';
+
 
 // POST /api/employees/sync-to-device - Sync all employees to device
 export const syncEmployeesToDeviceController = async (req: Request, res: Response) => {

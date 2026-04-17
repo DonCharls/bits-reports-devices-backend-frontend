@@ -7,6 +7,7 @@ interface EditIdentitySectionProps {
   formErrors: EditFormErrors
   onFormChange: (form: Partial<Employee>) => void
   onClearError: (field: string) => void
+  onDuplicateBlur: (field: 'email' | 'contactNumber' | 'employeeNumber') => void
 }
 
 const inputBase = 'w-full p-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 transition-all'
@@ -14,7 +15,7 @@ const inputError = 'border-red-500 ring-1 ring-red-500'
 const inputNormal = 'border-slate-200'
 
 export function EditIdentitySection({
-  editForm, formErrors, onFormChange, onClearError,
+  editForm, formErrors, onFormChange, onClearError, onDuplicateBlur,
 }: EditIdentitySectionProps) {
   return (
     <>
@@ -29,6 +30,7 @@ export function EditIdentitySection({
             onFormChange({ ...editForm, employeeNumber: e.target.value })
             if (formErrors.employeeNumber) onClearError('employeeNumber')
           }}
+          onBlur={() => onDuplicateBlur('employeeNumber')}
           className={`${inputBase} ${formErrors.employeeNumber ? inputError : inputNormal}`}
         />
         {formErrors.employeeNumber && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.employeeNumber}</p>}

@@ -145,7 +145,7 @@ model Employee {
 
   // Secondary Info
   position       String?
-  contactNumber  String?
+  contactNumber  String?          @unique
   employeeNumber String?   @unique
   hireDate       DateTime?
   createdAt      DateTime  @default(now())

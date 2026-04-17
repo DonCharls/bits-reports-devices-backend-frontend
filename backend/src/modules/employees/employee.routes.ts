@@ -12,7 +12,7 @@ import {
     updateEmployee,
     permanentDeleteEmployee,
     resetEmployeePassword,
-    checkEmailAvailability,
+    checkDuplicate,
     getEmployeeFingerprintStatus,
     getEmployeeCardStatus,
     deleteEmployeeFingerprint,
@@ -113,19 +113,25 @@ router.post('/', validate(createEmployeeValidator), createEmployee);
 
 /**
  * @swagger
- * /api/employees/check-email:
+ * /api/employees/check-duplicate:
  *   get:
- *     summary: Check if an email address is already in use
+ *     summary: Check if a specific field (email, employeeNumber, contactNumber) is already in use
  *     tags: [Employees]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: query
- *         name: email
+ *         name: field
  *         required: true
  *         schema:
  *           type: string
- *         description: Email address to check
+ *         description: Field to check
+ *       - in: query
+ *         name: value
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Value of the field to check
  *       - in: query
  *         name: excludeId
  *         schema:
@@ -135,7 +141,7 @@ router.post('/', validate(createEmployeeValidator), createEmployee);
  *       200:
  *         description: Returns availability status
  */
-router.get('/check-email', checkEmailAvailability);
+router.get('/check-duplicate', checkDuplicate);
 
 /**
  * @swagger

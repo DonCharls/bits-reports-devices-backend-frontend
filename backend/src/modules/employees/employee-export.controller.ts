@@ -8,7 +8,7 @@ import { audit } from '../../shared/lib/auditLogger';
 import bcrypt from 'bcryptjs';
 import { generateRandomPassword } from '../../shared/utils/password.utils';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../../shared/lib/email.service';
-import { validateEmployeeId } from './employee.validator';
+
 
 // GET /api/employees/export - Export employees to .xlsx
 export const exportEmployees = async (req: Request, res: Response) => {
@@ -485,10 +485,8 @@ export const bulkCreateEmployees = async (req: Request, res: Response) => {
             const empNum = (emp.employeeNumber || '').toString().trim();
 
             try {
-                // ── Basic validation ─────────────────────────────────────────
-                const empIdValidation = validateEmployeeId(empNum);
-                if (!empIdValidation.isValid) {
-                    results.push({ row: rowNum, employeeNumber: empNum, status: 'failed', reason: empIdValidation.error || 'Invalid employee number' });
+                if (!empNum || empNum.length < 2) {
+                    results.push({ row: rowNum, employeeNumber: empNum, status: 'failed', reason: 'Employee ID must be at least 2 characters long.' });
                     continue;
                 }
 

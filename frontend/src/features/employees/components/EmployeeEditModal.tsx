@@ -18,12 +18,12 @@ interface EmployeeEditModalProps {
   onFormChange: (form: Partial<Employee>) => void
   onSave: () => void
   onClose: () => void
-  onEmailBlur: () => void
+  onDuplicateBlur: (field: 'email' | 'contactNumber' | 'employeeNumber') => void
 }
 
 export function EmployeeEditModal({
   employee, editForm, departments, branches, shifts, isSaving,
-  onFormChange, onSave, onClose, onEmailBlur,
+  onFormChange, onSave, onClose, onDuplicateBlur,
 }: EmployeeEditModalProps) {
   const { formErrors, clearFieldError, handleSaveWrapper } = useEmployeeEditForm({ editForm, onSave })
 
@@ -49,13 +49,14 @@ export function EmployeeEditModal({
             formErrors={formErrors}
             onFormChange={onFormChange}
             onClearError={clearFieldError}
+            onDuplicateBlur={onDuplicateBlur}
           />
           <EditContactSection
             editForm={editForm}
             formErrors={formErrors}
             onFormChange={onFormChange}
             onClearError={clearFieldError}
-            onEmailBlur={onEmailBlur}
+            onDuplicateBlur={onDuplicateBlur}
           />
           <EditAssignmentSection
             editForm={editForm}
