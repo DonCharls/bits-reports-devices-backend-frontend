@@ -95,6 +95,11 @@ export const ReportTable: React.FC<ReportTableProps> = ({
                           <AlertTriangle className="w-3.5 h-3.5 text-orange-500 shrink-0" />
                         </span>
                       )}
+                      {employee.hasMissingCheckout && (
+                        <span title="This employee has missing check-outs (incomplete records)">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-5">

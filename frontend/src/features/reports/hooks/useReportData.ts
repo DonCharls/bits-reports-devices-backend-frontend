@@ -140,6 +140,8 @@ export const useReportData = (startDate: string, endDate: string) => {
             undertime: 0,
             totalHours: 0,
             hasAnomaly: false,
+            hasMissingCheckout: false,
+            missingCheckoutsCount: 0,
             shift: e.Shift
               ? {
                   id: e.Shift.id,
@@ -169,6 +171,11 @@ export const useReportData = (startDate: string, endDate: string) => {
 
           if (r.isAnomaly) {
             row.hasAnomaly = true;
+          }
+
+          if (r.checkOutTime === null && r.status === 'incomplete') {
+            row.hasMissingCheckout = true;
+            row.missingCheckoutsCount++;
           }
 
           row.totalHours += r.totalHours ?? 0;

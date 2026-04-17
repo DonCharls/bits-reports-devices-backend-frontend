@@ -98,6 +98,17 @@ export function AdminDetailView({
                     </div>
                 )}
 
+                {/* Missing Checkout warning banner */}
+                {employee.hasMissingCheckout && (
+                    <div className="flex items-center gap-3 px-5 py-2.5 bg-amber-50 border-b border-amber-100">
+                        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                        <p className="text-xs font-bold text-amber-700">
+                            This employee has records with <strong>Missing Checkout</strong> (incomplete records).
+                            These may require manual resolution from the attendance list.
+                        </p>
+                    </div>
+                )}
+
                 {/* Modal Body */}
                 <div className="overflow-y-auto flex-1 min-h-0">
                     {/* Summary Stats */}
@@ -337,6 +348,10 @@ export function AdminDetailView({
                                                         </span>
                                                         <span className="text-[9px] font-bold text-orange-600 mt-1">Out of shift</span>
                                                     </div>
+                                                ) : statusType === 'missing-checkout' || statusType === 'incomplete' ? (
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 w-fit">
+                                                        Missing Checkout
+                                                    </span>
                                                 ) : statusType === 'late' ? (
                                                     <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-yellow-50 text-yellow-600 border border-yellow-200 w-fit">
                                                         Late
