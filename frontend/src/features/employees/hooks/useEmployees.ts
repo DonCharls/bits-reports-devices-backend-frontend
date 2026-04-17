@@ -1,0 +1,170 @@
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useToast } from '@/hooks/useToast';
+import { Employee, ShiftOption } from '../utils/employee-types';
+import { validateEmployeeId } from '@/lib/employeeValidation';
+import { useTableSort } from '@/hooks/useTableSort';
+import { formatFullName } from '../utils/employee-types';
+
+interface UseEmployeesProps {
+  statusFilter?: string; // 'Active' | 'Inactive'
+}
+
+export function useEmployees({ statusFilter = 'ACTIVE' }: UseEmployeesProps = {}) {
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [departments, setDepartments] = useState<{ id: number; name: string }[]>([]);
+  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
+  const [shifts, setShifts] = useState<ShiftOption[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const { showToast } = useToast();
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDept, setSelectedDept] = useState('all');
+  const [selectedBranch, setSelectedBranch] = useState('all');
+
+  const fetchEmployees = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/employees');
+      if (res.status === 401) { window.location.href = '/login'; return; }
+      const data = await res.json();
+      if (data.success) {
+        setEmployees(data.employees.filter((e: Employee) => e.employmentStatus === statusFilter.toUpperCase() && e.role === 'USER'));
+      }
+    } catch (error) {
+      console.error('Error fetching employees:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter]);
+
+  const fetchDependencies = async () => {
+    try {
+      const [deptRes, branchRes, shiftRes] = await Promise.all([
+        fetch('/api/departments'),
+        fetch('/api/branches'),
+        fetch('/api/shifts', { credentials: 'include' })
+      ]);
+      const [deptData, branchData, shiftData] = await Promise.all([
+        deptRes.ok ? deptRes.json() : { success: false, departments: [] },
+        branchRes.ok ? branchRes.json() : { success: false, branches: [] },
+        shiftRes.ok ? shiftRes.json() : { success: false, shifts: [] }
+      ]);
+      if (deptData.success) setDepartments(deptData.departments);
+      if (branchData.success) setBranches(branchData.branches);
+      if (shiftData.success) setShifts(shiftData.shifts.filter(Boolean));
+    } catch (e) {
+      console.error('Error fetching dependencies:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchEmployees();
+    fetchDependencies();
+  }, [fetchEmployees]);
+
+  const filteredEmployees = useMemo(() => {
+    return employees.filter((emp) => {
+      const fullName = formatFullName(emp.firstName, emp.middleName, emp.lastName, emp.suffix).toLowerCase();
+      const searchStr = searchTerm.toLowerCase();
+      const matchesSearch = fullName.includes(searchStr) || (emp.contactNumber || '').toLowerCase().includes(searchStr);
+      const matchesDept = selectedDept === 'all' || emp.department === selectedDept || emp.Department?.name === selectedDept;
+      const matchesBranch = selectedBranch === 'all' || emp.branch === selectedBranch;
+      return matchesSearch && matchesDept && matchesBranch;
+    });
+  }, [employees, searchTerm, selectedDept, selectedBranch]);
+
+  const tableSort = useTableSort<Employee>({ initialData: filteredEmployees });
+
+  const registerEmployee = async (formData: any): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(formData)
+      });
+      const data = await res.json();
+      if (data.success) {
+        await fetchEmployees();
+        const name = `${data.employee?.firstName || ''} ${data.employee?.lastName || ''}`.trim();
+        if (data.deviceSync?.success === false) {
+          showToast('warning', 'Registered — Device Offline', `${name} was saved but couldn't sync to the device.`);
+        } else {
+          showToast('success', 'Employee Registered', `${name} has been saved.`);
+        }
+        return true;
+      } else {
+        showToast('error', 'Registration Failed', data.message || 'Unknown error');
+        return false;
+      }
+    } catch (err) {
+      showToast('error', 'Registration Failed', 'Could not reach the server.');
+      return false;
+    }
+  };
+
+  const updateEmployee = async (id: number, updateData: Partial<Employee>): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/employees/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData)
+      });
+      const data = await res.json();
+      if (data.success) {
+        await fetchEmployees();
+        showToast('success', 'Profile Updated', 'Employee profile updated successfully!');
+        return true;
+      } else {
+        showToast('error', 'Update Failed', data.message || 'Unknown error');
+        return false;
+      }
+    } catch (e) {
+      showToast('error', 'Update Failed', 'Could not reach the server.');
+      return false;
+    }
+  };
+
+  const deactivateEmployee = async (id: number): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/employees/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        await fetchEmployees();
+        showToast('success', 'Employee Deactivated', 'Employee moved to inactive list');
+        return true;
+      } else {
+        showToast('error', 'Deactivation Failed', data.message || 'Unknown error');
+        return false;
+      }
+    } catch (e) {
+      showToast('error', 'Deactivation Failed', 'Could not reach the server.');
+      return false;
+    }
+  };
+
+  return {
+    employees: filteredEmployees,
+    rawEmployees: employees,
+    departments,
+    branches,
+    shifts,
+    loading,
+    refresh: fetchEmployees,
+    filters: {
+      searchTerm,
+      setSearchTerm,
+      selectedDept,
+      setSelectedDept,
+      selectedBranch,
+      setSelectedBranch
+    },
+    tableSort,
+    actions: {
+      registerEmployee,
+      updateEmployee,
+      deactivateEmployee
+    }
+  };
+}
