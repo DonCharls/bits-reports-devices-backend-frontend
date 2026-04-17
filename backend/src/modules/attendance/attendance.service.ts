@@ -61,7 +61,10 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
 
         // Get recent logs ordered by timestamp
         const logs = await prisma.attendanceLog.findMany({
-            where: { timestamp: { gte: cutoff } },
+            where: { 
+                timestamp: { gte: cutoff },
+                processedAt: null // Fix #3: Only process logs that haven't been synced to an Attendance record
+            },
             orderBy: { timestamp: 'asc' },
             include: { employee: { include: { Shift: true } } }
         });
@@ -151,17 +154,31 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             ...metrics,
                         },
                     });
+
+                    // Mark log as successfully processed
+                    await prisma.attendanceLog.update({ where: { id: log.id }, data: { processedAt: new Date() } });
                 } catch (err: unknown) {
                     if (err instanceof PrismaClientKnownRequestError && err.code === 'P2002') {
                         // Duplicate record — silently skip, this is expected behavior
                         console.debug(`[Attendance] Duplicate record skipped for employeeId=${log.employeeId} on ${dateOnly}`);
+                        await prisma.attendanceLog.update({ where: { id: log.id }, data: { processedAt: new Date() } });
                         continue;
                     }
-                    throw err; // Re-throw unexpected errors so the outer catch handles them
+                    // Unexpected error on this individual log — log full context and advance to the
+                    // next log rather than re-throwing. Re-throwing would abort the entire batch,
+                    // leaving all subsequent logs unprocessed (orphaned) for this tick.
+                    // Fix #1 ensures processAttendanceLogs() is retried on the next tick, so this
+                    // log will be re-evaluated automatically without requiring a second punch.
+                    console.error(
+                        `[Attendance] Failed to process check-in log id=${log.id} for employeeId=${log.employeeId} on ${dateOnly}:`,
+                        err
+                    );
+                    continue;
                 }
             } else {
-                // Record exists. Check if this is a valid check-out or just a duplicate/early scan
-                const checkInTime = new Date(existingAttendance.checkInTime);
+                try {
+                    // Record exists. Check if this is a valid check-out or just a duplicate/early scan
+                    const checkInTime = new Date(existingAttendance.checkInTime);
                 const logTime = new Date(log.timestamp);
                 const diffMs = logTime.getTime() - checkInTime.getTime();
                 const diffHours = diffMs / (1000 * 60 * 60); //for every 1000 milliseconds, it will be 1 second
@@ -170,6 +187,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                 if (diffHours < minCheckoutHours) {
                     // Too soon to check out - ignore this log
                     // This prevents accidental double-scans from closing the attendance
+                    await prisma.attendanceLog.update({ where: { id: log.id }, data: { processedAt: new Date() } });
                     continue;
                 }
 
@@ -322,6 +340,14 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             ...metrics2,
                         },
                     });
+                }
+
+                // Mark log as successfully processed for all checkout paths
+                await prisma.attendanceLog.update({ where: { id: log.id }, data: { processedAt: new Date() } });
+
+                } catch (err: unknown) {
+                    console.error(`[Attendance] Failed to process check-out log id=${log.id} for employeeId=${log.employeeId}:`, err);
+                    continue;
                 }
             }
         }

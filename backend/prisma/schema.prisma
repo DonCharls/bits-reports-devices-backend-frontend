@@ -69,19 +69,21 @@ model AttendanceAdjustment {
 }
 
 model AttendanceLog {
-  id         Int      @id @default(autoincrement())
-  timestamp  DateTime
-  status     Int
-  employeeId Int
-  deviceId   Int?
-  createdAt  DateTime @default(now())
-  Device     Device?  @relation(fields: [deviceId], references: [id])
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  id          Int       @id @default(autoincrement())
+  timestamp   DateTime
+  status      Int
+  employeeId  Int
+  deviceId    Int?
+  createdAt   DateTime  @default(now())
+  processedAt DateTime? // Stamped when this log is converted into an Attendance record; NULL = pending
+  Device      Device?   @relation(fields: [deviceId], references: [id])
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([timestamp, employeeId])
   @@index([deviceId])
   @@index([employeeId])
   @@index([timestamp])
+  @@index([processedAt]) // Enables fast filtering of unprocessed logs (WHERE processedAt IS NULL)
 }
 
 model Department {

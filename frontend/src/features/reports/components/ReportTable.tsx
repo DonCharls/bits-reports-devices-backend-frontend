@@ -40,9 +40,6 @@ export const ReportTable: React.FC<ReportTableProps> = ({
     ? "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" 
     : "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden";
 
-  const btnClass = variant === 'hr'
-    ? "px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-full transition-colors shadow-sm"
-    : "px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-full transition-colors shadow-sm"; // Example divergence: we can define Admin vs HR button stylings
 
   return (
     <div className={tableContainerClass}>
@@ -163,10 +160,7 @@ export const ReportTable: React.FC<ReportTableProps> = ({
                   <td className="px-6 py-5">
                     <button
                       onClick={() => setSelectedEmployee(employee)}
-                      className={variant === 'hr' 
-                        ? 'px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-full transition-colors shadow-sm'
-                        : 'px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-full transition-colors shadow-sm'
-                      }
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-full transition-colors shadow-sm"
                     >
                       View History
                     </button>

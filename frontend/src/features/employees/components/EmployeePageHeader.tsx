@@ -38,15 +38,17 @@ export function EmployeePageHeader({
             <span>Permanent deletion cannot be undone</span>
           </div>
         )}
-        <Button
-          variant="outline"
-          className="border-border text-foreground hover:bg-red-700 hover:text-white gap-2 transition-all active:scale-95"
-          disabled={isExporting}
-          onClick={onExport}
-        >
-          {isExporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-          Export
-        </Button>
+        {statusFilter === 'Active' && (
+          <Button
+            variant="outline"
+            className="border-border text-foreground hover:bg-red-700 hover:text-white gap-2 transition-all active:scale-95"
+            disabled={isExporting}
+            onClick={onExport}
+          >
+            {isExporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+            Export
+          </Button>
+        )}
         {role === 'admin' && statusFilter === 'Active' && (
           <EmployeeImportModal departments={departments} branches={branches} shifts={shifts} onImportComplete={onImportComplete} />
         )}

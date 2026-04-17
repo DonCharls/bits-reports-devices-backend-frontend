@@ -11,7 +11,7 @@ export function HRLayout({ children }: { children: React.ReactNode }) {
     return (
         <div className="h-screen bg-slate-50 overflow-hidden relative">
 
-            <header className="fixed top-0 left-0 right-0 z-[100] h-16">
+            <header className="fixed top-0 left-0 right-0 z-40 h-16">
                 <TopBar setIsMobileOpen={setIsMobileOpen} />
             </header>
 

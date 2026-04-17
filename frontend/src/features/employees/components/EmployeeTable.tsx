@@ -76,16 +76,37 @@ export function EmployeeTable({
                     ) : (<span className="text-[10px] text-muted-foreground italic">—</span>)}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap gap-1 items-center max-w-[200px]">
                       {employee.EmployeeDeviceEnrollment && employee.EmployeeDeviceEnrollment.length > 0 ? (
-                        employee.EmployeeDeviceEnrollment.map(enrollment => (
-                          <span key={enrollment.device.id} title={`Enrolled on ${new Date(enrollment.enrolledAt).toLocaleDateString()}`}
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${enrollment.device.isActive ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-gray-100 text-gray-500 border border-gray-200'}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${enrollment.device.isActive ? 'bg-green-500' : 'bg-gray-400'}`} />
-                            {enrollment.device.name}
-                          </span>
-                        ))
-                      ) : (<span className="text-[10px] text-muted-foreground italic">Not enrolled</span>)}
+                        <>
+                          {employee.EmployeeDeviceEnrollment.slice(0, 2).map((enrollment) => (
+                            <span
+                              key={enrollment.device.id}
+                              title={`Enrolled on ${new Date(enrollment.enrolledAt).toLocaleDateString()}`}
+                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wide border transition-all ${
+                                enrollment.device.isActive
+                                  ? 'bg-green-500/10 text-green-600 border-green-500/20'
+                                  : 'bg-slate-100 text-slate-500 border-slate-200'
+                              }`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${enrollment.device.isActive ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
+                              <span className="truncate max-w-[60px]">{enrollment.device.name}</span>
+                            </span>
+                          ))}
+                          {employee.EmployeeDeviceEnrollment.length > 2 && (
+                            <span
+                              title={employee.EmployeeDeviceEnrollment.slice(2)
+                                .map((e) => `${e.device.name} (${new Date(e.enrolledAt).toLocaleDateString()})`)
+                                .join('\n')}
+                              className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black bg-slate-100 text-slate-600 border border-slate-200 cursor-help hover:bg-slate-200 transition-colors"
+                            >
+                              +{employee.EmployeeDeviceEnrollment.length - 2}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-[10px] text-slate-300 font-bold tracking-tighter uppercase italic select-none">Not enrolled</span>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-4 max-w-[120px]">

@@ -309,11 +309,14 @@ export const syncZkData = async (): Promise<SyncZkDataResult> => {
             }
         });
 
-        // Process new logs into Attendance records.
-        if (totalNewLogs > 0) {
-            console.log(`[ZK] Processing ${totalNewLogs} total new logs across all devices...`);
-            await processAttendanceLogs();
-        }
+        // Always process attendance logs — even when no new device logs were imported this tick.
+        // If a previous tick imported logs but processAttendanceLogs() partially failed,
+        // those AttendanceLogs sit orphaned with no matching Attendance record until this
+        // function is called again. Removing the gate ensures every tick retries any unprocessed
+        // logs from within the rolling 48-hour scan window. processAttendanceLogs() is fully
+        // idempotent: duplicate creates are caught by the P2002 handler and skipped safely.
+        console.log(`[ZK] Processing attendance logs (${totalNewLogs} new this tick)...`);
+        await processAttendanceLogs();
 
         const activeDevicesCount = dbDevices.filter(d => d.syncEnabled).length;
         
