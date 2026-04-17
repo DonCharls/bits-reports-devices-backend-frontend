@@ -66,10 +66,19 @@ export function useEmployees({ statusFilter = 'ACTIVE' }: UseEmployeesProps = {}
   const filteredEmployees = useMemo(() => {
     return employees.filter((emp) => {
       const fullName = formatFullName(emp.firstName, emp.middleName, emp.lastName, emp.suffix).toLowerCase();
-      const searchStr = searchTerm.toLowerCase();
-      const matchesSearch = fullName.includes(searchStr) || (emp.contactNumber || '').toLowerCase().includes(searchStr);
-      const matchesDept = selectedDept === 'all' || emp.department === selectedDept || emp.Department?.name === selectedDept;
-      const matchesBranch = selectedBranch === 'all' || emp.branch === selectedBranch;
+      const searchStr = searchTerm.toLowerCase().trim();
+      const isNumericSearch = searchStr !== '' && !isNaN(Number(searchStr));
+
+      const matchesSearch =
+        !searchStr ||
+        fullName.includes(searchStr) ||
+        (emp.email || '').toLowerCase().includes(searchStr) ||
+        (emp.employeeNumber || '').toLowerCase().includes(searchStr) ||
+        // Only compare zkId if the query is purely numeric (it's an Int)
+        (isNumericSearch && emp.zkId === Number(searchStr));
+
+      const matchesDept = selectedDept === 'all' || emp.Department?.name === selectedDept;
+      const matchesBranch = selectedBranch === 'all' || emp.Branch?.name === selectedBranch;
       return matchesSearch && matchesDept && matchesBranch;
     });
   }, [employees, searchTerm, selectedDept, selectedBranch]);

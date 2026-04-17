@@ -30,11 +30,11 @@ export interface Employee {
   lastName: string
   email: string | null
   role: Role
-  department: string | null
   departmentId: number | null
   Department?: { name: string } | null
   position: string | null
-  branch: string | null
+  branchId: number | null
+  Branch?: { name: string } | null
   contactNumber: string | null
   hireDate: string | null
   employmentStatus: EmploymentStatus
@@ -52,7 +52,7 @@ export interface AttendanceRecord {
   notes: string | null
   createdAt: string
   updatedAt: string
-  employee?: Pick<Employee, 'id' | 'firstName' | 'lastName' | 'department' | 'branch'>
+  employee?: Pick<Employee, 'id' | 'firstName' | 'lastName' | 'departmentId' | 'Department' | 'branchId' | 'Branch'>
 }
 
 export interface User {

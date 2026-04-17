@@ -55,11 +55,9 @@ export const register = async (req: Request, res: Response): Promise<void> => {
                 password: hashedPassword,
                 role: role || 'USER',
                 zkId: zkId ? parseInt(zkId) : null,
-                department: department || null,
                 position: position || null,
                 contactNumber: contactNumber || null,
                 employeeNumber: employeeNumber || null,
-                branch: branch || null,
                 hireDate: hireDate ? new Date(hireDate) : null,
                 updatedAt: new Date(),
             }
@@ -74,9 +72,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
                 lastName: newUser.lastName,
                 email: newUser.email,
                 role: newUser.role,
-                department: newUser.department,
                 position: newUser.position,
-                branch: newUser.branch,
                 needsPasswordChange: newUser.needsPasswordChange
             }
         });
@@ -412,8 +408,10 @@ export const me = async (req: Request, res: Response): Promise<void> => {
                 email: true,
                 role: true,
                 contactNumber: true,
-                department: true,
-                branch: true,
+                departmentId: true,
+                Department: { select: { name: true } },
+                branchId: true,
+                Branch: { select: { name: true } },
                 position: true,
                 employmentStatus: true,
                 needsPasswordChange: true,

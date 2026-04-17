@@ -50,9 +50,16 @@ export function ReportsDashboard({ role = 'admin' }: { role?: 'admin' | 'hr' }) 
 
   // Apply UI filters
   const filteredData = reportData.filter((emp) => {
-    const matchesSearch = emp.name
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase());
+    const searchStr = searchTerm.toLowerCase().trim();
+    const isNumericSearch = searchStr !== '' && !isNaN(Number(searchStr));
+
+    const matchesSearch =
+      !searchStr ||
+      emp.name.toLowerCase().includes(searchStr) ||
+      (emp.employeeNumber || '').toLowerCase().includes(searchStr) ||
+      // Only compare zkId if the query is purely numeric (it's an Int)
+      (isNumericSearch && emp.zkId === Number(searchStr));
+
     const matchesDept =
       selectedDept === 'all' || emp.department === selectedDept;
     const matchesBranch =

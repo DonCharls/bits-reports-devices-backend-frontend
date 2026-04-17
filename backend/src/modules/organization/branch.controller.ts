@@ -120,13 +120,10 @@ export const deleteBranch = async (req: Request, res: Response) => {
             return res.status(404).json({ success: false, message: 'Branch not found' });
         }
 
-        // Check for active employees in this branch (check both string name and FK)
+        // Check for active employees in this branch (FK-based check only)
         const activeEmployeeCount = await prisma.employee.count({
             where: {
-                OR: [
-                    { branchId: id },
-                    { branch: existing.name }
-                ],
+                branchId: id,
                 employmentStatus: 'ACTIVE'
             }
         });

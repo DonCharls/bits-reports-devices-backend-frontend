@@ -1,4 +1,4 @@
-import React from 'react'
+﻿import React from 'react'
 import { UserCircle, KeyRound, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react'
 import { useEmployeeProfile } from '../hooks/useEmployeeProfile'
 
@@ -93,11 +93,11 @@ export function ProfileDashboard() {
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Department</p>
-                    <p className="font-medium text-slate-800 mt-1">{profile.department || '—'}</p>
+                    <p className="font-medium text-slate-800 mt-1">{(profile as any).Department?.name || '—'}</p>
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Branch</p>
-                    <p className="font-medium text-slate-800 mt-1">{profile.branch || '—'}</p>
+                    <p className="font-medium text-slate-800 mt-1">{(profile as any).Branch?.name || '—'}</p>
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contact Number</p>

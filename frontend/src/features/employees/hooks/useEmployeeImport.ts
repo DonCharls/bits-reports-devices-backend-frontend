@@ -156,8 +156,8 @@ export function useEmployeeImport({
         if (dateOfBirth && isNaN(Date.parse(dateOfBirth))) errors.push('Invalid date of birth');
         if (hireDate && isNaN(Date.parse(hireDate))) errors.push('Invalid hire date');
 
-        if (department && !deptNames.includes(department)) errors.push(`Invalid dept: ${department}`);
-        if (branch && !branchNames.includes(branch)) errors.push(`Invalid branch: ${branch}`);
+        if (department && !deptNames.some(d => d.toLowerCase() === department.toLowerCase())) errors.push(`Invalid dept: ${department}`);
+        if (branch && !branchNames.some(b => b.toLowerCase() === branch.toLowerCase())) errors.push(`Invalid branch: ${branch}`);
 
         let resolvedShiftId: number | null = null;
         if (shiftCode) {

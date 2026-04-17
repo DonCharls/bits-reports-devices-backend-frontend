@@ -3,7 +3,7 @@ export interface AttendanceFilters {
     endDate?: Date;
     employeeId?: number;
     status?: string;
-    branch?: string;
+    branchId?: number;
     departmentId?: number;
     departmentName?: string;
 }

@@ -57,7 +57,7 @@ export default function SettingsPage({ role }: SettingsPageProps) {
 
       {/* Cancel Confirmation Modal */}
       {s.showCancelModal && (
-        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-150 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-6 text-center space-y-4">
               <div>

@@ -19,16 +19,16 @@ const SUFFIX_OPTIONS = ['', 'Jr.', 'Sr.', 'II', 'III', 'IV', 'V'] as const;
 export function EmployeeAddModal({ departments, branches, shifts, onSave, isOpen, setIsOpen }: EmployeeAddModalProps) {
   const [newEmployee, setNewEmployee] = useState({
     employeeNumber: '', firstName: '', lastName: '', middleName: '', suffix: '',
-    contactNumber: '', department: '', branch: '', email: '', hireDate: '', shiftId: '', gender: '', dateOfBirth: ''
+    contactNumber: '', departmentId: '', branchId: '', email: '', hireDate: '', shiftId: '', gender: '', dateOfBirth: ''
   });
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});;
   const [isRegistering, setIsRegistering] = useState(false);
   const [emailChecking, setEmailChecking] = useState(false);
 
   const resetForm = () => {
     setNewEmployee({
       employeeNumber: '', firstName: '', lastName: '', middleName: '', suffix: '',
-      contactNumber: '', department: '', branch: '', email: '', hireDate: '', shiftId: '', gender: '', dateOfBirth: ''
+      contactNumber: '', departmentId: '', branchId: '', email: '', hireDate: '', shiftId: '', gender: '', dateOfBirth: ''
     });
     setFormErrors({});
   };
@@ -47,13 +47,18 @@ export function EmployeeAddModal({ departments, branches, shifts, onSave, isOpen
       errors.email = 'A valid email is required';
     }
     if (formErrors.email && formErrors.email.includes('already in use')) errors.email = formErrors.email;
-    if (!newEmployee.department) errors.department = 'Department is required';
-    if (!newEmployee.branch) errors.branch = 'Branch is required';
+    if (!newEmployee.departmentId) errors.departmentId = 'Department is required';
+    if (!newEmployee.branchId) errors.branchId = 'Branch is required';
     
     if (Object.keys(errors).length > 0) { setFormErrors(errors); return; }
     
     setIsRegistering(true);
-    const success = await onSave({ ...newEmployee, shiftId: newEmployee.shiftId ? parseInt(newEmployee.shiftId) : undefined });
+    const success = await onSave({
+      ...newEmployee,
+      departmentId: newEmployee.departmentId ? parseInt(newEmployee.departmentId) : undefined,
+      branchId: newEmployee.branchId ? parseInt(newEmployee.branchId) : undefined,
+      shiftId: newEmployee.shiftId ? parseInt(newEmployee.shiftId) : undefined
+    });
     if (success) {
       setIsOpen(false);
       resetForm();
@@ -103,8 +108,8 @@ export function EmployeeAddModal({ departments, branches, shifts, onSave, isOpen
             <div><label className="text-slate-400 text-[10px] uppercase font-bold">Contact Number *</label><input type="tel" placeholder="Contact" maxLength={13} className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.contactNumber ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.contactNumber} onChange={e => { setNewEmployee(p => ({ ...p, contactNumber: formatPhoneNumber(e.target.value) })); setFormErrors(p => ({ ...p, contactNumber: '' })) }} />{formErrors.contactNumber && <p className="text-[11px] text-red-500">{formErrors.contactNumber}</p>}</div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="text-slate-400 text-[10px] uppercase font-bold">Department *</label><select className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.department ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.department} onChange={e => { setNewEmployee(p => ({ ...p, department: e.target.value })); setFormErrors(p => ({ ...p, department: '' })) }}><option value="">Select Dept</option>{departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select>{formErrors.department && <p className="text-[11px] text-red-500">{formErrors.department}</p>}</div>
-            <div><label className="text-slate-400 text-[10px] uppercase font-bold">Branch *</label><select className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.branch ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.branch} onChange={e => { setNewEmployee(p => ({ ...p, branch: e.target.value })); setFormErrors(p => ({ ...p, branch: '' })) }}><option value="">Select Branch</option>{branches.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}</select>{formErrors.branch && <p className="text-[11px] text-red-500">{formErrors.branch}</p>}</div>
+            <div><label className="text-slate-400 text-[10px] uppercase font-bold">Department *</label><select className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.departmentId ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.departmentId} onChange={e => { setNewEmployee(p => ({ ...p, departmentId: e.target.value })); setFormErrors(p => ({ ...p, departmentId: '' })) }}><option value="">Select Dept</option>{departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select>{formErrors.departmentId && <p className="text-[11px] text-red-500">{formErrors.departmentId}</p>}</div>
+            <div><label className="text-slate-400 text-[10px] uppercase font-bold">Branch *</label><select className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.branchId ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.branchId} onChange={e => { setNewEmployee(p => ({ ...p, branchId: e.target.value })); setFormErrors(p => ({ ...p, branchId: '' })) }}><option value="">Select Branch</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select>{formErrors.branchId && <p className="text-[11px] text-red-500">{formErrors.branchId}</p>}</div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-slate-400 text-[10px] uppercase font-bold">Date Hired</label><input type="date" className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none" value={newEmployee.hireDate} onChange={e => setNewEmployee(p => ({ ...p, hireDate: e.target.value }))} /></div>

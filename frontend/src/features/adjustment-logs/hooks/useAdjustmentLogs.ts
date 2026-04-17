@@ -44,8 +44,8 @@ export function useAdjustmentLogs({ initialItemsPerPage = 15 }: UseAdjustmentLog
                 if (branches.length === 1) {
                     const branchSet = new Set<string>()
                     data.data.forEach((log: AuditLog) => {
-                        if (log.attendance?.employee?.branch) {
-                            branchSet.add(log.attendance.employee.branch)
+                        if (log.attendance?.employee?.Branch?.name) {
+                            branchSet.add(log.attendance.employee.Branch.name)
                         }
                     })
                     setBranches(prev => {
@@ -106,7 +106,7 @@ export function useAdjustmentLogs({ initialItemsPerPage = 15 }: UseAdjustmentLog
             const adjuster = first.adjustedBy
             const employeeName = emp ? `${emp.firstName}${ (emp as any).middleName ? ` ${ (emp as any).middleName[0]}.` : ''} ${emp.lastName}${ (emp as any).suffix ? ` ${ (emp as any).suffix}` : ''}` : 'Unknown'
             const adjusterName = adjuster ? `${adjuster.firstName} ${adjuster.lastName}` : 'System'
-            const branch = emp?.branch || '—'
+            const branch = emp?.Branch?.name || '—'
             const reason = group.logs.find(l => l.reason)?.reason || '—'
 
             return {

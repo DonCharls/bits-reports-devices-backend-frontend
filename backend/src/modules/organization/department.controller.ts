@@ -115,13 +115,10 @@ export const deleteDepartment = async (req: Request, res: Response) => {
             return res.status(404).json({ success: false, message: 'Department not found' });
         }
 
-        // Check for active employees in this department (check both string name and FK)
+        // Check for active employees in this department (FK-based check only)
         const activeEmployeeCount = await prisma.employee.count({
             where: {
-                OR: [
-                    { departmentId: id },
-                    { department: existing.name }
-                ],
+                departmentId: id,
                 employmentStatus: 'ACTIVE'
             }
         });

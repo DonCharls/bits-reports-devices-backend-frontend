@@ -46,7 +46,7 @@ export function useHRProfile() {
             role: emp.role || 'HR',
             email: emp.email || '',
             phone: emp.contactNumber || emp.phone || '',
-            branch: emp.branch || '',
+            branch: emp.Branch?.name || '',
             hireDate: emp.hireDate ? new Date(emp.hireDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '',
           })
         }

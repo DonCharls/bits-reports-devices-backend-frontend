@@ -87,9 +87,10 @@ export const useReportData = (startDate: string, endDate: string) => {
           lastName: string;
           middleName?: string;
           suffix?: string;
-          department?: string;
+          employeeNumber?: string | null;
+          zkId?: number | null;
           Department?: { name: string };
-          branch?: string;
+          Branch?: { name: string };
           employmentStatus: string;
           role: string;
           Shift?: {
@@ -127,8 +128,10 @@ export const useReportData = (startDate: string, endDate: string) => {
           rowMap.set(e.id, {
             id: e.id,
             name: `${e.firstName}${e.middleName ? ` ${e.middleName[0]}.` : ''} ${e.lastName}${e.suffix ? ` ${e.suffix}` : ''}`.trim(),
-            department: e.Department?.name || e.department || '—',
-            branch: e.branch || '—',
+            employeeNumber: e.employeeNumber ?? null,
+            zkId: e.zkId ?? null,
+            department: e.Department?.name || '—',
+            branch: e.Branch?.name || '—',
             totalDays,
             present: 0,
             late: 0,

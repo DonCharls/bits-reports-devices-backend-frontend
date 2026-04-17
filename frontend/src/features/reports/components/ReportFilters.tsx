@@ -117,7 +117,7 @@ export const ReportFilters: React.FC<ReportFiltersProps> = ({
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
             <input
-              placeholder="Search employees..."
+              placeholder="Search by name, employee no., or ZK ID..."
               className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
               value={searchTerm}
               onChange={(e) => {
