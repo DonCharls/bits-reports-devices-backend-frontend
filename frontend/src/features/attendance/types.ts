@@ -23,6 +23,7 @@ export interface AttendanceRecord {
   checkInDevice?: string | null;
   checkOutDevice?: string | null;
   checkoutSource?: string | null;
+  isEdited?: boolean;
 }
 
 export interface AttendanceStats {

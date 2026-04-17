@@ -171,6 +171,7 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
             checkInDevice: log.checkInDeviceName ?? null,
             checkOutDevice: log.checkOutDeviceName ?? null,
             checkoutSource: log.checkoutSource ?? null,
+            isEdited: log.isEdited ?? false,
           }
         })
 

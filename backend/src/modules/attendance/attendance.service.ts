@@ -666,6 +666,7 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
             checkOutDeviceName: record.checkOutDevice?.name || null,
             checkInTimePH: formatToPhilippineTime(record.checkInTime),
             checkOutTimePH: record.checkOutTime ? formatToPhilippineTime(record.checkOutTime) : null,
+            isEdited: !!(record.checkin_updated || record.checkout_updated),
             ...metrics,
         };
     });

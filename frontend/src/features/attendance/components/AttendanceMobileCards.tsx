@@ -48,7 +48,7 @@ export function AttendanceMobileCards({
               <p className="font-black text-slate-700 text-sm truncate uppercase tracking-tight">{row.employeeName}</p>
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{row.department} • {row.branchName}</p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
               <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${
                 row.displayStatus === 'present' ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
                 : row.displayStatus === 'IN_PROGRESS' ? 'text-blue-500 bg-blue-500/10 border-blue-500/20'
@@ -58,6 +58,11 @@ export function AttendanceMobileCards({
               }`}>
                 {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus === 'missing_checkout' ? 'Missing Checkout' : row.displayStatus}
               </span>
+              {row.isEdited && (
+                <span className="font-black text-[10px] uppercase px-2 py-0.5 rounded-full border whitespace-nowrap text-violet-600 bg-violet-50 border-violet-100">
+                  Edited
+                </span>
+              )}
               <button onClick={() => handleEditClick(row)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
                 <Edit2 size={14} />
               </button>

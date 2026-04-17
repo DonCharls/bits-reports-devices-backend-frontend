@@ -131,17 +131,24 @@ export function AttendanceDashboard() {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                        r.status.toLowerCase() === 'late' 
-                          ? 'bg-amber-100 text-amber-700' 
-                          : r.status.toLowerCase() === 'absent'
-                            ? 'bg-rose-100 text-rose-700'
-                            : r.status.toLowerCase() === 'in_progress'
-                              ? 'bg-blue-100 text-blue-700'
-                              : 'bg-emerald-100 text-emerald-700'
-                      }`}>
-                        {r.status === 'IN_PROGRESS' ? 'In Progress' : r.status}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                          r.status.toLowerCase() === 'late' 
+                            ? 'bg-amber-100 text-amber-700' 
+                            : r.status.toLowerCase() === 'absent'
+                              ? 'bg-rose-100 text-rose-700'
+                              : r.status.toLowerCase() === 'in_progress'
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {r.status === 'IN_PROGRESS' ? 'In Progress' : r.status}
+                        </span>
+                        {r.isEdited && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-violet-50 text-violet-600 border border-violet-100">
+                            Edited
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
