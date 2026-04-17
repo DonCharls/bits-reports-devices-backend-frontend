@@ -60,6 +60,7 @@ export const getAttendanceSummary = async (startDate: Date, endDate: Date) => {
     },
     include: {
       Department: { select: { name: true } },
+      Branch: { select: { name: true } },
       Shift: true,
     },
     orderBy: { zkId: 'asc' },
@@ -74,6 +75,7 @@ export const getAttendanceSummary = async (startDate: Date, endDate: Date) => {
       employee: {
         include: {
           Department: { select: { name: true } },
+          Branch: { select: { name: true } },
           Shift: true,
         },
       },
@@ -162,7 +164,7 @@ export const getAttendanceSummary = async (startDate: Date, endDate: Date) => {
       id: emp.id,
       name: `${emp.firstName} ${emp.lastName}`,
       department: emp.Department?.name || '-',
-      branch: emp.branch || '-',
+      branch: emp.Branch?.name || '-',
       totalDays: totalWorkingDays,
       present,
       leave: 0, // leave tracking not yet implemented

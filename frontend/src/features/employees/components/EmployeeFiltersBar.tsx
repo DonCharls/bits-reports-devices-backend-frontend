@@ -26,7 +26,7 @@ export function EmployeeFiltersBar({ filters, departments, branches }: EmployeeF
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search..."
+            placeholder="Search by name, email, employee no., or ZK ID..."
             className="pl-10 text-foreground"
             value={filters.searchTerm}
             onChange={e => filters.setSearchTerm(e.target.value)}

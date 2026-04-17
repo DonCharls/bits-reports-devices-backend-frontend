@@ -33,7 +33,7 @@ export default function RFIDCardEnrollmentModal({
   if (!isOpen || !employeeId) return null
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-0">
+    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 sm:p-0">
       <div
         className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300"
         onClick={onClose}
@@ -66,7 +66,7 @@ export default function RFIDCardEnrollmentModal({
             </div>
             <h4 className="text-xl font-black text-slate-800 mb-2">Delete Global Card?</h4>
             <p className="text-sm text-slate-500 mb-8 max-w-sm leading-relaxed">
-              This will permanently delete the RFID card from the database and queue a removal command for all online devices. <br/><span className="font-bold text-red-500">This action cannot be undone.</span>
+              This will permanently delete the RFID card from the database and queue a removal command for all online devices. <br /><span className="font-bold text-red-500">This action cannot be undone.</span>
             </p>
             <div className="flex gap-3 w-full max-w-xs">
               <button
@@ -99,11 +99,10 @@ export default function RFIDCardEnrollmentModal({
 
               {/* Sync Result */}
               {state.syncResult && (
-                <div className={`flex items-start gap-3 p-4 rounded-2xl border transition-all ${
-                  state.syncResult.success
-                    ? 'bg-green-50 text-green-800 border-green-200'
-                    : 'bg-red-50 text-red-800 border-red-200'
-                }`}>
+                <div className={`flex items-start gap-3 p-4 rounded-2xl border transition-all ${state.syncResult.success
+                  ? 'bg-green-50 text-green-800 border-green-200'
+                  : 'bg-red-50 text-red-800 border-red-200'
+                  }`}>
                   {state.syncResult.success ? (
                     <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
                   ) : (

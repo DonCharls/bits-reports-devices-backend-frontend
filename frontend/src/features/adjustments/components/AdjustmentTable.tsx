@@ -7,9 +7,9 @@ import { Adjustment } from '@/features/adjustments/types'
 import { formatTime, formatTimestamp, formatDate, empName } from '../hooks/useAdjustmentList'
 
 const statusConfig: Record<string, { label: string; bg: string; text: string; border: string; icon: any }> = {
-    pending:  { label: 'Pending',  bg: 'bg-yellow-50',  text: 'text-yellow-700',  border: 'border-yellow-200',  icon: Clock },
+    pending: { label: 'Pending', bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200', icon: Clock },
     approved: { label: 'Approved', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', icon: CheckCircle2 },
-    rejected: { label: 'Rejected', bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200',     icon: XCircle },
+    rejected: { label: 'Rejected', bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', icon: XCircle },
 }
 
 export interface AdjustmentTableProps {
@@ -70,7 +70,7 @@ export function AdjustmentTable({
                             <td className="px-4 py-3">
                                 <p className="font-bold text-slate-700 text-sm">{empName(adj.attendance?.employee)}</p>
                                 <p className="text-[10px] text-slate-400 font-medium">
-                                    {adj.attendance?.employee?.branch || '—'} • {adj.attendance?.employee?.Department?.name || '—'}
+                                    {adj.attendance?.employee?.branch?.name || '—'} • {adj.attendance?.employee?.Department?.name || '—'}
                                 </p>
                                 <p className="text-[10px] text-slate-400 font-medium mt-0.5">{formatDate(adj.attendance?.date)}</p>
                             </td>

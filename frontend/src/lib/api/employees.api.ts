@@ -19,9 +19,9 @@ export interface CreateEmployeePayload {
   email?: string
   employeeNumber?: string
   role?: Role
-  department?: string
+  departmentId?: number | null
   position?: string
-  branch?: string
+  branchId?: number | null
   contactNumber?: string
   hireDate?: string
   employmentStatus?: EmploymentStatus
@@ -34,7 +34,7 @@ export interface UpdateEmployeePayload {
   contactNumber?: string
   position?: string
   departmentId?: number | null
-  branch?: string
+  branchId?: number | null
   employmentStatus?: EmploymentStatus
 }
 

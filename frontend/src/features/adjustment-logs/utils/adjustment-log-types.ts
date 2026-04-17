@@ -9,7 +9,7 @@ export interface AuditLog {
     employee: {
       firstName: string;
       lastName: string;
-      branch: string | null;
+      Branch?: { name: string } | null;
       role: string;
     };
   };

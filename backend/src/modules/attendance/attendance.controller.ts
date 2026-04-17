@@ -79,7 +79,10 @@ export const getAttendance = async (req: Request, res: Response) => {
         }
         if (employeeId) filters.employeeId = parseInt(String(employeeId));
         if (status) filters.status = String(status);
-        if (branchName) filters.branch = String(branchName);
+        if (branchName) {
+            const branchRecord = await prisma.branch.findFirst({ where: { name: String(branchName) }, select: { id: true } });
+            if (branchRecord) filters.branchId = branchRecord.id;
+        }
         if (departmentId) filters.departmentId = parseInt(String(departmentId));
         if (departmentName) filters.departmentName = String(departmentName);
 
@@ -380,7 +383,10 @@ export const getAttendanceAuditLogs = async (req: Request, res: Response) => {
        // we must fetch valid attendance IDs that match the employee criteria.
        const attWhere: Prisma.AttendanceWhereInput = {};
        const employeeWhere: Prisma.EmployeeWhereInput = {};
-       if (branch) employeeWhere.branch = branch;
+       if (branch) {
+           const branchRecord = await prisma.branch.findFirst({ where: { name: branch }, select: { id: true } });
+           if (branchRecord) employeeWhere.branchId = branchRecord.id;
+       }
        if (search) {
            employeeWhere.OR = [
                 { firstName: { contains: search, mode: 'insensitive' } },
@@ -438,7 +444,7 @@ export const getAttendanceAuditLogs = async (req: Request, res: Response) => {
                 select: {
                     firstName: true,
                     lastName: true,
-                    branch: true,
+                    Branch: { select: { name: true } },
                     role: true
                 }
             }
@@ -532,7 +538,7 @@ export const getAdjustments = async (req: Request, res: Response) => {
           attendance: {
             include: {
               employee: {
-                select: { firstName: true, lastName: true, middleName: true, suffix: true, branch: true, Department: { select: { name: true } } }
+                select: { firstName: true, lastName: true, middleName: true, suffix: true, Branch: { select: { name: true } }, Department: { select: { name: true } } }
               }
             }
           },

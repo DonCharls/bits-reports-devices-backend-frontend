@@ -12,7 +12,7 @@ export function ShiftDeleteModal({ deleteTarget, deleteLoading, onCancel, onDele
   if (!deleteTarget) return null
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
+    <div className="fixed inset-0 z-150 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
         <div className="p-6 text-center space-y-4">
           <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto">

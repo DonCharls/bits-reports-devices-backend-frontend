@@ -41,7 +41,7 @@ export function CardEnrollmentForm({
           <button
             onClick={onGlobalEnroll}
             disabled={!cardInput || activeActions['globalEnroll']}
-            className="px-6 py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-colors shadow-lg flex-shrink-0 flex items-center justify-center min-w-[100px]"
+            className="px-6 py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-colors shadow-lg shrink-0 flex items-center justify-center min-w-[100px]"
           >
             {activeActions['globalEnroll'] ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Enroll'}
           </button>
@@ -50,9 +50,9 @@ export function CardEnrollmentForm({
 
       {/* Pre-enrollment target specific list */}
       <div className="bg-white rounded-2xl border shadow-sm p-4">
-         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Target Devices</h4>
-         <p className="text-[10px] text-slate-400 mb-3 px-1">Enrolling the card will push to the following active devices instantly:</p>
-         <div className="space-y-1.5">
+        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Target Devices</h4>
+        <p className="text-[10px] text-slate-400 mb-3 px-1">Enrolling the card will push to the following active devices instantly:</p>
+        <div className="space-y-1.5">
           {devices.length === 0 ? (
             <p className="text-center text-sm text-slate-500 py-4">No active devices found.</p>
           ) : (
@@ -74,7 +74,7 @@ export function CardEnrollmentForm({
               </div>
             ))
           )}
-         </div>
+        </div>
       </div>
     </div>
   )

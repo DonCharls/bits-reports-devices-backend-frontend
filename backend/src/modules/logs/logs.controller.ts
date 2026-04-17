@@ -109,7 +109,7 @@ export const getLogs = async (req: Request, res: Response) => {
                             id: true,
                             firstName: true,
                             lastName: true,
-                            department: true,
+                            Department: { select: { name: true } },
                             role: true,
                         }
                     }
