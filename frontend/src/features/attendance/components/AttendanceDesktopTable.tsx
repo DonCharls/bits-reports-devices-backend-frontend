@@ -194,12 +194,16 @@ export function AttendanceDesktopTable({
                     : row.displayStatus === 'late'        ? 'text-yellow-600 bg-yellow-50 border-yellow-100'
                     : row.displayStatus === 'missing_checkout' ? 'text-amber-700 bg-amber-50 border-amber-200'
                     : row.displayStatus === 'incomplete'  ? 'text-amber-600 bg-amber-50 border-amber-100'
+                    : row.displayStatus === 'pending'     ? 'text-slate-600 bg-slate-100 border-slate-200'
                     : 'text-red-600 bg-red-50 border-red-100'
                   }`}>
-                    {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus === 'missing_checkout' ? 'Missing Checkout' : row.displayStatus}
+                    {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus === 'missing_checkout' ? 'Missing Checkout' : row.displayStatus === 'pending' ? 'Pending Request' : row.displayStatus}
                   </span>
                   {row.isEdited && (
-                    <span className="font-black text-[10px] uppercase px-2 py-0.5 rounded-full border whitespace-nowrap text-violet-600 bg-violet-50 border-violet-100">
+                    <span 
+                      title={row.notes || 'Manually adjusted'}
+                      className="font-black text-[10px] uppercase px-2 py-0.5 rounded-full border whitespace-nowrap text-violet-600 bg-violet-50 border-violet-100 cursor-help"
+                    >
                       Edited
                     </span>
                   )}

@@ -144,7 +144,10 @@ export function AttendanceDashboard() {
                           {r.status === 'IN_PROGRESS' ? 'In Progress' : r.status}
                         </span>
                         {r.isEdited && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-violet-50 text-violet-600 border border-violet-100">
+                          <span 
+                            title={r.notes || 'Manually adjusted'}
+                            className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-violet-50 text-violet-600 border border-violet-100 cursor-help"
+                          >
                             Edited
                           </span>
                         )}

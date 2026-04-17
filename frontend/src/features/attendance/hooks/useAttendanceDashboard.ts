@@ -140,20 +140,23 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
 
         const mapped: AttendanceRecord[] = userRecords.map((log: any) => {
           const emp = log.employee || {}
+          const isPending = log.status === 'pending'
           const checkIn = new Date(log.checkInTime)
           const checkOut = log.checkOutTime ? new Date(log.checkOutTime) : null
-          const totalHours: number = log.totalHours ?? (checkOut ? (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60) : 0)
-          const lateMinutes: number = log.lateMinutes ?? 0
-          const overtimeMinutes: number = log.overtimeMinutes ?? 0
-          const undertimeMinutes: number = log.undertimeMinutes ?? 0
+          const totalHours: number = isPending ? 0 : (log.totalHours ?? (checkOut ? (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60) : 0))
+          const lateMinutes: number = isPending ? 0 : (log.lateMinutes ?? 0)
+          const overtimeMinutes: number = isPending ? 0 : (log.overtimeMinutes ?? 0)
+          const undertimeMinutes: number = isPending ? 0 : (log.undertimeMinutes ?? 0)
           const shiftCode: string | null = log.shiftCode ?? emp.Shift?.shiftCode ?? null
-          const isAnomaly: boolean = log.isAnomaly ?? false
-          const isEarlyOut: boolean = log.isEarlyOut ?? false
-          const isShiftActive: boolean = log.isShiftActive ?? false
+          const isAnomaly: boolean = isPending ? false : (log.isAnomaly ?? false)
+          const isEarlyOut: boolean = isPending ? false : (log.isEarlyOut ?? false)
+          const isShiftActive: boolean = isPending ? false : (log.isShiftActive ?? false)
           const gracePeriodApplied: boolean = log.gracePeriodApplied ?? false
-          const status = isEarlyOut ? 'early-out' : isAnomaly ? 'anomaly' : lateMinutes > 0 ? 'late' : undertimeMinutes > 0 ? 'undertime' : (log.status || 'present')
+          const computedStatus = isEarlyOut ? 'early-out' : isAnomaly ? 'anomaly' : lateMinutes > 0 ? 'late' : undertimeMinutes > 0 ? 'undertime' : (log.status || 'present')
           const hasMissingCheckout = log.checkOutTime === null && log.status === 'incomplete';
-          const displayStatus = isShiftActive ? 'IN_PROGRESS' : hasMissingCheckout ? 'missing_checkout' : status
+          
+          let displayStatus = isShiftActive ? 'IN_PROGRESS' : hasMissingCheckout ? 'missing_checkout' : computedStatus
+          if (isPending) displayStatus = 'pending'
 
           return {
             id: log.id,
@@ -162,9 +165,10 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
             department: emp.Department?.name || 'General',
             branchName: emp.Branch?.name || '—',
             date: new Date(log.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }),
-            checkIn: checkIn.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true }),
-            checkOut: checkOut ? checkOut.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true }) : '—',
-            status, displayStatus, lateMinutes, totalHours, overtimeMinutes, undertimeMinutes, shiftCode,
+            checkIn: isPending ? '—' : checkIn.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true }),
+            checkOut: isPending ? '—' : (checkOut ? checkOut.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'),
+            status: isPending ? 'pending' : computedStatus, 
+            displayStatus, lateMinutes, totalHours, overtimeMinutes, undertimeMinutes, shiftCode,
             isNightShift: emp.Shift?.isNightShift ?? false,
             isAnomaly, isEarlyOut, isShiftActive, gracePeriodApplied,
             notes: log.notes || null,
@@ -258,18 +262,74 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
 
   const handleApplyChanges = useCallback(async () => {
     if (!editingLog) return
-    if (String(editingLog.id).startsWith('absent-')) {
-      showToast('error', 'Cannot Edit', 'Cannot edit an absent record — the employee has no clock-in/out entry for this day.')
+
+    // ── Time Validation ──────────────────────────────────────────────────
+    const MAX_SHIFT_HOURS = 16
+
+    // Determine the effective check-in and check-out for validation
+    const effectiveCheckIn = editCheckIn || null
+    const effectiveCheckOut = editCheckOut || null
+
+    // Can't clear check-in (check-in is always required)
+    if (!effectiveCheckIn) {
+      showToast('error', 'Invalid Time', 'Check-in time is required.')
       return
     }
+
+    // Can't set check-out without a check-in
+    if (effectiveCheckOut && !effectiveCheckIn) {
+      showToast('error', 'Invalid Time', 'Cannot set a check-out time without a check-in time.')
+      return
+    }
+
+    // Build full Date objects for comparison using the record's date
+    const checkInDate = new Date(`${editingLog.date}T${effectiveCheckIn}:00+08:00`)
+
+    // Check-in can't be in the future
+    const nowPHT = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }))
+    if (checkInDate > nowPHT) {
+      showToast('error', 'Invalid Time', 'Check-in time cannot be in the future.')
+      return
+    }
+
+    if (effectiveCheckOut) {
+      const checkOutDate = new Date(`${editingLog.date}T${effectiveCheckOut}:00+08:00`)
+
+      // Check-out must be after check-in
+      if (checkOutDate <= checkInDate) {
+        showToast('error', 'Invalid Time', 'Check-out time must be later than check-in time.')
+        return
+      }
+
+      // Maximum shift hours validation
+      const diffHours = (checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60)
+      if (diffHours > MAX_SHIFT_HOURS) {
+        showToast('error', 'Invalid Time', `Total work hours cannot exceed ${MAX_SHIFT_HOURS} hours. Currently: ${diffHours.toFixed(1)} hours.`)
+        return
+      }
+    }
+
     setActionLoading(true)
     try {
-      const body: any = { reason: editReason }
+      const isAbsentRecord = String(editingLog.id).startsWith('absent-')
+      
+      const body: any = { 
+        reason: editReason,
+      }
+      
+      if (isAbsentRecord) {
+        body.employeeId = editingLog.employeeId
+        body.date = editingLog.date
+      }
+      
       if (editCheckIn) body.checkInTime = `${editingLog.date}T${editCheckIn}:00+08:00`
       if (editCheckOut) body.checkOutTime = `${editingLog.date}T${editCheckOut}:00+08:00`
 
-      const res = await fetch(`/api/attendance/${editingLog.id}`, {
-        method: 'PUT',
+      const endpoint = isAbsentRecord ? '/api/attendance/manual' : `/api/attendance/${editingLog.id}`
+      const method = isAbsentRecord ? 'POST' : 'PUT'
+
+      const res = await fetch(endpoint, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(body),

@@ -363,7 +363,10 @@ export function AdminDetailView({
                                                     </span>
                                                 )}
                                                 {record && (record.checkin_updated || record.checkout_updated) && (
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-violet-50 text-violet-600 border border-violet-100 w-fit">
+                                                    <span 
+                                                        title={record.notes || 'Manually adjusted'}
+                                                        className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-violet-50 text-violet-600 border border-violet-100 w-fit cursor-help"
+                                                    >
                                                         Edited
                                                     </span>
                                                 )}

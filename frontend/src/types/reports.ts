@@ -17,6 +17,7 @@ export type AttendanceRecord = {
   checkInTime: string;
   checkOutTime: string | null;
   status: string;
+  notes?: string | null;
   totalHours?: number;
   lateMinutes?: number;
   overtimeMinutes?: number;

@@ -181,6 +181,166 @@ export const getEmployeeHistory = async (req: Request, res: Response) => {
 };
 
 /**
+ * POST /api/attendance/manual
+ * Creates a brand new attendance record for an absent day.
+ * If Admin: creates immediately.
+ * If HR: creates a 'pending' record and submits an adjustment request.
+ */
+export const createManualAttendance = async (req: Request, res: Response) => {
+    try {
+        const { employeeId, date, checkInTime, checkOutTime, reason } = req.body;
+        const adjustedById = req.user?.employeeId;
+        const userRole = req.user?.role;
+
+        if (!adjustedById || !employeeId || !date || !checkInTime) {
+            return res.status(400).json({ success: false, message: 'Missing required fields: employeeId, date, checkInTime' });
+        }
+
+        if (!reason || !String(reason).trim()) {
+            return res.status(400).json({ success: false, message: 'Reason is required.' });
+        }
+
+        // Time Validation
+        const effectiveCheckIn = new Date(checkInTime);
+        const effectiveCheckOut = checkOutTime ? new Date(checkOutTime) : null;
+        const now = new Date();
+
+        if (effectiveCheckIn > now) {
+            return res.status(400).json({ success: false, message: 'Check-in time cannot be in the future.' });
+        }
+
+        if (effectiveCheckOut) {
+            if (effectiveCheckOut <= effectiveCheckIn) {
+                return res.status(400).json({ success: false, message: 'Check-out time must be later than check-in time.' });
+            }
+            const diffHours = (effectiveCheckOut.getTime() - effectiveCheckIn.getTime()) / (1000 * 60 * 60);
+            if (diffHours > 16) {
+                return res.status(400).json({ success: false, message: `Total work hours cannot exceed 16 hours. Currently: ${diffHours.toFixed(1)} hours.` });
+            }
+        }
+
+        // Check if an attendance record already exists for this date to prevent duplicates
+        const recordDate = new Date(date);
+        const existingRecord = await prisma.attendance.findFirst({
+            where: { employeeId: Number(employeeId), date: recordDate }
+        });
+
+        if (existingRecord) {
+             return res.status(400).json({ success: false, message: `An attendance record already exists for this date. (ID: ${existingRecord.id})` });
+        }
+
+        const employee = await prisma.employee.findUnique({
+             where: { id: Number(employeeId) },
+             include: { Shift: true }
+        });
+
+        if (!employee) {
+             return res.status(404).json({ success: false, message: 'Employee not found' });
+        }
+
+        // If HR User: Create a 'pending' dummy record + Adjustment Request
+        if (userRole === 'HR') {
+             const newRecord = await prisma.attendance.create({
+                 data: {
+                     employeeId: Number(employeeId),
+                     date: recordDate,
+                     checkInTime: effectiveCheckIn,
+                     checkOutTime: effectiveCheckOut,
+                     status: 'pending',
+                     notes: `[Pending] Manual creation requested by HR. | Manual Edit: ${String(reason).trim()}`,
+                     checkoutSource: effectiveCheckOut ? 'manual' : null
+                 }
+             });
+
+             const adjustment = await prisma.attendanceAdjustment.create({
+                 data: {
+                     attendanceId: newRecord.id,
+                     submittedById: adjustedById,
+                     originalCheckIn: null,
+                     originalCheckOut: null,
+                     requestedCheckIn: effectiveCheckIn,
+                     requestedCheckOut: effectiveCheckOut,
+                     reason: String(reason).trim(),
+                     status: 'pending',
+                 }
+             });
+
+             res.json({
+                 success: true,
+                 message: 'Adjustment submitted for admin approval.',
+                 data: adjustment,
+                 pending: true,
+             });
+
+             void audit({
+                 action: 'ADJUSTMENT_SUBMIT',
+                 entityType: 'Attendance',
+                 entityId: newRecord.id,
+                 performedBy: adjustedById,
+                 source: 'admin-panel',
+                 details: `HR submitted manual attendance request for ${employee.firstName} ${employee.lastName}`,
+                 metadata: { adjustmentId: adjustment.id, reason: String(reason).trim() },
+                 correlationId: req.correlationId
+             });
+             return;
+        }
+
+        // If Admin: Calculate actual status and create the finalized record
+        let calculatedStatus = 'present';
+        const shift = employee.Shift;
+        if (shift) {
+            const [startH, startM] = shift.startTime.split(':').map(Number);
+            const grace = shift.graceMinutes || 0;
+            const checkInPHT = new Date(effectiveCheckIn.getTime() + 8 * 60 * 60 * 1000);
+            const checkInMinutes = checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes();
+            const shiftStartMinutes = startH * 60 + startM + grace;
+            
+            calculatedStatus = checkInMinutes <= shiftStartMinutes ? 'present' : 'late';
+            if (!effectiveCheckOut) calculatedStatus = 'incomplete';
+        } else if (!effectiveCheckOut) {
+            calculatedStatus = 'incomplete';
+        }
+
+        const adminRecord = await prisma.attendance.create({
+            data: {
+                employeeId: Number(employeeId),
+                date: recordDate,
+                checkInTime: effectiveCheckIn,
+                checkOutTime: effectiveCheckOut,
+                checkin_updated: new Date(),
+                checkout_updated: effectiveCheckOut ? new Date() : null,
+                status: calculatedStatus,
+                notes: `Manual Edit: ${String(reason).trim()}`,
+                checkoutSource: effectiveCheckOut ? 'manual' : null
+            }
+        });
+
+        attendanceEmitter.emit('new-record', { type: 'update', record: adminRecord });
+
+        void audit({
+            action: 'ATTENDANCE_OVERRIDE',
+            entityType: 'Attendance',
+            entityId: adminRecord.id,
+            performedBy: adjustedById,
+            source: 'admin-panel',
+            level: 'WARN',
+            details: `Admin manually created missing attendance record for ${employee.firstName} ${employee.lastName}`,
+            metadata: { reason },
+            correlationId: req.correlationId
+        });
+
+        res.json({
+            success: true,
+            message: 'Manual attendance record created successfully.',
+            data: adminRecord,
+        });
+    } catch (error: unknown) {
+        console.error('Create Manual Attendance Failed:', error);
+        res.status(500).json({ success: false, message: 'An unexpected error occurred.' });
+    }
+};
+
+/**
  * Manually update an attendance record (HR correction)
  * Body: { checkInTime?, checkOutTime?, status?, reason? }
  * Creates AuditLog entries for each changed field.
@@ -217,6 +377,34 @@ export const updateAttendance = async (req: Request, res: Response) => {
         if (!existing) {
             res.status(404).json({ success: false, message: 'Attendance record not found' });
             return;
+        }
+
+        // ── Time Validation ──────────────────────────────────────────────────
+        const effectiveCheckIn = checkInTime ? new Date(checkInTime) : existing.checkInTime;
+        const effectiveCheckOut = checkOutTime !== undefined ? (checkOutTime ? new Date(checkOutTime) : null) : existing.checkOutTime;
+
+        if (!effectiveCheckIn) {
+            res.status(400).json({ success: false, message: 'Check-in time is required.' });
+            return;
+        }
+
+        const now = new Date();
+        if (effectiveCheckIn > now) {
+            res.status(400).json({ success: false, message: 'Check-in time cannot be in the future.' });
+            return;
+        }
+
+        if (effectiveCheckOut) {
+            if (effectiveCheckOut <= effectiveCheckIn) {
+                res.status(400).json({ success: false, message: 'Check-out time must be later than check-in time.' });
+                return;
+            }
+
+            const diffHours = (effectiveCheckOut.getTime() - effectiveCheckIn.getTime()) / (1000 * 60 * 60);
+            if (diffHours > 16) {
+                res.status(400).json({ success: false, message: `Total work hours cannot exceed 16 hours. Currently: ${diffHours.toFixed(1)} hours.` });
+                return;
+            }
         }
 
         // ── HR users: create a pending adjustment (do NOT apply immediately) ──
@@ -313,9 +501,13 @@ export const updateAttendance = async (req: Request, res: Response) => {
 
 
         // Clear missing-checkout flag if a checkout time is being set
-        if (updateData.checkOutTime && existing.notes?.includes('No checkout recorded')) {
-            updateData.notes = existing.notes.replace(/\s*\|?\s*No checkout recorded.*$/i, '') || null;
+        let currentNotes = existing.notes || '';
+        if (updateData.checkOutTime && currentNotes.includes('No checkout recorded')) {
+            currentNotes = currentNotes.replace(/\s*\|?\s*No checkout recorded.*$/i, '');
         }
+        
+        currentNotes = currentNotes.replace(/\s*\|?\s*Manual Edit:.*$/i, ''); // Clean old manual edit notes
+        updateData.notes = currentNotes ? `${currentNotes.trim()} | Manual Edit: ${reason}` : `Manual Edit: ${reason}`;
 
         const updated = await prisma.attendance.update({
             where: { id: recordId },
@@ -674,9 +866,14 @@ export const reviewAdjustment = async (req: Request, res: Response) => {
     }
 
     // Clear missing-checkout flag if a checkout is being set
-    if (updateData.checkOutTime && existing.notes?.includes('No checkout recorded')) {
-      updateData.notes = existing.notes.replace(/\s*\|?\s*No checkout recorded.*$/i, '') || null;
+    let currentNotes = existing.notes || '';
+    if (updateData.checkOutTime && currentNotes.includes('No checkout recorded')) {
+      currentNotes = currentNotes.replace(/\s*\|?\s*No checkout recorded.*$/i, '');
     }
+
+    currentNotes = currentNotes.replace(/\s*\|?\s*\[Pending\] Manual creation requested by HR.*$/i, ''); // Clean pending note
+    currentNotes = currentNotes.replace(/\s*\|?\s*Manual Edit:.*$/i, ''); // Clean old manual edit notes
+    updateData.notes = currentNotes ? `${currentNotes.trim()} | Manual Edit: ${adjustment.reason}` : `Manual Edit: ${adjustment.reason}`;
 
     // Apply to attendance record
     const updated = await prisma.attendance.update({
