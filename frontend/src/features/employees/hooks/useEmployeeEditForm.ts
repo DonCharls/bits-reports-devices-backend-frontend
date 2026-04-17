@@ -52,9 +52,9 @@ export function useEmployeeEditForm({ editForm, onSave }: UseEmployeeEditFormOpt
       if (!emailPattern.test(editForm.email.trim())) errors.email = 'A valid email is required'
     }
 
-    // Department / Branch
-    if (!editForm.department) errors.department = 'Department is required'
-    if (!editForm.branch) errors.branch = 'Branch is required'
+    // Department / Branch — validate by ID now
+    if (!editForm.departmentId) errors.departmentId = 'Department is required'
+    if (!editForm.branchId) errors.branchId = 'Branch is required'
 
     setFormErrors(errors)
     return Object.keys(errors).length === 0

@@ -55,7 +55,7 @@ export function LiveActivityFeed({ role, activity, activityScrollRef }: LiveActi
                     <div className="divide-y divide-slate-50">
                         {activity.map(a => (
                             <div key={a.id} className="flex items-center gap-3 px-3 lg:px-4 py-2.5 hover:bg-slate-50/70 transition-colors">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${a.eventType === 'check-in' ? 'bg-gradient-to-br from-emerald-400 to-emerald-600' : 'bg-gradient-to-br from-slate-300 to-slate-500'}`}>
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${a.eventType === 'check-in' ? 'bg-linear-to-br from-emerald-400 to-emerald-600' : 'bg-linear-to-br from-slate-300 to-slate-500'}`}>
                                     <span className="text-white text-[10px] font-black">{getInitials(a.employee)}</span>
                                 </div>
                                 <div className="flex-1 min-w-0">

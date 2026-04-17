@@ -89,8 +89,8 @@ export function EmployeeTable({
                     </div>
                   </td>
                   <td className="px-6 py-4 max-w-[120px]">
-                    <span className="text-xs font-medium text-slate-500 block truncate" title={employee.Department?.name || employee.department || undefined}>
-                      {employee.Department?.name || employee.department || '—'}
+                    <span className="text-xs font-medium text-slate-500 block truncate" title={employee.Department?.name || undefined}>
+                      {employee.Department?.name || '—'}
                     </span>
                   </td>
                   <td className="px-6 py-4">
@@ -101,7 +101,7 @@ export function EmployeeTable({
                       </div>
                     ) : (<span className="text-[10px] text-slate-300 font-bold">Unassigned</span>)}
                   </td>
-                  <td className="px-6 py-4"><span className="text-xs font-medium text-slate-500">{employee.branch || '—'}</span></td>
+                  <td className="px-6 py-4"><span className="text-xs font-medium text-slate-500">{employee.Branch?.name || '—'}</span></td>
                   <td className="px-6 py-4"><span className="text-xs font-medium text-slate-500">{employee.contactNumber ? formatPhoneNumber(employee.contactNumber) : '—'}</span></td>
                   <td className="px-6 py-4"><span className="text-xs font-medium text-slate-500">{employee.hireDate ? new Date(employee.hireDate).toLocaleDateString('en-CA') : '—'}</span></td>
                   <td className="px-6 py-4">

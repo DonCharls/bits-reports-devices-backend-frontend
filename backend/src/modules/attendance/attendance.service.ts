@@ -44,9 +44,8 @@ interface AttendanceFilters {
     endDate?: Date;
     employeeId?: number;
     status?: string;
-    branch?: string;           // filter by employee.branch (string)
+    branchId?: number;        // filter by employee.branchId (FK)
     departmentId?: number;    // filter by employee.departmentId (FK)
-    departmentName?: string;  // filter by employee.department (string, fallback)
 }
 
 /**
@@ -116,9 +115,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                                     id: true,
                                     firstName: true,
                                     lastName: true,
-                                    department: true,
                                     Department: { select: { name: true } },
-                                    branch: true,
+                                    Branch: { select: { name: true } },
                                     Shift: true,
                                 }
                             },
@@ -191,9 +189,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                                         id: true,
                                         firstName: true,
                                         lastName: true,
-                                        department: true,
                                         Department: { select: { name: true } },
-                                        branch: true,
+                                        Branch: { select: { name: true } },
                                         Shift: true,
                                     }
                                 },
@@ -242,9 +239,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                                     id: true,
                                     firstName: true,
                                     lastName: true,
-                                    department: true,
                                     Department: { select: { name: true } },
-                                    branch: true,
+                                    Branch: { select: { name: true } },
                                     Shift: true,
                                 }
                             },
@@ -531,18 +527,14 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
     }
 
     // Branch / department filters — applied via nested employee relation
-    // Use OR for department: filter by FK (if set) OR string field (legacy)
     const empConditions: Prisma.EmployeeWhereInput = {}
-    if (filters.branch) empConditions.branch = filters.branch
+    if (filters.branchId) empConditions.branchId = filters.branchId
 
-    if (filters.departmentId || filters.departmentName) {
-        const deptOr: Prisma.EmployeeWhereInput[] = []
-        if (filters.departmentId) deptOr.push({ departmentId: filters.departmentId })
-        if (filters.departmentName) deptOr.push({ department: { equals: filters.departmentName, mode: 'insensitive' } })
-        if (Object.keys(empConditions).length > 0 || deptOr.length > 0) {
-            where.employee = deptOr.length === 1
-                ? { ...empConditions, ...deptOr[0] }
-                : { ...empConditions, OR: deptOr }
+    if (filters.departmentId) {
+        if (Object.keys(empConditions).length > 0) {
+            where.employee = { ...empConditions, departmentId: filters.departmentId }
+        } else {
+            where.employee = { departmentId: filters.departmentId }
         }
     } else if (Object.keys(empConditions).length > 0) {
         where.employee = empConditions

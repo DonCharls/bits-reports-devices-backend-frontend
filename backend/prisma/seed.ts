@@ -124,8 +124,7 @@ async function main() {
                 finalZkId = Math.max((max?.zkId || 1) + 1, 2)
             }
 
-            // Look up the branch and department IDs so we can set both the
-            // FK relation AND the legacy string field at the same time.
+            // Look up the branch and department IDs for the FK relations.
             const branchRow = await prisma.branch.findUnique({ where: { name: u.branch } })
             const deptRow   = await prisma.department.findUnique({ where: { name: u.department } })
 
@@ -136,10 +135,8 @@ async function main() {
                     email: u.email,
                     password: passwordHash,
                     role: u.role,
-                    department: u.department,
                     departmentId: deptRow?.id ?? null,
                     position: u.position,
-                    branch: u.branch,
                     branchId: branchRow?.id ?? null,
                     shiftId: null,
                     contactNumber: u.contactNumber,

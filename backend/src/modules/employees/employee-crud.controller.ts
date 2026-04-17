@@ -27,11 +27,11 @@ export const getAllEmployees = async (req: Request, res: Response) => {
                 dateOfBirth: true,
                 email: true,
                 role: true,
-                department: true,
                 departmentId: true,
                 Department: { select: { name: true } },
+                branchId: true,
+                Branch: { select: { name: true } },
                 position: true,
-                branch: true,
                 contactNumber: true,
                 hireDate: true,
                 employmentStatus: true,
@@ -237,9 +237,9 @@ export const createEmployee = async (req: Request, res: Response) => {
             dateOfBirth,
             email,
             role,
-            department,
+            departmentId,
             position,
-            branch,
+            branchId,
             contactNumber,
             hireDate,
             employmentStatus,
@@ -341,9 +341,9 @@ export const createEmployee = async (req: Request, res: Response) => {
                     email,
                     password: hashedPassword,
                     role: role || 'USER',
-                    department,
+                    departmentId: departmentId ? parseInt(departmentId, 10) : null,
                     position,
-                    branch,
+                    branchId: branchId ? parseInt(branchId, 10) : null,
                     contactNumber,
                     hireDate: hireDate ? new Date(hireDate) : undefined,
                     employmentStatus: employmentStatus || 'ACTIVE',
@@ -364,9 +364,11 @@ export const createEmployee = async (req: Request, res: Response) => {
                     dateOfBirth: true,
                     email: true,
                     role: true,
-                    department: true,
+                    departmentId: true,
+                    Department: { select: { name: true } },
                     position: true,
-                    branch: true,
+                    branchId: true,
+                    Branch: { select: { name: true } },
                     contactNumber: true,
                     hireDate: true,
                     employmentStatus: true,
@@ -394,7 +396,7 @@ export const createEmployee = async (req: Request, res: Response) => {
             entityId: newEmployee.id,
             performedBy: req.user?.employeeId,
             details: `Created employee ${newEmployee.firstName} ${newEmployee.lastName}`,
-            metadata: { email, role: newEmployee.role, department, employeeNumber },
+            metadata: { email, role: newEmployee.role, departmentId, employeeNumber },
             correlationId: req.correlationId
         });
 
@@ -480,9 +482,8 @@ export const updateEmployee = async (req: Request, res: Response) => {
             email,
             contactNumber,
             position,
-            department,
             departmentId,
-            branch,
+            branchId,
             hireDate,
             shiftId,
             employmentStatus
@@ -545,11 +546,12 @@ export const updateEmployee = async (req: Request, res: Response) => {
         if (email !== undefined) updateData.email = email === '' ? null : email;
         if (contactNumber !== undefined) updateData.contactNumber = contactNumber;
         if (position !== undefined) updateData.position = position;
-        if (department !== undefined) updateData.department = department || null;
         if (departmentId !== undefined) {
             updateData.departmentId = departmentId ? parseInt(departmentId, 10) : null;
         }
-        if (branch !== undefined) updateData.branch = branch || null;
+        if (branchId !== undefined) {
+            updateData.branchId = branchId ? parseInt(branchId, 10) : null;
+        }
         if (hireDate !== undefined) updateData.hireDate = hireDate ? new Date(hireDate) : null;
         if (shiftId !== undefined) updateData.shiftId = shiftId ? parseInt(shiftId, 10) : null;
         if (employmentStatus !== undefined && ['ACTIVE', 'INACTIVE', 'TERMINATED'].includes(employmentStatus)) {
@@ -574,11 +576,11 @@ export const updateEmployee = async (req: Request, res: Response) => {
                 dateOfBirth: true,
                 email: true,
                 role: true,
-                department: true,
-                Department: { select: { name: true } },
                 departmentId: true,
+                Department: { select: { name: true } },
                 position: true,
-                branch: true,
+                branchId: true,
+                Branch: { select: { name: true } },
                 contactNumber: true,
                 hireDate: true,
                 employmentStatus: true,

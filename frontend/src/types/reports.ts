@@ -30,9 +30,10 @@ export type AttendanceRecord = {
     id: number;
     firstName: string;
     lastName: string;
-    department: string | null;
+    departmentId: number | null;
     Department?: { name: string } | null;
-    branch: string | null;
+    branchId: number | null;
+    Branch?: { name: string } | null;
     Shift?: EmployeeShift | null;
   };
 };
@@ -40,6 +41,8 @@ export type AttendanceRecord = {
 export type ReportRow = {
   id: number;
   name: string;
+  employeeNumber: string | null;
+  zkId: number | null;
   department: string;
   branch: string;
   totalDays: number;

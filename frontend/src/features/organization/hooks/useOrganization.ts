@@ -82,8 +82,8 @@ export function useOrganization() {
           const dCounts: Record<string, number> = {}
           const bCounts: Record<string, number> = {}
           activeEmps.forEach((e: any) => {
-            if (e.department) dCounts[e.department] = (dCounts[e.department] || 0) + 1
-            if (e.branch) bCounts[e.branch] = (bCounts[e.branch] || 0) + 1
+            if (e.Department?.name) dCounts[e.Department.name] = (dCounts[e.Department.name] || 0) + 1
+            if (e.Branch?.name) bCounts[e.Branch.name] = (bCounts[e.Branch.name] || 0) + 1
           })
           setDeptCounts(dCounts)
           setBranchCounts(bCounts)
@@ -101,7 +101,7 @@ export function useOrganization() {
   const filteredDepts = departments.filter(d => {
     if (!d.name.toLowerCase().includes(searchTerm.toLowerCase())) return false
     if (branchFilter !== 'all') {
-      return allEmployees.some(e => (e.Department?.name || e.department) === d.name && e.branch === branchFilter)
+      return allEmployees.some(e => e.Department?.name === d.name && e.Branch?.name === branchFilter)
     }
     return true
   })
@@ -175,6 +175,14 @@ export function useOrganization() {
           return next
         })
       }
+      // Keep allEmployees in sync so filteredDepts / branch-filter stay accurate
+      setAllEmployees(prev =>
+        prev.map(e =>
+          e.departmentId === editingDept.id
+            ? { ...e, Department: { name: data.department.name } }
+            : e
+        )
+      )
       setEditingDept(null)
       showToast('success', 'Department Renamed', `Department renamed to ${data.department.name}`)
     } catch {
@@ -214,6 +222,14 @@ export function useOrganization() {
           return next
         })
       }
+      // Keep allEmployees in sync so branch-filter stays accurate after rename
+      setAllEmployees(prev =>
+        prev.map(e =>
+          e.branchId === editingBranch.id
+            ? { ...e, Branch: { name: data.branch.name } }
+            : e
+        )
+      )
       setEditingBranch(null)
       showToast('success', 'Branch Renamed', `Branch renamed to ${data.branch.name}`)
     } catch {

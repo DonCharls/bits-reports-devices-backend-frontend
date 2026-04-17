@@ -147,8 +147,8 @@ export function useDashboardData(role: 'admin' | 'hr') {
             }
 
             const bPresence: BranchData[] = branchList.map(b => {
-                const branchEmps = emps.filter(e => e.branch === b.name && e.employmentStatus === 'ACTIVE');
-                const branchAtts = atts.filter(a => a.employee?.branch === b.name && a.checkInTime);
+                const branchEmps = emps.filter(e => e.Branch?.name === b.name && e.employmentStatus === 'ACTIVE');
+                const branchAtts = atts.filter(a => a.employee?.Branch?.name === b.name && a.checkInTime);
                 const total = branchEmps.length;
                 const present = branchAtts.length;
                 const pct = total === 0 ? 0 : Math.round((present / total) * 100);
@@ -166,8 +166,8 @@ export function useDashboardData(role: 'admin' | 'hr') {
             const events: LiveRecord[] = [];
             for (const r of atts) {
                 const empName = `${r.employee?.firstName || ''} ${r.employee?.lastName || ''}`.trim();
-                const dept = r.employee?.Department?.name || r.employee?.department || '—';
-                const branch = r.employee?.branch || '—';
+                const dept = r.employee?.Department?.name || '—';
+                const branch = r.employee?.Branch?.name || '—';
                 const ciStatus: LiveRecord['status'] = r.status === 'absent' ? 'absent' : (r.lateMinutes > 0 ? 'late' : 'on-time');
 
                 if (r.checkInTime) {
@@ -219,8 +219,8 @@ export function useDashboardData(role: 'admin' | 'hr') {
         const newEntry: LiveRecord = {
             id: `stream-${payload.record.id}-${payload.type}-${payload.record.checkOutTime ?? 'in'}`,
             employee: empName,
-            department: emp?.Department?.name || emp?.department || '—',
-            branch: emp?.branch || '—',
+            department: emp?.Department?.name || '—',
+            branch: emp?.Branch?.name || '—',
             eventType: payload.type === 'check-in' ? 'check-in' : 'check-out',
             time: new Date(payload.type === 'check-in' ? payload.record.checkInTime : payload.record.checkOutTime!).toLocaleTimeString('en-US', {
                 timeZone: 'Asia/Manila',

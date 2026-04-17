@@ -28,32 +28,32 @@ export function EditAssignmentSection({
         <div className="space-y-1">
           <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Department *</label>
           <select
-            value={editForm.department || ''}
+            value={editForm.departmentId ?? ''}
             onChange={(e) => {
-              onFormChange({ ...editForm, department: e.target.value })
-              if (formErrors.department) onClearError('department')
+              onFormChange({ ...editForm, departmentId: e.target.value ? parseInt(e.target.value) : null })
+              if (formErrors.departmentId) onClearError('departmentId')
             }}
-            className={`${inputBase} ${formErrors.department ? inputError : inputNormal}`}
+            className={`${inputBase} ${formErrors.departmentId ? inputError : inputNormal}`}
           >
             <option value="" disabled>Select Department</option>
-            {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+            {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
-          {formErrors.department && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.department}</p>}
+          {formErrors.departmentId && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.departmentId}</p>}
         </div>
         <div className="space-y-1">
           <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Branch *</label>
           <select
-            value={editForm.branch || ''}
+            value={editForm.branchId ?? ''}
             onChange={(e) => {
-              onFormChange({ ...editForm, branch: e.target.value })
-              if (formErrors.branch) onClearError('branch')
+              onFormChange({ ...editForm, branchId: e.target.value ? parseInt(e.target.value) : null })
+              if (formErrors.branchId) onClearError('branchId')
             }}
-            className={`${inputBase} ${formErrors.branch ? inputError : inputNormal}`}
+            className={`${inputBase} ${formErrors.branchId ? inputError : inputNormal}`}
           >
             <option value="" disabled>Select Branch</option>
-            {branches.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
-          {formErrors.branch && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.branch}</p>}
+          {formErrors.branchId && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.branchId}</p>}
         </div>
       </div>
 

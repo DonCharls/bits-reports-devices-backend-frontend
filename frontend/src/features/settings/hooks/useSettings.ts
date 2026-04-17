@@ -53,8 +53,8 @@ export function useSettings() {
           email: emp.email || '',
           role: emp.role || '',
           contactNumber: emp.contactNumber || emp.phone || '',
-          branch: emp.branch || '',
-          department: emp.department || '',
+          branch: emp.Branch?.name || '',
+          department: emp.Department?.name || '',
           position: emp.position || '',
         }
         setUserData(user)

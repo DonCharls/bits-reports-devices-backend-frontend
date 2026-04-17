@@ -143,9 +143,7 @@ model Employee {
   employmentStatus    EmploymentStatus @default(ACTIVE)
 
   // Secondary Info
-  department     String?
   position       String?
-  branch         String?
   contactNumber  String?
   employeeNumber String?   @unique
   hireDate       DateTime?
