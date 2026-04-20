@@ -110,10 +110,14 @@ export function EditIdentitySection({
           <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Date of Birth</label>
           <input
             type="date"
-            value={(editForm as any).dateOfBirth ? (editForm as any).dateOfBirth.split('T')[0] : ''}
-            onChange={(e) => onFormChange({ ...editForm, dateOfBirth: e.target.value } as any)}
-            className={`${inputBase} ${inputNormal}`}
+            value={editForm.dateOfBirth ? (editForm.dateOfBirth as string).split('T')[0] : ''}
+            onChange={(e) => {
+              onFormChange({ ...editForm, dateOfBirth: e.target.value })
+              if (formErrors.dateOfBirth) onClearError('dateOfBirth')
+            }}
+            className={`${inputBase} ${formErrors.dateOfBirth ? inputError : inputNormal}`}
           />
+          {formErrors.dateOfBirth && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.dateOfBirth}</p>}
         </div>
       </div>
     </>

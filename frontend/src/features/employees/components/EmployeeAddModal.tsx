@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Loader2, Plus, X as XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { validateEmployeeId } from '@/lib/employeeValidation';
+import { validateEmployeeForm, EmployeeFormInput } from '@/lib/employeeValidation';
 import { formatPhoneNumber } from '../utils/employee-types';
 import { useToast } from '@/hooks/useToast';
 
@@ -10,7 +10,7 @@ interface EmployeeAddModalProps {
   departments: { id: number; name: string }[];
   branches: { id: number; name: string }[];
   shifts: any[];
-  onSave: (employee: any) => Promise<boolean>;
+  onSave: (employee: EmployeeFormInput) => Promise<boolean>;
   isOpen: boolean;
   setIsOpen: (val: boolean) => void;
 }
@@ -58,34 +58,24 @@ export function EmployeeAddModal({ departments, branches, shifts, onSave, isOpen
   };
 
   const handleSave = async () => {
-    const errors: Record<string, string> = {};
-    const empIdValidation = validateEmployeeId(newEmployee.employeeNumber);
-    if (!empIdValidation.isValid) errors.employeeNumber = empIdValidation.error!;
-    if (!newEmployee.firstName.trim()) errors.firstName = 'First name is required';
-    if (!newEmployee.lastName.trim()) errors.lastName = 'Last name is required';
-    if (!newEmployee.contactNumber.trim()) errors.contactNumber = 'Contact number is required';
-    else if (newEmployee.contactNumber.replace(/\D/g, '').length !== 11) errors.contactNumber = 'Must be exactly 11 digits';
-    if (!newEmployee.email.trim()) {
-      errors.email = 'Email address is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmployee.email.trim())) {
-      errors.email = 'A valid email is required';
-    }
-    if (formErrors.email && formErrors.email.includes('already in use')) errors.email = formErrors.email;
-    if (formErrors.contactNumber && formErrors.contactNumber.includes('already in use')) errors.contactNumber = formErrors.contactNumber;
-    if (formErrors.employeeNumber && formErrors.employeeNumber.includes('already in use')) errors.employeeNumber = formErrors.employeeNumber;
-    
-    if (!newEmployee.departmentId) errors.departmentId = 'Department is required';
-    if (!newEmployee.branchId) errors.branchId = 'Branch is required';
-    
-    if (Object.keys(errors).length > 0) { setFormErrors(errors); return; }
-    
-    setIsRegistering(true);
-    const success = await onSave({
+    const dataToValidate = {
       ...newEmployee,
       departmentId: newEmployee.departmentId ? parseInt(newEmployee.departmentId) : undefined,
       branchId: newEmployee.branchId ? parseInt(newEmployee.branchId) : undefined,
       shiftId: newEmployee.shiftId ? parseInt(newEmployee.shiftId) : undefined
-    });
+    };
+
+    const { data, errors } = validateEmployeeForm(dataToValidate);
+
+    // Keep existing async duplicate errors if not overwritten
+    if (formErrors.email?.includes('already in use') && !errors.email) errors.email = formErrors.email;
+    if (formErrors.contactNumber?.includes('already in use') && !errors.contactNumber) errors.contactNumber = formErrors.contactNumber;
+    if (formErrors.employeeNumber?.includes('already in use') && !errors.employeeNumber) errors.employeeNumber = formErrors.employeeNumber;
+    
+    if (Object.keys(errors).length > 0) { setFormErrors(errors); return; }
+    
+    setIsRegistering(true);
+    const success = await onSave(data as EmployeeFormInput);
     if (success) {
       setIsOpen(false);
       resetForm();
@@ -128,7 +118,11 @@ export function EmployeeAddModal({ departments, branches, shifts, onSave, isOpen
                 <option value="Prefer not to say">Prefer not to say</option>
               </select>
             </div>
-            <div><label className="text-slate-400 text-[10px] uppercase font-bold">Date of Birth</label><input type="date" className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none" value={newEmployee.dateOfBirth} onChange={e => setNewEmployee(p => ({ ...p, dateOfBirth: e.target.value }))} /></div>
+            <div>
+              <label className="text-slate-400 text-[10px] uppercase font-bold">Date of Birth</label>
+              <input type="date" className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.dateOfBirth ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.dateOfBirth} onChange={e => { setNewEmployee(p => ({ ...p, dateOfBirth: e.target.value })); setFormErrors(p => ({ ...p, dateOfBirth: '' })) }} />
+              {formErrors.dateOfBirth && <p className="text-[11px] text-red-500 mt-1">{formErrors.dateOfBirth}</p>}
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-slate-400 text-[10px] uppercase font-bold">Email Address *</label><input type="email" placeholder="Email" className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.email ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.email} onChange={e => { setNewEmployee(p => ({ ...p, email: e.target.value })); setFormErrors(p => ({ ...p, email: '' })) }} onBlur={() => handleDuplicateBlur('email')} />{formErrors.email && <p className="text-[11px] text-red-500">{formErrors.email}</p>}</div>
@@ -139,7 +133,11 @@ export function EmployeeAddModal({ departments, branches, shifts, onSave, isOpen
             <div><label className="text-slate-400 text-[10px] uppercase font-bold">Branch *</label><select className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.branchId ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.branchId} onChange={e => { setNewEmployee(p => ({ ...p, branchId: e.target.value })); setFormErrors(p => ({ ...p, branchId: '' })) }}><option value="">Select Branch</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select>{formErrors.branchId && <p className="text-[11px] text-red-500">{formErrors.branchId}</p>}</div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="text-slate-400 text-[10px] uppercase font-bold">Date Hired</label><input type="date" className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none" value={newEmployee.hireDate} onChange={e => setNewEmployee(p => ({ ...p, hireDate: e.target.value }))} /></div>
+            <div>
+              <label className="text-slate-400 text-[10px] uppercase font-bold">Date Hired</label>
+              <input type="date" className={`mt-1 w-full px-3 py-2 rounded-lg border ${formErrors.hireDate ? 'border-red-400' : 'border-slate-200'} text-sm outline-none`} value={newEmployee.hireDate} onChange={e => { setNewEmployee(p => ({ ...p, hireDate: e.target.value })); setFormErrors(p => ({ ...p, hireDate: '' })) }} />
+              {formErrors.hireDate && <p className="text-[11px] text-red-500 mt-1">{formErrors.hireDate}</p>}
+            </div>
             <div><label className="text-slate-400 text-[10px] uppercase font-bold">Work Shift</label><select className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm outline-none" value={newEmployee.shiftId} onChange={e => setNewEmployee(p => ({ ...p, shiftId: e.target.value }))}><option value="">No shift assigned</option>{shifts.map(s => <option key={s.id} value={s.id}>[{s.shiftCode}] {s.name}</option>)}</select></div>
           </div>
         </div>
