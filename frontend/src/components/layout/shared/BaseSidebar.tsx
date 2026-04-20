@@ -76,10 +76,14 @@ export function BaseSidebar({
 
   return (
     <aside className={`
-      fixed top-24 bottom-4 left-4 z-60 bg-[#E60000] flex flex-col transition-all duration-300 ease-in-out overflow-y-auto overflow-x-hidden scrollbar-hide
-      rounded-[20px]
-      ${isOpen ? 'translate-x-0' : '-translate-x-[120%]'}
-      w-72 lg:translate-x-0
+      fixed z-60 bg-[#E60000] flex flex-col transition-all duration-300 ease-in-out overflow-y-auto overflow-x-hidden scrollbar-hide-hover scrollbar-slim
+      
+      /* Mobile View: Full height, flush to edges */
+      top-0 bottom-0 left-0 rounded-none w-72
+      ${isOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
+
+      /* Desktop View: Floating card */
+      lg:top-24 lg:bottom-4 lg:left-4 lg:rounded-[20px] lg:translate-x-0
       ${collapsed ? 'lg:w-20' : expandedWidth}
     `}>
 

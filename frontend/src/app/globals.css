@@ -141,6 +141,31 @@
   }
 }
 
+/* Hide scrollbar but keep scrollable */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar by default, show on hover */
+.scrollbar-hide-hover {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide-hover::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide-hover:hover {
+  -ms-overflow-style: auto;
+  scrollbar-width: thin;
+}
+.scrollbar-hide-hover:hover::-webkit-scrollbar {
+  display: block;
+}
+
 /* Slim modern scrollbar */
 .scrollbar-slim {
   scrollbar-width: thin;
