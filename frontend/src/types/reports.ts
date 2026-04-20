@@ -54,4 +54,6 @@ export type ReportRow = {
   totalHours: number;
   shift: EmployeeShift | null;
   hasAnomaly: boolean;
+  hasMissingCheckout: boolean;
+  missingCheckoutsCount: number;
 };

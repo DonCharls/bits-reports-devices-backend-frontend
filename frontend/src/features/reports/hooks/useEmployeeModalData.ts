@@ -140,6 +140,7 @@ function buildHRTableRows(
         else if (typeLabel === 'IN PROGRESS') colorClass = 'text-blue-500';
         else if (typeLabel === 'EARLY OUT') colorClass = 'text-purple-600';
         else if (typeLabel === 'UPCOMING') colorClass = 'text-blue-400';
+        else if (typeLabel === 'MISSING CHECKOUT') colorClass = 'text-amber-600';
 
         return {
             date: row.loopDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
