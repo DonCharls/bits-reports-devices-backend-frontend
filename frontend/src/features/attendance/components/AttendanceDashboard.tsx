@@ -103,6 +103,7 @@ function AttendanceContent({ role }: AttendanceDashboardProps) {
         totalPages={totalPages}
         rowsPerPage={rowsPerPage}
         handleEditClick={handleEditClick}
+        dragScrollRef={dragScrollRef}
       />
 
       <AttendanceEditModal

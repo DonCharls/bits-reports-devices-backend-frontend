@@ -33,7 +33,7 @@ export function EmployeeListPage({ role, statusFilter = 'Active' }: EmployeeList
         onRegisterEmployee={list.actions.registerEmployee}
       />
 
-      <EmployeeFiltersBar filters={list.filters} departments={list.departments} branches={list.branches} />
+      <EmployeeFiltersBar filters={list.filters} departments={list.departments} branches={list.branches} shifts={list.shifts} />
 
       <EmployeeTable
         employees={list.paginatedEmployees} loading={list.loading} filteredCount={list.employees.length}

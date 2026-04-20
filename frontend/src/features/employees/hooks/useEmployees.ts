@@ -21,6 +21,7 @@ export function useEmployees({ statusFilter = 'ACTIVE' }: UseEmployeesProps = {}
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('all');
   const [selectedBranch, setSelectedBranch] = useState('all');
+  const [selectedShift, setSelectedShift] = useState('all');
 
   const fetchEmployees = useCallback(async () => {
     setLoading(true);
@@ -74,14 +75,18 @@ export function useEmployees({ statusFilter = 'ACTIVE' }: UseEmployeesProps = {}
         fullName.includes(searchStr) ||
         (emp.email || '').toLowerCase().includes(searchStr) ||
         (emp.employeeNumber || '').toLowerCase().includes(searchStr) ||
+        (emp.contactNumber || '').toLowerCase().includes(searchStr) ||
+        (emp.Shift?.name || '').toLowerCase().includes(searchStr) ||
+        (emp.Shift?.shiftCode || '').toLowerCase().includes(searchStr) ||
         // Only compare zkId if the query is purely numeric (it's an Int)
         (isNumericSearch && emp.zkId === Number(searchStr));
 
       const matchesDept = selectedDept === 'all' || emp.Department?.name === selectedDept;
       const matchesBranch = selectedBranch === 'all' || emp.Branch?.name === selectedBranch;
-      return matchesSearch && matchesDept && matchesBranch;
+      const matchesShift = selectedShift === 'all' || emp.Shift?.name === selectedShift;
+      return matchesSearch && matchesDept && matchesBranch && matchesShift;
     });
-  }, [employees, searchTerm, selectedDept, selectedBranch]);
+  }, [employees, searchTerm, selectedDept, selectedBranch, selectedShift]);
 
   const tableSort = useTableSort<Employee>({ initialData: filteredEmployees });
 
@@ -167,7 +172,9 @@ export function useEmployees({ statusFilter = 'ACTIVE' }: UseEmployeesProps = {}
       selectedDept,
       setSelectedDept,
       selectedBranch,
-      setSelectedBranch
+      setSelectedBranch,
+      selectedShift,
+      setSelectedShift
     },
     tableSort,
     actions: {

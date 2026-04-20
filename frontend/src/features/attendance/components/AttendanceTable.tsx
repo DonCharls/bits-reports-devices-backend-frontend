@@ -16,6 +16,7 @@ interface AttendanceTableProps {
   totalPages: number
   rowsPerPage: number
   handleEditClick: (row: AttendanceRecord) => void
+  dragScrollRef?: React.RefObject<HTMLDivElement | null>
 }
 
 export function AttendanceTable({
@@ -30,6 +31,7 @@ export function AttendanceTable({
   totalPages,
   rowsPerPage,
   handleEditClick,
+  dragScrollRef,
 }: AttendanceTableProps) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -46,7 +48,7 @@ export function AttendanceTable({
       </div>
 
       {/* Desktop Table View */}
-      <div className="overflow-x-auto scrollbar-hide hidden lg:block">
+      <div ref={dragScrollRef} className="overflow-x-auto scrollbar-slim cursor-grab active:cursor-grabbing hidden lg:block">
         <AttendanceDesktopTable
           loading={loading}
           sortedRecords={sortedRecords}

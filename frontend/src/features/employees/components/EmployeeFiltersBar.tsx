@@ -11,15 +11,18 @@ interface FilterState {
   setSelectedDept: (v: string) => void;
   selectedBranch: string;
   setSelectedBranch: (v: string) => void;
+  selectedShift: string;
+  setSelectedShift: (v: string) => void;
 }
 
 interface EmployeeFiltersBarProps {
   filters: FilterState;
   departments: { id: number; name: string }[];
   branches: { id: number; name: string }[];
+  shifts: { id: number; name: string }[];
 }
 
-export function EmployeeFiltersBar({ filters, departments, branches }: EmployeeFiltersBarProps) {
+export function EmployeeFiltersBar({ filters, departments, branches, shifts }: EmployeeFiltersBarProps) {
   return (
     <Card className="bg-card border-border p-4">
       <div className="flex flex-col sm:flex-row gap-4">
@@ -44,6 +47,13 @@ export function EmployeeFiltersBar({ filters, departments, branches }: EmployeeF
           <SelectContent>
             <SelectItem value="all">All Branches</SelectItem>
             {branches.map(b => <SelectItem key={b.id} value={b.name}>{b.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filters.selectedShift} onValueChange={filters.setSelectedShift}>
+          <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="Shift" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Shifts</SelectItem>
+            {shifts.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
