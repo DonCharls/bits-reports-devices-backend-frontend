@@ -192,6 +192,7 @@ model Shift {
   description  String?
   workDays     String     @default("[\"Mon\",\"Tue\",\"Wed\",\"Thu\",\"Fri\"]")
   halfDays     String     @default("[]")
+  halfDayHours Float?     // When set, half-day expected hours = this value; when null, midpoint is used
   breaks       String     @default("[]")
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt

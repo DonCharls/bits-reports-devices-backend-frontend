@@ -50,23 +50,23 @@ export function useEmployeeDashboard() {
         
         let present = 0
         let late = 0
-        let totalMs = 0
+        let totalHrs = 0
 
         records.forEach(r => {
           if (r.checkInTime) {
             if (r.status.toLowerCase() === 'late') late++
             else present++
 
-            if (r.checkOutTime) {
-              totalMs += new Date(r.checkOutTime).getTime() - new Date(r.checkInTime).getTime()
-            }
+            // Use the backend-computed totalHours (break-aware) instead
+            // of raw checkOut − checkIn which inflates hours.
+            totalHrs += r.totalHours ?? 0
           }
         })
 
         setWeeklyStats({
           present,
           late,
-          totalHours: Math.floor(totalMs / (1000 * 60 * 60))
+          totalHours: Math.round(totalHrs * 10) / 10
         })
       }
     } catch (err: unknown) {

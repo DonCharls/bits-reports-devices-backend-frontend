@@ -817,9 +817,14 @@ export function calculateAttendanceMetrics(record: BasicAttendanceRecord, shift:
     }
 
     if (isHalfDay) {
-        // Expected end = midpoint between start and full end
-        const halfMs = (expectedEnd.getTime() - expectedStart.getTime()) / 2;
-        expectedEnd = new Date(expectedStart.getTime() + halfMs);
+        if (shift.halfDayHours != null && shift.halfDayHours > 0) {
+            // Configurable: expected work = exactly halfDayHours from shift start
+            expectedEnd = new Date(expectedStart.getTime() + shift.halfDayHours * 60 * 60 * 1000);
+        } else {
+            // Automatic fallback: midpoint between start and full end
+            const halfMs = (expectedEnd.getTime() - expectedStart.getTime()) / 2;
+            expectedEnd = new Date(expectedStart.getTime() + halfMs);
+        }
     }
 
     // Full expected shift duration (minutes), without break
@@ -828,15 +833,27 @@ export function calculateAttendanceMetrics(record: BasicAttendanceRecord, shift:
     const checkIn = new Date(record.checkInTime);
     const checkOut = record.checkOutTime ? new Date(record.checkOutTime) : null;
 
-    // Only deduct break if employee worked at least HALF of the full shift.
-    // This prevents a lunch deduction for short / partial-day attendances.
-    const rawBreakMins = isHalfDay ? 0 : (explicitBreaks.length > 0 ? calculatedBreakMins : (shift.breakMinutes ?? 60));
-    const halfShiftMins = fullShiftMins / 2;
+    // Build the effective break windows for overlap calculation.
+    // When explicit break ranges are defined → use them directly.
+    // When only breakMinutes is set (no ranges) → synthesize a virtual
+    // break window centered at the shift midpoint. This avoids the old
+    // all-or-nothing threshold and instead only deducts the actual time
+    // the employee's presence overlapped with the break window.
+    let effectiveBreaks = explicitBreaks;
+    if (!isHalfDay && explicitBreaks.length === 0 && (shift.breakMinutes ?? 0) > 0) {
+        const shiftMidMs = expectedStart.getTime() + (expectedEnd.getTime() - expectedStart.getTime()) / 2;
+        const halfBreakMs = ((shift.breakMinutes ?? 60) / 2) * 60 * 1000;
+        effectiveBreaks = [{ start: new Date(shiftMidMs - halfBreakMs), end: new Date(shiftMidMs + halfBreakMs) }];
+    }
+
+    const rawBreakMins = isHalfDay ? 0 : effectiveBreaks.reduce((sum, b) => sum + (b.end.getTime() - b.start.getTime()) / 60000, 0);
 
     // Late: actual check-in minus (expected start + grace)
     const graceMins = shift.graceMinutes ?? 0;
     const lateMs = checkIn.getTime() - (expectedStart.getTime() + graceMins * 60 * 1000);
-    const lateMinutes = Math.max(0, Math.round(lateMs / (1000 * 60)));
+    // Use Math.floor instead of Math.round. This truncates seconds completely.
+    // E.g., being late by 120 minutes and 59 seconds evaluates strictly to 120 minutes.
+    const lateMinutes = Math.max(0, Math.floor(lateMs / 60000));
 
     // Expected net worked minutes (after break deduction)
     const fullExpectedMins = fullShiftMins - rawBreakMins;
@@ -846,7 +863,7 @@ export function calculateAttendanceMetrics(record: BasicAttendanceRecord, shift:
     const diffFromExpectedMins = Math.abs(Math.round((checkIn.getTime() - expectedStart.getTime()) / (1000 * 60)));
     const isAnomaly = diffFromExpectedMins > ANOMALY_THRESHOLD_MINS;
 
-    // Total Hours = (checkOut - effectiveCheckIn) - break (if threshold met), floored at 0
+    // Total Hours = (checkOut - effectiveCheckIn) - break overlap, floored at 0
     let totalHours = 0;
     let undertimeMinutes = 0;
     let overtimeMinutes = 0;
@@ -868,18 +885,18 @@ export function calculateAttendanceMetrics(record: BasicAttendanceRecord, shift:
         const effectiveCheckIn = new Date(Math.max(checkIn.getTime(), expectedStart.getTime()));
         const rawWorkedMins = (checkOut.getTime() - effectiveCheckIn.getTime()) / 60000;
         
-        // Exactly calculate intersecting break overlap during the attended hours
+        // Calculate exact break time that overlaps with the attended period.
+        // Only the portion of the break window that the employee was actually
+        // present for gets deducted — this is "break-window encroachment".
         let overlappingBreakMins = 0;
-        if (explicitBreaks.length > 0 && !isHalfDay) {
-            explicitBreaks.forEach(b => {
+        if (!isHalfDay) {
+            effectiveBreaks.forEach(b => {
                 const overlapStart = Math.max(effectiveCheckIn.getTime(), b.start.getTime());
                 const overlapEnd = Math.min(checkOut.getTime(), b.end.getTime());
                 if (overlapEnd > overlapStart) {
                     overlappingBreakMins += (overlapEnd - overlapStart) / 60000;
                 }
             });
-        } else if (!isHalfDay && rawWorkedMins >= halfShiftMins) {
-            overlappingBreakMins = rawBreakMins;
         }
 
         const workedMins = Math.max(0, rawWorkedMins - overlappingBreakMins);
@@ -891,22 +908,22 @@ export function calculateAttendanceMetrics(record: BasicAttendanceRecord, shift:
             const missingBlockStart = Math.max(checkOut.getTime(), expectedStart.getTime());
             const rawMissingMins = (expectedEnd.getTime() - missingBlockStart) / 60000;
             
+            // Subtract any break time that falls within the missed block,
+            // so employees aren't penalised for the break they would have taken.
             let missingBreakMins = 0;
-            if (explicitBreaks.length > 0 && !isHalfDay) {
-                explicitBreaks.forEach(b => {
+            if (!isHalfDay) {
+                effectiveBreaks.forEach(b => {
                     const overlapStart = Math.max(missingBlockStart, b.start.getTime());
                     const overlapEnd = Math.min(expectedEnd.getTime(), b.end.getTime());
                     if (overlapEnd > overlapStart) {
                         missingBreakMins += (overlapEnd - overlapStart) / 60000;
                     }
                 });
-            } else if (!isHalfDay && rawWorkedMins < halfShiftMins) {
-                // If they checked out super early under legacy definitions, their missed time conceptually contains the full break they failed to encounter
-                missingBreakMins = rawBreakMins;
             }
             missingMins = Math.max(0, rawMissingMins - missingBreakMins);
         }
-        undertimeMinutes = Math.round(missingMins);
+        // Force truncation of any fractional seconds to prevent petty 1-min deductions
+        undertimeMinutes = Math.floor(missingMins);
 
         // Overtime: employee stayed beyond expected end
         const actualEndMs = checkOut.getTime();

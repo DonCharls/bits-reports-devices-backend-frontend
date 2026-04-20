@@ -13,6 +13,7 @@ export interface Shift {
   description: string | null
   workDays: string
   halfDays: string
+  halfDayHours: number | null
   breaks: string
   _count: { Employee: number }
 }
@@ -30,6 +31,7 @@ export const emptyForm = {
   description: '',
   workDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as string[],
   halfDays: [] as string[],
+  halfDayHours: null as number | null,
   breaks: [] as { start: string; end: string; name: string }[],
 }
 
