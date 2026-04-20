@@ -14,8 +14,15 @@ interface AttendanceTableProps {
   currentPage: number
   setCurrentPage: React.Dispatch<React.SetStateAction<number>>
   totalPages: number
-  rowsPerPage: number
-  handleEditClick: (row: AttendanceRecord) => void
+  rowsPerPage: number;
+  handleEditClick: (row: AttendanceRecord) => void;
+  showStatsHeader?: boolean;
+  stats?: {
+    onTime: number;
+    late: number;
+    absent: number;
+    total: number;
+  };
 }
 
 export function AttendanceTable({
@@ -30,9 +37,39 @@ export function AttendanceTable({
   totalPages,
   rowsPerPage,
   handleEditClick,
+  showStatsHeader,
+  stats,
 }: AttendanceTableProps) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div className="bg-card rounded-2xl border border-border shadow-md overflow-hidden rounded-tl-none">
+      {showStatsHeader && stats && (
+        <div className="px-6 py-4 border-b border-border bg-secondary/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <h3 className="text-sm font-black text-foreground uppercase tracking-widest">Attendance Logs</h3>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-center">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">On Time</p>
+              <p className="text-xl font-black text-emerald-500">{stats.onTime}</p>
+            </div>
+            <div className="w-px h-8 bg-border" />
+            <div className="text-center">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Late</p>
+              <p className="text-xl font-black text-yellow-500">{stats.late}</p>
+            </div>
+            <div className="w-px h-8 bg-border" />
+            <div className="text-center">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Absent</p>
+              <p className="text-xl font-black text-red-500">{stats.absent}</p>
+            </div>
+            <div className="w-px h-8 bg-border" />
+            <div className="text-center">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Total</p>
+              <p className="text-xl font-black text-foreground">{stats.total}</p>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Mobile Card View */}
       <div className="lg:hidden">
         <AttendanceMobileCards

@@ -26,24 +26,24 @@ export function AttendanceDesktopTable({
   handleEditClick,
 }: AttendanceDesktopTableProps) {
   return (
-    <table className="w-full text-left text-sm border-collapse min-w-[1100px]">
-      <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-slate-100">
+    <table className="w-full text-left border-collapse min-w-[1100px] bg-card">
+      <thead className="bg-secondary/50 backdrop-blur-sm border-b border-border">
         <tr>
-          <SortableHeader label="Employee"    sortKey="employeeName"     currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4" />
-          <SortableHeader label="Department"  sortKey="department"       currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4" />
-          <SortableHeader label="Branch"      sortKey="branchName"       currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4" />
-          <SortableHeader label="Shift"       sortKey="shiftCode"        currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-center" />
-          <SortableHeader label="Clock In"    sortKey="checkIn"          currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4" />
-          <SortableHeader label="Clock Out"   sortKey="checkOut"         currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4" />
-          <SortableHeader label="Late"        sortKey="lateMinutes"      currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-center text-yellow-500" />
-          <SortableHeader label="Hours"       sortKey="totalHours"       currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-center" />
-          <SortableHeader label="OT"          sortKey="overtimeMinutes"  currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-center text-emerald-500" />
-          <SortableHeader label="UT"          sortKey="undertimeMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-center text-red-500" />
-          <SortableHeader label="Status"      sortKey="status"           currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-center" />
-          <th className="px-4 py-4 text-center">Actions</th>
+          <SortableHeader label="Employee"    sortKey="employeeName"     currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight" />
+          <SortableHeader label="Department"  sortKey="department"       currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight" />
+          <SortableHeader label="Branch"      sortKey="branchName"       currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight" />
+          <SortableHeader label="Shift"       sortKey="shiftCode"        currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center" />
+          <SortableHeader label="Clock In"    sortKey="checkIn"          currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight" />
+          <SortableHeader label="Clock Out"   sortKey="checkOut"         currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight" />
+          <SortableHeader label="Late"        sortKey="lateMinutes"      currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-yellow-500" />
+          <SortableHeader label="Hours"       sortKey="totalHours"       currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center" />
+          <SortableHeader label="OT"          sortKey="overtimeMinutes"  currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-emerald-500" />
+          <SortableHeader label="UT"          sortKey="undertimeMinutes" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center text-red-500" />
+          <SortableHeader label="Status"      sortKey="status"           currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight text-center" />
+          <th className="px-4 py-4 text-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Actions</th>
         </tr>
       </thead>
-      <tbody className="divide-y divide-slate-100">
+      <tbody className="divide-y divide-border">
         {loading ? (
           <tr><td colSpan={12} className="px-6 py-16 text-center">
             <div className="flex flex-col items-center gap-2 text-slate-400">
@@ -55,44 +55,44 @@ export function AttendanceDesktopTable({
           <tr><td colSpan={12} className="px-6 py-16 text-center text-slate-400 font-black uppercase text-[10px] tracking-widest">No attendance records found</td></tr>
         ) : (
           sortedRecords.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage).map(row => (
-            <tr key={row.id} className="hover:bg-red-50/40 transition-colors duration-200 group cursor-default">
+            <tr key={row.id} className="hover:bg-primary/5 transition-colors duration-200 group cursor-default">
               {/* Employee */}
               <td className="px-6 py-4 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-red-600/20 flex items-center justify-center text-red-600 font-bold text-[10px] shrink-0 uppercase tracking-tight">{row.employeeName.charAt(0)}</div>
+                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-[10px] shrink-0 uppercase tracking-tight">{row.employeeName.charAt(0)}</div>
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-slate-700 leading-tight uppercase tracking-tight">{row.employeeName}</p>
-                  <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest mt-0.5">{row.branchName}</p>
+                  <p className="text-sm font-bold text-foreground leading-tight uppercase tracking-tight">{row.employeeName}</p>
+                  <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest mt-0.5">{row.branchName}</p>
                 </div>
               </td>
               {/* Department */}
-              <td className="px-4 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">{row.department}</td>
+              <td className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none outline-none">{row.department}</td>
               {/* Branch */}
-              <td className="px-4 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">{row.branchName}</td>
+              <td className="px-4 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none outline-none">{row.branchName}</td>
               {/* Shift */}
               <td className="px-4 py-4 text-center">
                 {row.shiftCode ? (
-                  <span className={`text-[9px] font-black px-2.5 py-1 rounded-lg border uppercase tracking-widest whitespace-nowrap ${row.isNightShift ? 'bg-purple-100 text-purple-600 border-purple-200' : 'bg-blue-100 text-blue-600 border-blue-200'}`}>{row.shiftCode}</span>
+                  <span className={`text-[9px] font-black px-2.5 py-1 rounded-lg border uppercase tracking-widest whitespace-nowrap ${row.isNightShift ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>{row.shiftCode}</span>
                 ) : (
-                  <span className="text-[10px] text-slate-400 italic font-medium">No Shift</span>
+                  <span className="text-[10px] text-muted-foreground italic font-medium">No Shift</span>
                 )}
               </td>
               {/* Clock In */}
-              <td className={`px-4 py-4 text-sm font-mono font-bold ${row.status === 'late' ? 'text-yellow-600' : row.status === 'present' ? 'text-emerald-600' : 'text-slate-400'}`}>
+              <td className="px-4 py-4 text-sm font-mono font-bold">
                 <div className="flex flex-col">
-                  <span>{row.checkIn}</span>
+                  <span className={`${row.status === 'late' ? 'text-yellow-500' : row.status === 'present' ? 'text-emerald-500' : 'text-muted-foreground'}`}>{row.checkIn}</span>
                   {row.gracePeriodApplied && (
                     <span className="text-[9px] text-slate-400 mt-0.5" title="Check-in was late but within allowed grace period">Grace Period</span>
                   )}
                   {row.checkIn !== '—' && (
-                    <div title={row.checkInDevice ?? 'Manual'} className="inline-flex items-center gap-1 mt-1 bg-slate-50 hover:bg-slate-100/50 border border-slate-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
-                      <Fingerprint className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-80" />
-                      <span className="text-[9px] text-slate-500 font-bold truncate leading-none pt-px">{row.checkInDevice ?? 'Manual'}</span>
+                    <div title={row.checkInDevice ?? 'Manual'} className="inline-flex items-center gap-1 mt-1 bg-secondary/60 hover:bg-secondary border border-border/50 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
+                      <Fingerprint className="w-2.5 h-2.5 text-primary shrink-0 opacity-80" />
+                      <span className="text-[9px] text-muted-foreground font-bold truncate leading-none pt-px">{row.checkInDevice ?? 'Manual'}</span>
                     </div>
                   )}
                 </div>
               </td>
               {/* Clock Out */}
-              <td className="px-4 py-4 text-sm font-mono text-slate-600 font-bold">
+              <td className="px-4 py-4 text-sm font-mono text-muted-foreground font-bold">
                 {(row as any).notes?.includes('Early punch detected') ? (
                   <div className="flex flex-col">
                     {row.isShiftActive ? (
@@ -115,18 +115,12 @@ export function AttendanceDesktopTable({
                     <span className="inline-flex items-center gap-1 text-amber-600 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title={(row as any).notes}>
                       <AlertCircle className="w-3 h-3" /> No checkout
                     </span>
-                    <button onClick={() => handleEditClick(row)} className="inline-flex items-center gap-1 text-red-600 hover:text-red-700 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap hover:underline transition-colors">
-                      Resolve
-                    </button>
                   </div>
                 ) : row.checkOut === '—' && (row as any).notes?.includes('No checkout recorded') ? (
                   <div className="flex flex-col gap-1">
                     <span className="inline-flex items-center gap-1 text-amber-600 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title={(row as any).notes}>
                       <AlertCircle className="w-3 h-3" /> No checkout
                     </span>
-                    <button onClick={() => handleEditClick(row)} className="inline-flex items-center gap-1 text-red-600 hover:text-red-700 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap hover:underline transition-colors">
-                      Resolve
-                    </button>
                   </div>
                 ) : (
                   <div className="flex flex-col">
@@ -142,19 +136,19 @@ export function AttendanceDesktopTable({
                     </span>
                     {row.checkOut !== '—' && (
                       row.checkoutSource === 'manual' ? (
-                        <div title="Manually set" className="inline-flex items-center gap-1 mt-1 bg-amber-50 hover:bg-amber-100/50 border border-amber-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
+                        <div title="Manually set" className="inline-flex items-center gap-1 mt-1 bg-secondary/60 hover:bg-secondary border border-border/50 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
                           <PenLine className="w-2.5 h-2.5 text-amber-500 shrink-0 opacity-80" />
                           <span className="text-[9px] text-amber-600 font-bold truncate leading-none pt-px">Manual</span>
                         </div>
                       ) : row.checkoutSource === 'auto_closed' ? (
-                        <div title="Auto-closed — estimated checkout" className="inline-flex items-center gap-1 mt-1 bg-amber-50 hover:bg-amber-100/50 border border-amber-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
+                        <div title="Auto-closed — estimated checkout" className="inline-flex items-center gap-1 mt-1 bg-secondary/60 hover:bg-secondary border border-border/50 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
                           <AlertTriangle className="w-2.5 h-2.5 text-amber-500 shrink-0 opacity-80" />
                           <span className="text-[9px] text-amber-600 font-bold truncate leading-none pt-px">Auto-Closed</span>
                         </div>
                       ) : (
-                        <div title={row.checkOutDevice ?? 'Manual'} className="inline-flex items-center gap-1 mt-1 bg-slate-50 hover:bg-slate-100/50 border border-slate-100 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
-                          <Fingerprint className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-80" />
-                          <span className="text-[9px] text-slate-500 font-bold truncate leading-none pt-px">{row.checkOutDevice ?? 'Manual'}</span>
+                        <div title={row.checkOutDevice ?? 'Manual'} className="inline-flex items-center gap-1 mt-1 bg-secondary/60 hover:bg-secondary border border-border/50 px-1.5 py-0.5 rounded-md transition-colors w-fit max-w-[130px]">
+                          <Fingerprint className="w-2.5 h-2.5 text-primary shrink-0 opacity-80" />
+                          <span className="text-[9px] text-muted-foreground font-bold truncate leading-none pt-px">{row.checkOutDevice ?? 'Manual'}</span>
                         </div>
                       )
                     )}
@@ -188,19 +182,19 @@ export function AttendanceDesktopTable({
               {/* Status */}
               <td className="px-4 py-4 text-center">
                 <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${
-                  row.displayStatus === 'present'     ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
-                  : row.displayStatus === 'IN_PROGRESS' ? 'text-blue-500 bg-blue-500/10 border-blue-500/20'
-                  : row.displayStatus === 'late'        ? 'text-yellow-600 bg-yellow-50 border-yellow-100'
-                  : row.displayStatus === 'missing_checkout' ? 'text-amber-700 bg-amber-50 border-amber-200'
-                  : row.displayStatus === 'incomplete'  ? 'text-amber-600 bg-amber-50 border-amber-100'
-                  : 'text-red-600 bg-red-50 border-red-100'
+                  row.displayStatus === 'present'           ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
+                  : row.displayStatus === 'IN_PROGRESS'      ? 'text-blue-500 bg-blue-500/10 border-blue-500/20'
+                  : row.displayStatus === 'late'             ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
+                  : row.displayStatus === 'missing_checkout' ? 'text-amber-600 bg-amber-500/10 border-amber-500/20'
+                  : row.displayStatus === 'incomplete'       ? 'text-amber-500 bg-amber-500/10 border-amber-500/20'
+                  : 'text-red-500 bg-red-500/10 border-red-500/20'
                 }`}>
                   {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus === 'missing_checkout' ? 'Missing Checkout' : row.displayStatus}
                 </span>
               </td>
               {/* Actions */}
               <td className="px-4 py-4 text-center">
-                <button onClick={() => handleEditClick(row)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
+                <button onClick={() => handleEditClick(row)} className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-all">
                   <Edit2 size={16} />
                 </button>
               </td>

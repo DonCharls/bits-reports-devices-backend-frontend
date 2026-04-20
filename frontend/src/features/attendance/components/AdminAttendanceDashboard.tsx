@@ -1,0 +1,167 @@
+'use client';
+
+import React, { Suspense } from 'react';
+import { Fingerprint, Calendar as CalendarIcon, Download, AlertCircle } from 'lucide-react';
+import { useAttendanceDashboard } from '@/features/attendance/hooks/useAttendanceDashboard';
+import { AttendanceStats } from './AttendanceStats';
+import { AttendanceFilters } from './AttendanceFilters';
+import { AttendanceTable } from './AttendanceTable';
+import { AttendanceEditModal } from './AttendanceEditModal';
+import { BranchTabs } from './BranchTabs';
+import ToastContainer from '@/components/ui/ToastContainer';
+
+function AdminAttendanceContent() {
+  const {
+    selectedDate, setSelectedDate,
+    searchQuery, setSearchQuery,
+    statusFilter, setStatusFilter,
+    branchFilter, setBranchFilter,
+    deptFilter, setDeptFilter,
+    dateInputRef,
+    records, loading, error, stats,
+    branches, departments, statuses,
+    sortedRecords, sortKeyStr, sortOrder, handleSort,
+    currentPage, setCurrentPage, totalPages, rowsPerPage,
+    editingLog, setEditingLog,
+    showCancelModal, setShowCancelModal,
+    actionLoading,
+    editCheckIn, setEditCheckIn,
+    editCheckOut, setEditCheckOut,
+    editReason, setEditReason,
+    handleEditClick, handleApplyChanges, exportToCSV,
+    toasts, dismissToast,
+    getTodayDate,
+  } = useAttendanceDashboard('admin');
+
+  return (
+    <div className="space-y-5">
+      {/* Premium Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+            <Fingerprint className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">Biometric Attendance</h2>
+            <p className="text-muted-foreground text-sm font-medium">
+              {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
+                weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+              })}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            ref={dateInputRef}
+            className="absolute opacity-0 pointer-events-none"
+            onChange={(e) => setSelectedDate(e.target.value)}
+            value={selectedDate}
+          />
+          <button
+            onClick={() => dateInputRef.current?.showPicker()}
+            className="flex items-center gap-2 px-4 py-2.5 bg-secondary border border-border rounded-xl text-sm font-bold text-foreground hover:bg-secondary/80 transition-all shadow-sm"
+          >
+            <CalendarIcon className="w-4 h-4 text-primary" />
+            <span>
+              {selectedDate === getTodayDate()
+                ? `Today, ${new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                : new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+          </button>
+          <button
+            onClick={exportToCSV}
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 active:scale-95"
+          >
+            <Download className="w-4 h-4" /> Export
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-medium px-4 py-3 rounded-xl flex items-center gap-2">
+          <AlertCircle className="w-4 h-4" />
+          {error}
+        </div>
+      )}
+
+      {/* Stats Grid */}
+      <AttendanceStats stats={stats} variant="admin" />
+
+      {/* Branch Tabs */}
+      <BranchTabs
+        activeBranchId={branchFilter}
+        onBranchChange={setBranchFilter}
+        branches={branches}
+      />
+
+      {/* Filter Bar - Now between Tabs and Attendance Logs */}
+      <div className="flex flex-col sm:flex-row items-center gap-3">
+        <AttendanceFilters
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          branchFilter={branchFilter}
+          setBranchFilter={setBranchFilter}
+          deptFilter={deptFilter}
+          setDeptFilter={setDeptFilter}
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          branches={branches}
+          departments={departments}
+          statuses={statuses}
+          hideBranchFilter={true}
+        />
+      </div>
+
+      {/* Table Card (with integrated stats header) */}
+      <div className="rounded-2xl shadow-md overflow-hidden bg-white border border-border rounded-tl-1">
+        <AttendanceTable
+          loading={loading}
+          records={records}
+          sortedRecords={sortedRecords}
+          sortKeyStr={sortKeyStr}
+          sortOrder={sortOrder}
+          handleSort={handleSort}
+          currentPage={currentPage}
+          setCurrentPage={setCurrentPage}
+          totalPages={totalPages}
+          rowsPerPage={rowsPerPage}
+          handleEditClick={handleEditClick}
+          showStatsHeader={true}
+          stats={{
+            onTime: stats.onTime,
+            late: stats.late,
+            absent: stats.absent,
+            total: stats.total,
+          }}
+        />
+      </div>
+
+      <AttendanceEditModal
+        editingLog={editingLog}
+        setEditingLog={setEditingLog}
+        role="admin"
+        editCheckIn={editCheckIn}
+        setEditCheckIn={setEditCheckIn}
+        editCheckOut={editCheckOut}
+        setEditCheckOut={setEditCheckOut}
+        editReason={editReason}
+        setEditReason={setEditReason}
+        showCancelModal={showCancelModal}
+        setShowCancelModal={setShowCancelModal}
+        handleApplyChanges={handleApplyChanges}
+        actionLoading={actionLoading}
+      />
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </div>
+  );
+}
+
+export default function AdminAttendanceDashboard() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-slate-400 font-medium">Loading attendance workspace...</div>}>
+      <AdminAttendanceContent />
+    </Suspense>
+  );
+}
