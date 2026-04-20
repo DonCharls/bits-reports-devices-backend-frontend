@@ -1,11 +1,11 @@
 'use client';
 
-import AttendanceDashboard from '@/features/attendance/components/AttendanceDashboard';
+import AdminAttendanceDashboard from '@/features/attendance/components/AdminAttendanceDashboard';
 
 export default function AdminAttendancePage() {
   return (
     <div className="w-full">
-      <AttendanceDashboard role="admin" />
+      <AdminAttendanceDashboard />
     </div>
   );
 }

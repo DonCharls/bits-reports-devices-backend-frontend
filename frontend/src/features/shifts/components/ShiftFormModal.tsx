@@ -266,6 +266,20 @@ export function ShiftFormModal({
               {form.halfDays.length > 0 && <span className="text-orange-500 font-bold"> · Half days: {form.halfDays.join(', ')}</span>}
               {' '}· Rest days: {DAYS.filter(d => !form.workDays.includes(d)).join(', ') || 'None'}
             </p>
+            {form.halfDays.length > 0 && (
+              <div className="pt-2 flex items-center justify-between border-t border-slate-100">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-700">Half-Day Expected Hours</p>
+                  <p className="text-[9px] text-slate-400">If blank, defaults to shift midpoint</p>
+                </div>
+                <input
+                  type="number" min={0} step={0.5} max={24} placeholder="e.g. 4.5"
+                  value={form.halfDayHours ?? ''}
+                  onChange={e => setForm(f => ({ ...f, halfDayHours: e.target.value ? parseFloat(e.target.value) : null }))}
+                  className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-orange-500/20"
+                />
+              </div>
+            )}
           </div>
 
           {/* Preview */}

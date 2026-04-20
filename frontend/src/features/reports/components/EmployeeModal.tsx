@@ -1,7 +1,6 @@
 import React from 'react';
 import { ReportRow, AttendanceRecord } from '@/types/reports';
 import { useEmployeeModalData } from '../hooks/useEmployeeModalData';
-import { HRTimelineView } from './HRTimelineView';
 import { AdminDetailView } from './AdminDetailView';
 
 interface EmployeeModalProps {
@@ -36,22 +35,6 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
     setLogSearchDate,
     logDateRef,
   } = useEmployeeModalData(employee, records, startDate, endDate);
-
-  if (variant === 'hr') {
-    return (
-      <HRTimelineView
-        employee={employee}
-        records={records}
-        exportSource={exportSource}
-        hrTableRows={hrTableRows}
-        logSearchDate={logSearchDate}
-        logDateRef={logDateRef}
-        onLogSearchDateChange={setLogSearchDate}
-        onClose={onClose}
-        onExport={onExport}
-      />
-    );
-  }
 
   return (
     <AdminDetailView

@@ -23,12 +23,14 @@ export function AttendanceDashboard() {
     return new Date(timeStr).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })
   }
 
-  const calculateHours = (inTime: string, outTime: string | null) => {
-    if (!outTime) return '--'
-    const diffMs = new Date(outTime).getTime() - new Date(inTime).getTime()
-    const hrs = Math.floor(diffMs / (1000 * 60 * 60))
-    const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
-    return `${hrs}h ${mins}m`
+  /** Display the backend-computed totalHours (break-aware) instead of raw checkOut−checkIn */
+  const formatWorkedHours = (totalHours?: number | null) => {
+    if (totalHours == null || totalHours <= 0) return '--'
+    const h = Math.floor(totalHours)
+    const m = Math.round((totalHours - h) * 60)
+    if (h === 0) return `${m}m`
+    if (m === 0) return `${h}h`
+    return `${h}h ${m}m`
   }
 
   const fmtMins = (mins: number | null | undefined): string => {
@@ -118,7 +120,7 @@ export function AttendanceDashboard() {
                     <td className="px-6 py-4 font-mono text-slate-600">{formatTime(r.checkInTime)}</td>
                     <td className="px-6 py-4 font-mono text-slate-600">{formatTime(r.checkOutTime)}</td>
                     <td className="px-6 py-4 font-semibold text-slate-700">
-                      {calculateHours(r.checkInTime, r.checkOutTime)}
+                      {formatWorkedHours(r.totalHours)}
                     </td>
                     <td className="px-6 py-4">
                       <span className={`text-sm font-bold ${r.overtimeMinutes && r.overtimeMinutes > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>

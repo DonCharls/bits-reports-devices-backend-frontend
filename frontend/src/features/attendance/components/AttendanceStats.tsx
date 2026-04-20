@@ -12,9 +12,10 @@ interface AttendanceStatsProps {
     totalOT: string;
     totalUT: string;
   };
+  variant?: 'generic' | 'admin';
 }
 
-export function AttendanceStats({ stats }: AttendanceStatsProps) {
+export function AttendanceStats({ stats, variant = 'generic' }: AttendanceStatsProps) {
   const statCards = [
     { label: 'Avg Hours', value: `${stats.avgHours}h`, icon: Timer, color: 'text-blue-500', bg: 'bg-blue-500/10' },
     { label: 'Overtime', value: `${stats.totalOT}h`, icon: TrendingUp, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
@@ -44,13 +45,13 @@ export function AttendanceStats({ stats }: AttendanceStatsProps) {
         {statCards.map(s => {
           const Icon = s.icon;
           return (
-            <div key={s.label} className="bg-white rounded-2xl border border-slate-100 p-3 sm:p-4 shadow-sm">
+            <div key={s.label} className="bg-card rounded-2xl border border-border p-3 sm:p-4 shadow-sm">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{s.label}</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{s.label}</p>
                   <p className={`text-xl sm:text-2xl font-black mt-1 ${s.color}`}>{s.value}</p>
                 </div>
-                <div className={`${s.bg} p-2 rounded-xl shrink-0`}>
+                <div className={`${s.bg} p-2 rounded-lg shrink-0`}>
                   <Icon className={`w-4 h-4 ${s.color}`} />
                 </div>
               </div>
@@ -59,37 +60,39 @@ export function AttendanceStats({ stats }: AttendanceStatsProps) {
         })}
       </div>
 
-      {/* Mini Stats Bar */}
-      <div className="flex items-center gap-4 bg-white px-5 py-3 rounded-2xl border border-slate-100 shadow-sm w-fit">
-        <div className="text-center">
-          <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">On Time</p>
-          <p className="text-xl font-black text-emerald-500">{stats.onTime}</p>
+      {/* Mini Stats Bar - Hidden in Admin variant (moved to table card) */}
+      {variant !== 'admin' && (
+        <div className="flex items-center gap-4 bg-white px-5 py-3 rounded-2xl border border-slate-100 shadow-sm w-fit">
+          <div className="text-center">
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">On Time</p>
+            <p className="text-xl font-black text-emerald-500">{stats.onTime}</p>
+          </div>
+          <div className="w-px h-8 bg-slate-100" />
+          <div className="text-center">
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Late</p>
+            <p className="text-xl font-black text-yellow-500">{stats.late}</p>
+          </div>
+          <div className="w-px h-8 bg-slate-100" />
+          <div className="text-center">
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Absent</p>
+            <p className="text-xl font-black text-red-500">{stats.absent}</p>
+          </div>
+          {stats.incomplete > 0 && (
+            <>
+              <div className="w-px h-8 bg-slate-100" />
+              <div className="text-center">
+                <p className="text-[9px] font-black uppercase tracking-wider text-amber-500">Missing</p>
+                <p className="text-xl font-black text-amber-600">{stats.incomplete}</p>
+              </div>
+            </>
+          )}
+          <div className="w-px h-8 bg-slate-100" />
+          <div className="text-center">
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Total</p>
+            <p className="text-xl font-black text-slate-700">{stats.total}</p>
+          </div>
         </div>
-        <div className="w-px h-8 bg-slate-100" />
-        <div className="text-center">
-          <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Late</p>
-          <p className="text-xl font-black text-yellow-500">{stats.late}</p>
-        </div>
-        <div className="w-px h-8 bg-slate-100" />
-        <div className="text-center">
-          <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Absent</p>
-          <p className="text-xl font-black text-red-500">{stats.absent}</p>
-        </div>
-        {stats.incomplete > 0 && (
-          <>
-            <div className="w-px h-8 bg-slate-100" />
-            <div className="text-center">
-              <p className="text-[9px] font-black uppercase tracking-wider text-amber-500">Missing</p>
-              <p className="text-xl font-black text-amber-600">{stats.incomplete}</p>
-            </div>
-          </>
-        )}
-        <div className="w-px h-8 bg-slate-100" />
-        <div className="text-center">
-          <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Total</p>
-          <p className="text-xl font-black text-slate-700">{stats.total}</p>
-        </div>
-      </div>
+      )}
     </>
   );
 }

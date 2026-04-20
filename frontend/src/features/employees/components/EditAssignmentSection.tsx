@@ -64,9 +64,13 @@ export function EditAssignmentSection({
           <input
             type="date"
             value={editForm.hireDate || ''}
-            onChange={(e) => onFormChange({ ...editForm, hireDate: e.target.value })}
-            className={`${inputBase} ${inputNormal}`}
+            onChange={(e) => {
+              onFormChange({ ...editForm, hireDate: e.target.value })
+              if (formErrors.hireDate) onClearError('hireDate')
+            }}
+            className={`${inputBase} ${formErrors.hireDate ? inputError : inputNormal}`}
           />
+          {formErrors.hireDate && <p className="text-[10px] text-red-500 font-bold ml-1">{formErrors.hireDate}</p>}
         </div>
         <div className="space-y-3 px-6">
           <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Status</label>

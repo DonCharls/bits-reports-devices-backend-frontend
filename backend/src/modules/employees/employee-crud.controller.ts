@@ -8,7 +8,6 @@ import { audit } from '../../shared/lib/auditLogger';
 import bcrypt from 'bcryptjs';
 import { generateRandomPassword } from '../../shared/utils/password.utils';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../../shared/lib/email.service';
-import { validateEmployeeId } from './employee.validator';
 
 // GET /api/employees - Get all employees
 export const getAllEmployees = async (req: Request, res: Response) => {
@@ -246,14 +245,7 @@ export const createEmployee = async (req: Request, res: Response) => {
             shiftId
         } = req.body;
 
-        // Validate Employee ID
-        const empIdValidation = validateEmployeeId(employeeNumber);
-        if (!empIdValidation.isValid) {
-            return res.status(400).json({
-                success: false,
-                message: empIdValidation.error
-            });
-        }
+        // The validators have already handled empty formats
 
         // Validate required fields
         if (!firstName || !lastName) {
@@ -305,19 +297,24 @@ export const createEmployee = async (req: Request, res: Response) => {
                 OR: [
                     { email: email || undefined },
                     { employeeNumber: employeeNumber || undefined },
+                    { contactNumber: contactNumber || undefined },
                 ]
             }
         });
 
         if (existingEmployee) {
-            const duplicateField = existingEmployee.email === email ? 'email address' : 'employee number';
+            let duplicateField = 'information';
+            if (email && existingEmployee.email === email) duplicateField = 'email address';
+            else if (employeeNumber && existingEmployee.employeeNumber === employeeNumber) duplicateField = 'employee number';
+            else if (contactNumber && existingEmployee.contactNumber === contactNumber) duplicateField = 'contact number';
+
             void audit({
                 action: 'CREATE',
                 level: 'WARN',
                 entityType: 'Employee',
                 performedBy: req.user?.employeeId,
                 details: `Failed to create employee: duplicate ${duplicateField}`,
-                metadata: { email, employeeNumber },
+                metadata: { email, employeeNumber, contactNumber },
                 correlationId: req.correlationId
             });
 
@@ -513,23 +510,16 @@ export const updateEmployee = async (req: Request, res: Response) => {
             });
         }
 
-        if (employeeNumber !== undefined) {
-            const empIdValidation = validateEmployeeId(employeeNumber);
-            if (!empIdValidation.isValid) {
+        // Validate employeeNumber uniqueness (exclude the current employee)
+        if (employeeNumber !== undefined && employeeNumber !== '' && employeeNumber !== existingEmployee.employeeNumber) {
+            const dup = await prisma.employee.findFirst({
+                where: { employeeNumber: employeeNumber.trim(), id: { not: employeeId } }
+            });
+            if (dup) {
                 return res.status(400).json({
                     success: false,
-                    message: empIdValidation.error
+                    message: 'Employee ID is already in use by another employee'
                 });
-            }
-
-            if (employeeNumber && employeeNumber !== existingEmployee.employeeNumber) {
-                const dup = await prisma.employee.findUnique({ where: { employeeNumber: employeeNumber.trim() } });
-                if (dup) {
-                    return res.status(400).json({
-                        success: false,
-                        message: 'Employee ID is already in use by another employee'
-                    });
-                }
             }
         }
 
@@ -542,6 +532,19 @@ export const updateEmployee = async (req: Request, res: Response) => {
                 return res.status(400).json({
                     success: false,
                     message: 'This email address is already in use by another employee'
+                });
+            }
+        }
+
+        // Validate contact number uniqueness (exclude current employee)
+        if (contactNumber !== undefined && contactNumber !== '' && contactNumber !== existingEmployee.contactNumber) {
+            const contactDup = await prisma.employee.findFirst({
+                where: { contactNumber, id: { not: employeeId } }
+            });
+            if (contactDup) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'This contact number is already in use by another employee'
                 });
             }
         }
@@ -862,16 +865,25 @@ export const resetEmployeePassword = async (req: Request, res: Response) => {
         });
     }
 };
-// GET /api/employees/check-email?email=...&excludeId=...
-export const checkEmailAvailability = async (req: Request, res: Response) => {
+// GET /api/employees/check-duplicate?field=email&value=...&excludeId=...
+export const checkDuplicate = async (req: Request, res: Response) => {
     try {
-        const { email, excludeId } = req.query;
+        const { field, value, excludeId } = req.query;
 
-        if (!email || typeof email !== 'string') {
-            return res.status(400).json({ success: false, message: 'Email is required' });
+        if (!field || typeof field !== 'string' || !['email', 'employeeNumber', 'contactNumber'].includes(field)) {
+            return res.status(400).json({ success: false, message: 'Valid field is required' });
+        }
+        
+        if (!value || typeof value !== 'string') {
+            return res.status(400).json({ success: false, message: 'Value is required' });
         }
 
-        const where: Prisma.EmployeeWhereInput = { email: email.trim().toLowerCase() };
+        const where: any = {};
+        where[field] = value.trim();
+        if (field === 'email') {
+            where[field] = value.trim().toLowerCase();
+        }
+
         if (excludeId) {
             where.id = { not: parseInt(excludeId as string, 10) };
         }
@@ -883,10 +895,10 @@ export const checkEmailAvailability = async (req: Request, res: Response) => {
             available: !existing,
         });
     } catch (error: unknown) {
-        console.error('Error checking email:', error);
+        console.error('Error checking duplicate:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to check email availability',
+            message: 'Failed to check duplicate availability',
         });
     }
 };

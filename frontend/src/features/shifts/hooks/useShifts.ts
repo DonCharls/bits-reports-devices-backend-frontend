@@ -85,6 +85,7 @@ export function useShifts() {
       description: s.description || '',
       workDays: parsedDays,
       halfDays: parsedHalfDays,
+      halfDayHours: s.halfDayHours ?? null,
       breaks: parsedBreaks,
     })
     setFormError('')

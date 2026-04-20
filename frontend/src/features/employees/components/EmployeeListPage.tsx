@@ -30,7 +30,20 @@ export function EmployeeListPage({ role, statusFilter = 'Active' }: EmployeeList
         departments={list.departments} branches={list.branches} shifts={list.shifts}
         onImportComplete={list.refresh}
         isAddOpen={list.isAddOpen} setIsAddOpen={list.setIsAddOpen}
-        onRegisterEmployee={list.actions.registerEmployee}
+        onRegisterEmployee={async (data) => {
+          const res = await list.actions.registerEmployee(data);
+          if (res.success) {
+            const name = `${res.employee?.firstName || ''} ${res.employee?.lastName || ''}`.trim();
+            if (res.deviceSync?.success === false) {
+              list.showToast('warning', 'Registered — Device Offline', `${name} was saved but couldn't sync to the device.`);
+            } else {
+              list.showToast('success', 'Employee Registered', `${name} has been saved.`);
+            }
+          } else {
+            list.showToast('error', 'Registration Failed', res.message || 'Unknown error');
+          }
+          return res.success;
+        }}
       />
 
       <EmployeeFiltersBar filters={list.filters} departments={list.departments} branches={list.branches} shifts={list.shifts} />
@@ -54,7 +67,7 @@ export function EmployeeListPage({ role, statusFilter = 'Active' }: EmployeeList
         departments={list.departments} branches={list.branches} shifts={list.shifts}
         isSaving={list.isUpdating} onFormChange={list.setEditForm}
         onSave={list.handleUpdateEmployee} onClose={() => list.setEditingEmployee(null)}
-        onEmailBlur={list.handleEmailBlur}
+        onDuplicateBlur={list.handleDuplicateBlur}
       />}
 
       {list.confirmDeactivate && <ConfirmDeactivateDialog employee={list.confirmDeactivate} isDeactivating={false} onConfirm={list.handleDeactivate} onCancel={() => list.setConfirmDeactivate(null)} />}

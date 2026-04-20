@@ -28,6 +28,15 @@ export interface HRTableRowData {
     duration: string;
     _rawDate: string;
     colorClass: string;
+    checkIn: string;
+    checkOut: string;
+    workedHrs: number;
+    lateMins: number;
+    otMins: number;
+    utMins: number;
+    statusLabel: string;
+    isShiftActive: boolean;
+    gracePeriodApplied: boolean;
 }
 
 function getDatesInRange(start: string, end: string): Date[] {
@@ -142,13 +151,25 @@ function buildHRTableRows(
         else if (typeLabel === 'UPCOMING') colorClass = 'text-blue-400';
         else if (typeLabel === 'MISSING CHECKOUT') colorClass = 'text-amber-600';
 
+        const checkInStr = row.checkInVal ? row.checkInVal.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : "-";
+        const checkOutStr = row.record?.isShiftActive ? "Active" : (row.checkOutVal ? row.checkOutVal.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : "-");
+
         return {
             date: row.loopDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
             shift: shiftLabel,
             type: typeLabel,
             duration: durationLabel,
             _rawDate: row.loopDateStr,
-            colorClass
+            colorClass,
+            checkIn: checkInStr,
+            checkOut: checkOutStr,
+            workedHrs: row.workedHrsVal,
+            lateMins: row.lateMinsVal,
+            otMins: row.otMinsVal,
+            utMins: row.utMinsVal,
+            statusLabel: row.statusType,
+            isShiftActive: row.record?.isShiftActive ?? false,
+            gracePeriodApplied: row.record?.gracePeriodApplied ?? false,
         };
     }).sort((a, b) => new Date(b._rawDate).getTime() - new Date(a._rawDate).getTime());
 }
