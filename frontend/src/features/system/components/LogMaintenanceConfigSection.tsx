@@ -9,6 +9,7 @@ interface LogMaintenanceConfigSectionProps {
     logBufferMaintenanceEnabled: boolean;
     logBufferMaintenanceSchedule: 'daily' | 'weekly' | 'monthly';
     logBufferMaintenanceHour: number;
+    limits: Record<string, number> | null;
     onChange: (patch: Record<string, unknown>) => void;
 }
 
@@ -16,6 +17,7 @@ export function LogMaintenanceConfigSection({
     logBufferMaintenanceEnabled,
     logBufferMaintenanceSchedule,
     logBufferMaintenanceHour,
+    limits,
     onChange,
 }: LogMaintenanceConfigSectionProps) {
     return (
@@ -63,12 +65,14 @@ export function LogMaintenanceConfigSection({
                                 <Input
                                     id="maintenanceHour"
                                     type="number"
-                                    min={0}
-                                    max={23}
+                                    min={limits?.MAINTENANCE_HOUR_MIN ?? 0}
+                                    max={limits?.MAINTENANCE_HOUR_MAX ?? 23}
                                     value={logBufferMaintenanceHour}
                                     onChange={(e) => {
                                         const raw = parseInt(e.target.value) || 0;
-                                        const clamped = Math.min(23, Math.max(0, raw));
+                                        const min = limits?.MAINTENANCE_HOUR_MIN ?? 0;
+                                        const max = limits?.MAINTENANCE_HOUR_MAX ?? 23;
+                                        const clamped = Math.min(max, Math.max(min, raw));
                                         onChange({ logBufferMaintenanceHour: clamped });
                                     }}
                                     className="w-16 text-center"

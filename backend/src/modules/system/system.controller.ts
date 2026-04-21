@@ -7,22 +7,49 @@ import { logBufferMaintenanceScheduler } from './logBufferMaintenanceScheduler';
 import { audit } from '../../shared/lib/auditLogger';
 import { z } from 'zod';
 import deviceEmitter from '../../shared/events/deviceEmitter';
+import { SYNC_LIMITS, USER_LIMITS } from './system.constants';
 
 const updateSyncConfigSchema = z.object({
-    defaultIntervalSec: z.number().min(10, "Interval must be at least 10s").optional(),
-    highFreqIntervalSec: z.number().min(10, "Interval must be at least 10s").optional(),
-    lowFreqIntervalSec: z.number().min(60, "Low frequency interval must be at least 60s").optional(),
+    defaultIntervalSec: z.number()
+        .min(SYNC_LIMITS.DEFAULT_INTERVAL_MIN_SEC, `Interval must be at least ${SYNC_LIMITS.DEFAULT_INTERVAL_MIN_SEC}s`)
+        .max(SYNC_LIMITS.DEFAULT_INTERVAL_MAX_SEC, `Interval cannot exceed 24 hours (${SYNC_LIMITS.DEFAULT_INTERVAL_MAX_SEC}s)`)
+        .optional(),
+    highFreqIntervalSec: z.number()
+        .min(SYNC_LIMITS.HIGH_FREQ_INTERVAL_MIN_SEC, `Interval must be at least ${SYNC_LIMITS.HIGH_FREQ_INTERVAL_MIN_SEC}s`)
+        .max(SYNC_LIMITS.HIGH_FREQ_INTERVAL_MAX_SEC, `Interval cannot exceed 24 hours (${SYNC_LIMITS.HIGH_FREQ_INTERVAL_MAX_SEC}s)`)
+        .optional(),
+    lowFreqIntervalSec: z.number()
+        .min(SYNC_LIMITS.LOW_FREQ_INTERVAL_MIN_SEC, `Low frequency interval must be at least ${SYNC_LIMITS.LOW_FREQ_INTERVAL_MIN_SEC}s`)
+        .max(SYNC_LIMITS.LOW_FREQ_INTERVAL_MAX_SEC, `Low frequency interval cannot exceed 24 hours (${SYNC_LIMITS.LOW_FREQ_INTERVAL_MAX_SEC}s)`)
+        .optional(),
     shiftAwareSyncEnabled: z.boolean().optional(),
-    shiftBufferMinutes: z.number().max(120, "Shift buffer cannot exceed 2 hours (120 min)").optional(),
+    shiftBufferMinutes: z.number()
+        .min(SYNC_LIMITS.SHIFT_BUFFER_MIN)
+        .max(SYNC_LIMITS.SHIFT_BUFFER_MAX, `Shift buffer cannot exceed ${SYNC_LIMITS.SHIFT_BUFFER_MAX} min`)
+        .optional(),
     autoTimeSyncEnabled: z.boolean().optional(),
-    timeSyncIntervalSec: z.number().min(300, "Time sync interval must be at least 5 minutes (300s)").optional(),
+    timeSyncIntervalSec: z.number()
+        .min(SYNC_LIMITS.TIME_SYNC_INTERVAL_MIN_SEC, `Time sync interval must be at least ${SYNC_LIMITS.TIME_SYNC_INTERVAL_MIN_SEC}s`)
+        .max(SYNC_LIMITS.TIME_SYNC_INTERVAL_MAX_SEC, `Time sync interval cannot exceed 24 hours (${SYNC_LIMITS.TIME_SYNC_INTERVAL_MAX_SEC}s)`)
+        .optional(),
     healthCheckEnabled: z.boolean().optional(),
-    healthCheckIntervalSec: z.number().min(15, "Health check interval must be at least 15s").optional(),
-    globalMinCheckoutMinutes: z.number().min(15, "Global Minimum Checkout must be at least 15 minutes").optional(),
+    healthCheckIntervalSec: z.number()
+        .min(SYNC_LIMITS.HEALTH_CHECK_INTERVAL_MIN_SEC, `Health check interval must be at least ${SYNC_LIMITS.HEALTH_CHECK_INTERVAL_MIN_SEC}s`)
+        .max(SYNC_LIMITS.HEALTH_CHECK_INTERVAL_MAX_SEC, `Health check interval cannot exceed 24 hours (${SYNC_LIMITS.HEALTH_CHECK_INTERVAL_MAX_SEC}s)`)
+        .optional(),
+    globalMinCheckoutMinutes: z.number()
+        .min(SYNC_LIMITS.MIN_CHECKOUT_MIN, `Global Minimum Checkout must be at least ${SYNC_LIMITS.MIN_CHECKOUT_MIN} minutes`)
+        .max(SYNC_LIMITS.MIN_CHECKOUT_MAX_MIN, `Global Minimum Checkout cannot exceed 12 hours (${SYNC_LIMITS.MIN_CHECKOUT_MAX_MIN} minutes)`)
+        .optional(),
     logBufferMaintenanceEnabled: z.boolean().optional(),
     logBufferMaintenanceSchedule: z.enum(['daily', 'weekly', 'monthly']).optional(),
-    logBufferMaintenanceHour: z.number().int().min(0).max(23, "Hour must be 0-23").optional(),
+    logBufferMaintenanceHour: z.number().int().min(SYNC_LIMITS.MAINTENANCE_HOUR_MIN).max(SYNC_LIMITS.MAINTENANCE_HOUR_MAX, `Hour must be ${SYNC_LIMITS.MAINTENANCE_HOUR_MIN}-${SYNC_LIMITS.MAINTENANCE_HOUR_MAX}`).optional(),
 });
+
+// ─── GET /api/system/validation-limits ──────────────────────────────────────────
+export const getValidationLimits = (_req: Request, res: Response) => {
+    res.json({ success: true, limits: { ...SYNC_LIMITS, ...USER_LIMITS } });
+};
 
 // ─── GET /api/system/sync-status ──────────────────────────────────────────────
 export const getSyncStatus = async (req: Request, res: Response) => {
@@ -53,7 +80,24 @@ export const getSyncStatus = async (req: Request, res: Response) => {
 // ─── GET /api/system/sync-config ──────────────────────────────────────────────
 export const getSyncConfig = async (req: Request, res: Response) => {
     try {
-        const config = await prisma.syncConfig.findUnique({ where: { id: 1 } });
+        const config = await prisma.syncConfig.findUnique({
+            where: { id: 1 },
+            select: {
+                defaultIntervalSec: true,
+                highFreqIntervalSec: true,
+                lowFreqIntervalSec: true,
+                shiftAwareSyncEnabled: true,
+                shiftBufferMinutes: true,
+                autoTimeSyncEnabled: true,
+                timeSyncIntervalSec: true,
+                globalMinCheckoutMinutes: true,
+                healthCheckEnabled: true,
+                healthCheckIntervalSec: true,
+                logBufferMaintenanceEnabled: true,
+                logBufferMaintenanceSchedule: true,
+                logBufferMaintenanceHour: true,
+            }
+        });
         if (!config) {
             return res.status(404).json({ success: false, message: 'Sync config not found' });
         }
@@ -168,13 +212,17 @@ export const updateSyncConfig = async (req: Request, res: Response) => {
 };
 
 // ─── POST /api/system/sync-toggle ─────────────────────────────────────────────
+const toggleSyncSchema = z.object({
+    enabled: z.boolean(),
+});
+
 export const toggleGlobalSync = async (req: Request, res: Response) => {
     try {
-        const { enabled } = req.body;
-        
-        if (typeof enabled !== 'boolean') {
+        const parsed = toggleSyncSchema.safeParse(req.body);
+        if (!parsed.success) {
             return res.status(400).json({ success: false, message: 'Missing or invalid "enabled" field' });
         }
+        const { enabled } = parsed.data;
 
         const config = await prisma.syncConfig.update({
             where: { id: 1 },

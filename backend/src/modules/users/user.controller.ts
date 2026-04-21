@@ -63,16 +63,6 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     try {
         const { firstName, lastName, email, password, role } = req.body;
 
-        if (!firstName || !lastName || !email || !password) {
-            res.status(400).json({ success: false, message: 'First name, last name, email, and password are required' });
-            return;
-        }
-
-        if (!['ADMIN', 'HR'].includes(role)) {
-            res.status(400).json({ success: false, message: 'Role must be ADMIN or HR' });
-            return;
-        }
-
         // Check for existing user with same email
         const existing = await prisma.employee.findFirst({ where: { email } });
         if (existing) {
@@ -478,16 +468,6 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
     try {
         const employeeId = req.user!.employeeId;
         const { currentPassword, newPassword } = req.body;
-
-        if (!currentPassword || !newPassword) {
-            res.status(400).json({ success: false, message: 'Current password and new password are required' });
-            return;
-        }
-
-        if (newPassword.length < 8) {
-            res.status(400).json({ success: false, message: 'New password must be at least 8 characters' });
-            return;
-        }
 
         const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
         if (!employee || !employee.password) {

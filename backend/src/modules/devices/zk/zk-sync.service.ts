@@ -231,13 +231,13 @@ async function syncSingleDevice(dbDevice: {
     } catch (deviceErr: unknown) {
         console.error(`[ZK] Error syncing "${dbDevice.name}" (${dbDevice.ip}): ${zkErrMsg(deviceErr)}`);
 
-        // Record sync failure.
+        // Record sync failure — intentionally omit lastPolledAt since a failed
+        // sync does not confirm the device is reachable.
         await prisma.device.update({
             where: { id: dbDevice.id },
             data: { 
                 lastSyncStatus: 'FAILED',
                 lastSyncError: zkErrMsg(deviceErr),
-                lastPolledAt: new Date()
             }
         }).catch(() => { /* ignore */ });
 

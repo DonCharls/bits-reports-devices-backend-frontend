@@ -6,6 +6,7 @@ import { ShieldCheck } from 'lucide-react';
 
 interface AttendanceRulesSectionProps {
     globalMinCheckoutMinutes: number;
+    limits: Record<string, number> | null;
     onChange: (patch: Record<string, unknown>) => void;
 }
 
@@ -19,8 +20,15 @@ function formatMinutesHuman(mins: number): string {
 
 export function AttendanceRulesSection({
     globalMinCheckoutMinutes,
+    limits,
     onChange,
 }: AttendanceRulesSectionProps) {
+    const minLimit = limits?.MIN_CHECKOUT_MIN ?? 15;
+    const maxLimit = limits?.MIN_CHECKOUT_MAX_MIN ?? 720;
+    const isMinError = globalMinCheckoutMinutes < minLimit;
+    const isMaxError = globalMinCheckoutMinutes > maxLimit;
+    const isError = isMinError || isMaxError;
+
     return (
         <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
             {/* Header */}
@@ -38,26 +46,37 @@ export function AttendanceRulesSection({
                 </p>
 
                 <div className="space-y-1.5">
-                    <Label htmlFor="globalMinCheckoutMinutes" className="text-xs font-semibold text-slate-600">
+                    <Label htmlFor="globalMinCheckoutMinutes" className={`text-xs font-semibold ${isError ? 'text-red-600' : 'text-slate-600'}`}>
                         Minimum Checkout Gap
                     </Label>
                     <div className="flex items-center gap-2">
                         <Input
                             id="globalMinCheckoutMinutes"
                             type="number"
-                            min={15}
                             value={globalMinCheckoutMinutes}
                             onChange={(e) => {
-                                const raw = parseInt(e.target.value) || 0;
-                                onChange({ globalMinCheckoutMinutes: raw });
+                                const raw = parseInt(e.target.value);
+                                onChange({ globalMinCheckoutMinutes: isNaN(raw) ? 0 : raw });
                             }}
-                            className="w-20 text-center"
+                            className={`w-20 text-center font-mono ${isError ? 'border-red-300 focus-visible:ring-red-200' : ''}`}
                         />
                         <span className="text-xs text-slate-400 font-semibold">minutes</span>
                     </div>
-                    <p className="text-[10px] text-slate-400 font-medium">
-                        Currently: <strong className="text-slate-600">{formatMinutesHuman(globalMinCheckoutMinutes)}</strong> • Minimum: 15 min
-                    </p>
+                    {isMinError && (
+                        <p className="text-[10px] text-red-500 font-bold">
+                            Must be at least {minLimit} minutes.
+                        </p>
+                    )}
+                    {isMaxError && (
+                        <p className="text-[10px] text-red-500 font-bold">
+                            Cannot exceed {maxLimit} minutes ({formatMinutesHuman(maxLimit)}).
+                        </p>
+                    )}
+                    {!isError && (
+                        <p className="text-[10px] text-slate-400 font-medium">
+                            Currently: <strong className="text-slate-600">{formatMinutesHuman(globalMinCheckoutMinutes)}</strong> • Max: {formatMinutesHuman(maxLimit)}
+                        </p>
+                    )}
                 </div>
             </div>
         </div>

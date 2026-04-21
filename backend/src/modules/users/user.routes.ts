@@ -11,8 +11,8 @@ import {
 } from './user.controller';
 import { authenticate } from '../../shared/middleware/auth.middleware';
 import { adminOnly, adminOrHR } from '../../shared/middleware/role.middleware';
-import { validate } from '../../shared/middleware/validation.middleware';
-import { createUserValidator, updateUserValidator, updateProfileValidator, changePasswordValidator } from './user.validator';
+import { validateZod } from '../../shared/middleware/validation.middleware';
+import { createUserSchema, updateUserSchema, updateProfileSchema, changePasswordSchema } from './user.validator';
 
 const router = Router();
 
@@ -57,7 +57,7 @@ router.use(authenticate);
  *       401:
  *         description: Not authenticated
  */
-router.put('/profile', adminOrHR, validate(updateProfileValidator), updateProfile);
+router.put('/profile', adminOrHR, validateZod(updateProfileSchema), updateProfile);
 
 /**
  * @swagger
@@ -90,7 +90,7 @@ router.put('/profile', adminOrHR, validate(updateProfileValidator), updateProfil
  *       401:
  *         description: Current password is incorrect
  */
-router.put('/change-password', adminOrHR, validate(changePasswordValidator), changePassword);
+router.put('/change-password', adminOrHR, validateZod(changePasswordSchema), changePassword);
 
 // ── User management routes (ADMIN only) ────────────────────
 
@@ -140,7 +140,7 @@ router.get('/', adminOnly, getAllUsers);
  *                 format: email
  *               password:
  *                 type: string
- *                 minLength: 6
+ *                 minLength: 8
  *               role:
  *                 type: string
  *                 enum: [ADMIN, HR]
@@ -152,7 +152,7 @@ router.get('/', adminOnly, getAllUsers);
  *       403:
  *         description: Admin role required
  */
-router.post('/', adminOnly, validate(createUserValidator), createUser);
+router.post('/', adminOnly, validateZod(createUserSchema), createUser);
 
 /**
  * @swagger
@@ -189,7 +189,7 @@ router.post('/', adminOnly, validate(createUserValidator), createUser);
  *       404:
  *         description: User not found
  */
-router.put('/:id', adminOnly, validate(updateUserValidator), updateUser);
+router.put('/:id', adminOnly, validateZod(updateUserSchema), updateUser);
 
 /**
  * @swagger

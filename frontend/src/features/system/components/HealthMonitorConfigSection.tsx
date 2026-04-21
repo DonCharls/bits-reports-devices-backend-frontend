@@ -7,12 +7,14 @@ import { HeartPulse } from 'lucide-react';
 interface HealthMonitorConfigSectionProps {
     healthCheckEnabled: boolean;
     healthCheckIntervalSec: number;
+    limits: Record<string, number> | null;
     onChange: (patch: Record<string, unknown>) => void;
 }
 
 export function HealthMonitorConfigSection({
     healthCheckEnabled,
     healthCheckIntervalSec,
+    limits,
     onChange,
 }: HealthMonitorConfigSectionProps) {
     return (
@@ -43,6 +45,8 @@ export function HealthMonitorConfigSection({
                         label="Ping Interval"
                         description="How often to check device connectivity (min 15s, recommended: 30–60s)."
                         totalSeconds={healthCheckIntervalSec}
+                        minTotalSeconds={limits?.HEALTH_CHECK_INTERVAL_MIN_SEC}
+                        maxTotalSeconds={limits?.HEALTH_CHECK_INTERVAL_MAX_SEC}
                         onChange={(sec) => onChange({ healthCheckIntervalSec: sec })}
                     />
                 )}

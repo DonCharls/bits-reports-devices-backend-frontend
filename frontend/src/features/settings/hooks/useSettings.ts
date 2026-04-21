@@ -27,6 +27,7 @@ export function useSettings() {
 
   // User data from API
   const [userData, setUserData] = useState<UserData>(initialUserData)
+  const [limits, setLimits] = useState<Record<string, number> | null>(null)
   // Backup for cancel
   const [originalData, setOriginalData] = useState<UserData>(initialUserData)
 
@@ -40,11 +41,23 @@ export function useSettings() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        const [res, limitsRes] = await Promise.all([
+          fetch('/api/auth/me', { credentials: 'include' }),
+          fetch('/api/system/validation-limits', { credentials: 'include' }).catch(() => null)
+        ])
+
         if (!res.ok) {
           router.replace('/login')
           return
         }
+
+        if (limitsRes && limitsRes.ok) {
+           const limitsData = await limitsRes.json()
+           if (limitsData.success) {
+               setLimits(limitsData.limits)
+           }
+        }
+
         const data = await res.json()
         const emp = data.employee ?? data
         const user: UserData = {
@@ -67,6 +80,26 @@ export function useSettings() {
   }, [router])
 
   const handleSaveProfile = async () => {
+    if (!userData.firstName.trim() || !userData.lastName.trim()) {
+      showToast('error', 'Validation Error', 'First name and last name are required.')
+      return
+    }
+
+    if (limits) {
+        if (userData.firstName.length > (limits.NAME_MAX_LENGTH ?? 50)) {
+           showToast('error', 'Validation Error', `First name cannot exceed ${limits.NAME_MAX_LENGTH ?? 50} characters.`)
+           return
+        }
+        if (userData.lastName.length > (limits.NAME_MAX_LENGTH ?? 50)) {
+           showToast('error', 'Validation Error', `Last name cannot exceed ${limits.NAME_MAX_LENGTH ?? 50} characters.`)
+           return
+        }
+        if (userData.contactNumber && userData.contactNumber.length > (limits.CONTACT_MAX_LENGTH ?? 20)) {
+           showToast('error', 'Validation Error', `Contact number cannot exceed ${limits.CONTACT_MAX_LENGTH ?? 20} characters.`)
+           return
+        }
+    }
+
     setIsSavingProfile(true)
     try {
       const res = await fetch('/api/users/profile', {
@@ -108,8 +141,13 @@ export function useSettings() {
       return
     }
 
-    if (passwordForm.new.length < 8) {
-      showToast('error', 'Validation Error', 'New password must be at least 8 characters.')
+    if (passwordForm.new.length < (limits?.PASSWORD_MIN_LENGTH ?? 8)) {
+      showToast('error', 'Validation Error', `New password must be at least ${limits?.PASSWORD_MIN_LENGTH ?? 8} characters.`)
+      return
+    }
+
+    if (limits && passwordForm.new.length > (limits.PASSWORD_MAX_LENGTH ?? 100)) {
+      showToast('error', 'Validation Error', `New password cannot exceed ${limits.PASSWORD_MAX_LENGTH ?? 100} characters.`)
       return
     }
 
@@ -156,7 +194,7 @@ export function useSettings() {
   const getPasswordStrength = (pw: string): PasswordStrength => {
     if (!pw) return { label: '', color: '', width: '0%' }
     let score = 0
-    if (pw.length >= 8) score++
+    if (pw.length >= (limits?.PASSWORD_MIN_LENGTH ?? 8)) score++
     if (/[A-Z]/.test(pw)) score++
     if (/[0-9]/.test(pw)) score++
     if (/[^A-Za-z0-9]/.test(pw)) score++

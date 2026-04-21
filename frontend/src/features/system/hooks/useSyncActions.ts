@@ -76,21 +76,15 @@ export function useSyncActions({ onStatusRefresh }: UseSyncActionsOptions) {
 
             const data: SyncResultData | undefined = res.data.data;
 
-            if (res.data.success && data?.status === 'SUCCESS') {
-                // Lightweight toast for full success
-                toast({
-                    title: 'Sync Complete ✅',
-                    description: `${data.newLogs} new attendance logs synced across ${data.totalDevices} device(s).`,
-                });
+            if (data?.status === 'SUCCESS' || data?.status === 'PARTIAL' || data?.status === 'FAILED') {
+                // Open rich modal for all device-level sync results (success or failure)
+                setSyncResult(data);
+                setShowResultModal(true);
             } else if (data?.status === 'NO_DEVICES') {
                 toast({
                     title: 'No Devices',
                     description: 'There are no active devices configured to sync.',
                 });
-            } else if (data?.status === 'PARTIAL' || data?.status === 'FAILED') {
-                // Open rich modal for failures
-                setSyncResult(data);
-                setShowResultModal(true);
             } else {
                 toast({
                     title: res.data.success ? 'Sync Complete' : 'Sync Issue',
@@ -117,7 +111,7 @@ export function useSyncActions({ onStatusRefresh }: UseSyncActionsOptions) {
         try {
             const res = await axios.post('/api/system/time-sync-now', {}, { withCredentials: true });
             toast({
-                title: res.data.success ? 'Time Sync Sent' : 'Time Sync Issue',
+                title: res.data.success ? 'Time Sync Complete ✅' : 'Time Sync Issue',
                 description: res.data.message,
                 variant: res.data.success ? 'default' : 'destructive',
             });
@@ -136,9 +130,6 @@ export function useSyncActions({ onStatusRefresh }: UseSyncActionsOptions) {
     // ── Manual clear device logs ──────────────────────────────────────────────
 
     const handleManualClearLogs = async () => {
-        if (!confirm('Are you sure you want to clear the log buffers on all active devices right now?\nThis is normally done automatically during off-hours to prevent data loss races.')) {
-            return;
-        }
         setClearingLogs(true);
         try {
             const res = await axios.post('/api/system/clear-device-logs', {}, { withCredentials: true });
