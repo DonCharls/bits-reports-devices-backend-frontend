@@ -122,9 +122,9 @@ export function AttendanceMobileCards({
               }
             </div>
             <div>
-              <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Hours</p>
+              <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-1">Reg Hrs</p>
               <p className="font-mono text-foreground font-black text-sm">
-                {row.isShiftActive ? <span className="text-blue-500 text-xs font-bold uppercase tracking-widest">Active</span> : fmtHours(row.totalHours)}
+                {row.isShiftActive ? <span className="text-blue-500 text-xs font-bold uppercase tracking-widest">Active</span> : fmtHours(Math.max(0, row.totalHours - (row.overtimeMinutes / 60)))}
               </p>
             </div>
           </div>

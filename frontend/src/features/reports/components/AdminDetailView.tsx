@@ -144,8 +144,8 @@ export function AdminDetailView({
                                 small: true,
                             },
                             {
-                                label: 'Hours',
-                                value: employee.totalHours.toFixed(2),
+                                label: 'Reg Hrs',
+                                value: Math.max(0, employee.totalHours - employee.overtime).toFixed(2),
                                 color: 'text-slate-800',
                             },
                         ].map((s, i) => (
@@ -192,7 +192,7 @@ export function AdminDetailView({
                                 <SortableHeader label="Date" sortKey="loopDateStr" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
                                 <SortableHeader label="Check In" sortKey="checkInVal" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
                                 <SortableHeader label="Check Out" sortKey="checkOutVal" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
-                                <SortableHeader label="Worked Hrs" sortKey="workedHrsVal" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
+                                <SortableHeader label="Reg Hrs" sortKey="workedHrsVal" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
                                 <SortableHeader label="Late" sortKey="lateMinsVal" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
                                 <SortableHeader label="OT" sortKey="otMinsVal" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
                                 <SortableHeader label="UT" sortKey="utMinsVal" currentSortKey={sortKeyStr} currentSortOrder={sortOrder} onSort={handleSort} className="px-5 py-3" />
@@ -301,7 +301,7 @@ export function AdminDetailView({
                                                     <span className="text-muted-foreground text-xs italic">Live</span>
                                                 ) : (
                                                     <span className="text-xs font-bold text-slate-600">
-                                                        {hoursWorked > 0 ? `${hoursWorked.toFixed(2)}` : '—'}
+                                                        {hoursWorked > 0 ? `${Math.max(0, hoursWorked - (otMins / 60)).toFixed(2)}` : '—'}
                                                     </span>
                                                 )}
                                             </td>
@@ -377,7 +377,7 @@ export function AdminDetailView({
                         {employee.totalDays} working days
                     </span>
                     <span className="text-[10px] text-slate-500 font-bold">
-                        Total Hours: {employee.totalHours.toFixed(2)}
+                        Total Reg Hrs: {Math.max(0, employee.totalHours - employee.overtime).toFixed(2)}
                     </span>
                 </div>
             </div>
