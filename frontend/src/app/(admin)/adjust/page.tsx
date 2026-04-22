@@ -1,10 +1,11 @@
-import { AdjustmentAuditLogsDashboard } from '@/features/adjustment-logs/components/AdjustmentAuditLogsDashboard'
+import { redirect } from 'next/navigation';
 
-export const metadata = {
-  title: 'Adjustment Audit Logs - Admin Panel',
-  description: 'Track manual biometric modifications and timekeeping overrides.',
-}
-
+/**
+ * The standalone "Adjustment Logs" page has been merged into the unified
+ * Adjustments section. Redirect any bookmarked or direct hits to the
+ * History tab inside /adjustments.
+ */
 export default function AdjustmentAuditLogsPage() {
-  return <AdjustmentAuditLogsDashboard />
+    redirect('/adjustments?tab=history');
 }
+

@@ -41,7 +41,7 @@ export function EmployeeAddModal({ departments, branches, shifts, onSave, isOpen
       if (data.success && !data.available) {
         const fieldName = field.replace(/([A-Z])/g, ' $1').toLowerCase();
         const readableLabel = fieldName.charAt(0).toUpperCase() + fieldName.slice(1);
-        setFormErrors(p => ({ ...p, [field]: `⚠️ ${readableLabel} already in use.` }));
+        setFormErrors(p => ({ ...p, [field]: `${readableLabel} already in use.` }));
         showToast('warning', 'Duplicate Found', `${readableLabel} is already assigned to another employee.`);
       }
     } finally {

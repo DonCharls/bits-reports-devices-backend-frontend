@@ -24,8 +24,8 @@ export function ShiftDeleteModal({ deleteTarget, deleteLoading, onCancel, onDele
               <span className="font-bold text-slate-700">{deleteTarget.name}</span> will be permanently removed.
             </p>
             {deleteTarget._count.Employee > 0 && (
-              <p className="text-xs text-amber-600 font-bold mt-2 bg-amber-50 rounded-xl p-2">
-                ⚠️ {deleteTarget._count.Employee} employee(s) assigned — reassign them first.
+              <p className="text-xs text-amber-600 font-bold mt-2 bg-amber-50 rounded-xl p-2 flex items-center gap-1.5">
+                <AlertTriangle size={12} className="shrink-0" /> {deleteTarget._count.Employee} employee(s) assigned — reassign them first.
               </p>
             )}
           </div>

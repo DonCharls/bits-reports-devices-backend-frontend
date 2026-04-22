@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, Loader2 } from 'lucide-react';
+import { Download, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmployeeImportModal } from './EmployeeImportModal';
 import { EmployeeAddModal } from './EmployeeAddModal';
@@ -34,7 +34,7 @@ export function EmployeePageHeader({
       <div className="flex gap-2 items-center">
         {statusFilter === 'Inactive' && (
           <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm">
-            <span className="text-amber-500">⚠</span>
+            <AlertTriangle size={14} className="text-amber-500 shrink-0" />
             <span>Permanent deletion cannot be undone</span>
           </div>
         )}

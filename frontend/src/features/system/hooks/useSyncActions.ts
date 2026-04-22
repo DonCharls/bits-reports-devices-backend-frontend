@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import axios from 'axios';
 import { useToast } from '@/components/ui/use-toast';
 
 // ─── Types (re-exported so sub-components can import from one place) ──────────
@@ -32,6 +31,22 @@ interface UseSyncActionsOptions {
     onStatusRefresh: () => void;
 }
 
+// ─── Shared fetch helper ──────────────────────────────────────────────────────
+async function apiPost<T = Record<string, unknown>>(url: string, body: unknown): Promise<T> {
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        const msg = (data as { message?: string }).message || `Request failed (${res.status})`;
+        throw new Error(msg);
+    }
+    return data as T;
+}
+
 export function useSyncActions({ onStatusRefresh }: UseSyncActionsOptions) {
     const [syncing, setSyncing] = useState(false);
     const [syncingTime, setSyncingTime] = useState(false);
@@ -46,19 +61,21 @@ export function useSyncActions({ onStatusRefresh }: UseSyncActionsOptions) {
     const handleToggle = async (checked: boolean) => {
         setToggling(true);
         try {
-            const res = await axios.post('/api/system/sync-toggle', { enabled: checked }, { withCredentials: true });
-            if (res.data.success) {
+            const res = await apiPost<{ success: boolean; message: string }>(
+                '/api/system/sync-toggle',
+                { enabled: checked }
+            );
+            if (res.success) {
                 onStatusRefresh();
                 toast({
                     title: `Global Sync ${checked ? 'Enabled' : 'Disabled'}`,
-                    description: res.data.message,
+                    description: res.message,
                 });
             }
         } catch (error: unknown) {
-            const axiosErr = error as { response?: { data?: { message?: string } } };
             toast({
                 title: 'Error toggling sync',
-                description: axiosErr.response?.data?.message || 'Unknown error occurred',
+                description: error instanceof Error ? error.message : 'Unknown error occurred',
                 variant: 'destructive',
             });
         } finally {
@@ -71,15 +88,18 @@ export function useSyncActions({ onStatusRefresh }: UseSyncActionsOptions) {
     const handleManualSync = async () => {
         setSyncing(true);
         try {
-            const res = await axios.post('/api/system/sync-now', {}, { withCredentials: true });
+            const res = await apiPost<{ success: boolean; message: string; data?: SyncResultData }>(
+                '/api/system/sync-now',
+                {}
+            );
             onStatusRefresh();
 
-            const data: SyncResultData | undefined = res.data.data;
+            const data: SyncResultData | undefined = res.data;
 
-            if (res.data.success && data?.status === 'SUCCESS') {
+            if (res.success && data?.status === 'SUCCESS') {
                 // Lightweight toast for full success
                 toast({
-                    title: 'Sync Complete ✅',
+                    title: 'Sync Complete',
                     description: `${data.newLogs} new attendance logs synced across ${data.totalDevices} device(s).`,
                 });
             } else if (data?.status === 'NO_DEVICES') {
@@ -93,16 +113,15 @@ export function useSyncActions({ onStatusRefresh }: UseSyncActionsOptions) {
                 setShowResultModal(true);
             } else {
                 toast({
-                    title: res.data.success ? 'Sync Complete' : 'Sync Issue',
-                    description: res.data.message,
-                    variant: res.data.success ? 'default' : 'destructive',
+                    title: res.success ? 'Sync Complete' : 'Sync Issue',
+                    description: res.message,
+                    variant: res.success ? 'default' : 'destructive',
                 });
             }
         } catch (error: unknown) {
-            const axiosErr = error as { response?: { data?: { message?: string } } };
             toast({
                 title: 'Manual Sync Failed',
-                description: axiosErr.response?.data?.message || 'Server error occurred.',
+                description: error instanceof Error ? error.message : 'Server error occurred.',
                 variant: 'destructive',
             });
         } finally {
@@ -115,17 +134,19 @@ export function useSyncActions({ onStatusRefresh }: UseSyncActionsOptions) {
     const handleManualTimeSync = async () => {
         setSyncingTime(true);
         try {
-            const res = await axios.post('/api/system/time-sync-now', {}, { withCredentials: true });
+            const res = await apiPost<{ success: boolean; message: string }>(
+                '/api/system/time-sync-now',
+                {}
+            );
             toast({
-                title: res.data.success ? 'Time Sync Sent' : 'Time Sync Issue',
-                description: res.data.message,
-                variant: res.data.success ? 'default' : 'destructive',
+                title: res.success ? 'Time Sync Sent' : 'Time Sync Issue',
+                description: res.message,
+                variant: res.success ? 'default' : 'destructive',
             });
         } catch (error: unknown) {
-            const axiosErr = error as { response?: { data?: { message?: string } } };
             toast({
                 title: 'Time Sync Failed',
-                description: axiosErr.response?.data?.message || 'Server error occurred.',
+                description: error instanceof Error ? error.message : 'Server error occurred.',
                 variant: 'destructive',
             });
         } finally {
@@ -141,17 +162,19 @@ export function useSyncActions({ onStatusRefresh }: UseSyncActionsOptions) {
         }
         setClearingLogs(true);
         try {
-            const res = await axios.post('/api/system/clear-device-logs', {}, { withCredentials: true });
+            const res = await apiPost<{ success: boolean; message: string }>(
+                '/api/system/clear-device-logs',
+                {}
+            );
             toast({
-                title: res.data.success ? 'Logs Cleared' : 'Clear Logs Issue',
-                description: res.data.message,
-                variant: res.data.success ? 'default' : 'destructive',
+                title: res.success ? 'Logs Cleared' : 'Clear Logs Issue',
+                description: res.message,
+                variant: res.success ? 'default' : 'destructive',
             });
         } catch (error: unknown) {
-            const axiosErr = error as { response?: { data?: { message?: string } } };
             toast({
                 title: 'Clear Logs Failed',
-                description: axiosErr.response?.data?.message || 'Server error occurred.',
+                description: error instanceof Error ? error.message : 'Server error occurred.',
                 variant: 'destructive',
             });
         } finally {

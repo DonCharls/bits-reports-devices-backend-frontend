@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
 import { useToast } from '@/components/ui/use-toast';
 
 export interface SyncConfig {
@@ -31,10 +30,11 @@ export function useSyncConfig() {
     useEffect(() => {
         const fetchConfig = async () => {
             try {
-                const res = await axios.get('/api/system/sync-config', { withCredentials: true });
-                if (res.data.success) {
-                    setConfig(res.data.config);
-                    setInitialConfig(res.data.config);
+                const res = await fetch('/api/system/sync-config', { credentials: 'include' });
+                const data = await res.json();
+                if (data.success) {
+                    setConfig(data.config);
+                    setInitialConfig(data.config);
                 }
             } catch (error) {
                 console.error('Failed to fetch sync config', error);
@@ -51,22 +51,32 @@ export function useSyncConfig() {
         setSaving(true);
         setShowIntervalWarning(false);
         try {
-            const res = await axios.put('/api/system/sync-config', config, { withCredentials: true });
-            if (res.data.success) {
+            const res = await fetch('/api/system/sync-config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(config),
+            });
+            const data = await res.json();
+            if (data.success) {
                 setInitialConfig(config);
                 toast({
                     title: 'Configuration Saved',
-                    description: res.data.warning
-                        ? `⚠️ ${res.data.warning}`
+                    description: data.warning
+                        ? `${data.warning}`
                         : 'Sync intervals updated successfully.',
+                });
+            } else {
+                toast({
+                    title: 'Error saving config',
+                    description: data.message || 'Failed to update configuration',
+                    variant: 'destructive',
                 });
             }
         } catch (error: unknown) {
-            const errMsg = error instanceof Error ? error.message : 'Failed to update configuration';
-            const axiosErr = error as { response?: { data?: { message?: string } } };
             toast({
                 title: 'Error saving config',
-                description: axiosErr.response?.data?.message || errMsg,
+                description: error instanceof Error ? error.message : 'Failed to update configuration',
                 variant: 'destructive',
             });
         } finally {

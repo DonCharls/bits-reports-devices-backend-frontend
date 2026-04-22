@@ -168,6 +168,8 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
             isNightShift: emp.Shift?.isNightShift ?? false,
             isAnomaly, isEarlyOut, isShiftActive, gracePeriodApplied,
             notes: log.notes || null,
+            isEarlyPunch: log.isEarlyPunch ?? false,
+            isMissingCheckout: log.isMissingCheckout ?? false,
             checkInDevice: log.checkInDeviceName ?? null,
             checkOutDevice: log.checkOutDeviceName ?? null,
             checkoutSource: log.checkoutSource ?? null,
@@ -199,6 +201,7 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
             shiftCode: e.Shift?.shiftCode ?? null,
             isNightShift: e.Shift?.isNightShift ?? false,
             isAnomaly: false, isEarlyOut: false, isShiftActive: false, gracePeriodApplied: false,
+            isEarlyPunch: false, isMissingCheckout: false,
           }))
 
         let full = (statusFilter === 'all' || statusFilter === 'absent')

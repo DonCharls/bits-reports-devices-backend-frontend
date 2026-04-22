@@ -33,25 +33,7 @@ export function AdjustmentListPage({ role }: AdjustmentListPageProps) {
 
     return (
         <div className="space-y-6">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight">
-                        {isAdmin ? 'Approval Queue' : 'Adjustment Logs'}
-                    </h1>
-                    <p className="text-slate-500 text-sm font-medium mt-0.5">
-                        {isAdmin
-                            ? 'Review and approve attendance adjustments submitted by HR'
-                            : 'Track attendance adjustment requests and their approval status'}
-                    </p>
-                </div>
-                {pendingCount !== null && pendingCount > 0 && (
-                    <div className="flex items-center gap-2 px-4 py-2 bg-yellow-50 border border-yellow-200 rounded-xl">
-                        <Clock className="w-4 h-4 text-yellow-600" />
-                        <span className="text-sm font-bold text-yellow-700">{pendingCount} pending</span>
-                    </div>
-                )}
-            </div>
+            {/* Sub-panel: no standalone h1 — title is owned by AdjustmentsDashboard */}
 
             {/* Filters */}
             <div className="flex flex-col md:flex-row items-center bg-white p-2 rounded-2xl border border-slate-200 shadow-sm gap-3">
@@ -61,6 +43,13 @@ export function AdjustmentListPage({ role }: AdjustmentListPageProps) {
                         className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-red-500/20" />
                 </div>
                 <div className="flex flex-wrap items-center gap-2 ml-auto">
+                    {/* Pending count badge */}
+                    {isAdmin && pendingCount !== null && pendingCount > 0 && (
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <Clock className="w-3.5 h-3.5 text-yellow-600" />
+                            <span className="text-xs font-bold text-yellow-700">{pendingCount} pending</span>
+                        </div>
+                    )}
                     {/* Date filter — HR only */}
                     {!isAdmin && (
                         <div className="relative">

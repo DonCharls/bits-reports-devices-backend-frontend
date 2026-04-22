@@ -9,6 +9,8 @@ export interface AttendanceRecord {
   checkOut: string;
   status: string;
   notes?: string;
+  isEarlyPunch?: boolean;
+  isMissingCheckout?: boolean;
   lateMinutes: number;
   totalHours: number;
   overtimeMinutes: number;

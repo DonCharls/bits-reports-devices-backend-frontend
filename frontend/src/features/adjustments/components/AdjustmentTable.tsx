@@ -1,7 +1,8 @@
 'use client'
 
 import React from 'react'
-import { Loader2, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import Link from 'next/link'
+import { Loader2, CheckCircle2, XCircle, Clock, ExternalLink } from 'lucide-react'
 import { SortableHeader } from '@/components/ui/SortableHeader'
 import { Adjustment } from '@/features/adjustments/types'
 import { formatTime, formatTimestamp, formatDate, empName } from '../hooks/useAdjustmentList'
@@ -89,7 +90,7 @@ export function AdjustmentTable({
                             <td className="px-4 py-3 max-w-[180px]">
                                 <p className="text-[11px] font-medium text-slate-600 truncate" title={adj.reason}>{adj.reason}</p>
                                 {adj.rejectionReason && (
-                                    <p className="text-[10px] text-red-500 font-medium mt-1 truncate" title={adj.rejectionReason}>❌ {adj.rejectionReason}</p>
+                                    <p className="text-[10px] text-red-500 font-medium mt-1 truncate flex items-center gap-1" title={adj.rejectionReason}><XCircle size={10} className="shrink-0" /> {adj.rejectionReason}</p>
                                 )}
                             </td>
                             <td className="px-4 py-3 font-bold text-slate-700 text-sm whitespace-nowrap">
@@ -105,18 +106,27 @@ export function AdjustmentTable({
                                 {isAdmin && adj.status === 'pending' ? (
                                     <div className="flex items-center justify-center gap-1.5">
                                         <button onClick={() => onApprove(adj.id)} disabled={actionLoading}
-                                            className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 transition-all shadow-sm disabled:opacity-50 active:scale-95">
-                                            ✅ Approve
+                                            className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 transition-all shadow-sm disabled:opacity-50 active:scale-95 inline-flex items-center gap-1">
+                                            <CheckCircle2 size={10} /> Approve
                                         </button>
                                         <button onClick={() => onReject(adj.id)} disabled={actionLoading}
-                                            className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-red-700 transition-all shadow-sm disabled:opacity-50 active:scale-95">
-                                            ❌ Reject
+                                            className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-red-700 transition-all shadow-sm disabled:opacity-50 active:scale-95 inline-flex items-center gap-1">
+                                            <XCircle size={10} /> Reject
                                         </button>
                                     </div>
                                 ) : (
-                                    <span className="text-[10px] text-slate-400 font-medium">
+                                    <span className="text-[10px] text-slate-400 font-medium block text-center">
                                         {adj.reviewedBy ? `${adj.reviewedBy.firstName} ${adj.reviewedBy.lastName}` : '—'}
                                         {adj.reviewedAt && <><br />{formatTimestamp(adj.reviewedAt)}</>}
+                                        {adj.status === 'approved' && (
+                                            <Link
+                                                href={`/adjustments?tab=history&entityId=${adj.attendanceId}`}
+                                                className="mt-1.5 flex items-center justify-center gap-1 text-[9px] font-black uppercase tracking-wider text-red-600 hover:text-red-800 transition-colors"
+                                            >
+                                                <ExternalLink size={9} />
+                                                View Audit Detail
+                                            </Link>
+                                        )}
                                     </span>
                                 )}
                             </td>
@@ -125,7 +135,7 @@ export function AdjustmentTable({
                 }) : (
                     <tr>
                         <td colSpan={8} className="px-6 py-24 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">
-                            {statusFilter === 'pending' ? 'No pending adjustments — all caught up! 🎉' : 'No adjustment records found'}
+                            {statusFilter === 'pending' ? 'No pending adjustments — all caught up!' : 'No adjustment records found'}
                         </td>
                     </tr>
                 )}

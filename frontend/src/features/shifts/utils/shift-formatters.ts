@@ -57,6 +57,6 @@ export function toMinutes(t: string) {
 
 export function getBreakError(b: { start: string; end: string }) {
   if (!b.start || !b.end) return null
-  if (toMinutes(b.end) <= toMinutes(b.start)) return '⚠️ "To" time must be later than "From" time.'
+  if (toMinutes(b.end) <= toMinutes(b.start)) return '"To" time must be later than "From" time.'
   return null
 }

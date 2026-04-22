@@ -2,10 +2,11 @@ import { useState, useCallback, useEffect, useMemo } from 'react'
 import { AuditLog, GroupedAuditLog } from '../utils/adjustment-log-types'
 
 interface UseAdjustmentLogsProps {
-    initialItemsPerPage?: number
+    initialItemsPerPage?: number;
+    initialEntityId?: number | null;
 }
 
-export function useAdjustmentLogs({ initialItemsPerPage = 15 }: UseAdjustmentLogsProps = {}) {
+export function useAdjustmentLogs({ initialItemsPerPage = 15, initialEntityId = null }: UseAdjustmentLogsProps = {}) {
     const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
     const [loading, setLoading] = useState(true)
     const [totalCount, setTotalCount] = useState(0)
@@ -14,6 +15,7 @@ export function useAdjustmentLogs({ initialItemsPerPage = 15 }: UseAdjustmentLog
     const [searchQuery, setSearchQuery] = useState('')
     const [branchFilter, setBranchFilter] = useState('All Branches')
     const [logDate, setLogDate] = useState('')
+    const [entityId, setEntityId] = useState<number | null>(initialEntityId)
     const [branches, setBranches] = useState<string[]>(['All Branches'])
     const itemsPerPage = initialItemsPerPage
 
@@ -26,6 +28,7 @@ export function useAdjustmentLogs({ initialItemsPerPage = 15 }: UseAdjustmentLog
             if (searchQuery) params.set('search', searchQuery)
             if (branchFilter && branchFilter !== 'All Branches') params.set('branch', branchFilter)
             if (logDate) params.set('date', logDate)
+            if (entityId) params.set('entityId', String(entityId))
 
             const res = await fetch(`/api/attendance/audit-logs?${params.toString()}`, { credentials: 'include' })
             if (res.status === 401) { window.location.href = '/login'; return }

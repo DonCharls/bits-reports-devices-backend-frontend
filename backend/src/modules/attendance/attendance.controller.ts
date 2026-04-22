@@ -361,6 +361,7 @@ export const getAttendanceAuditLogs = async (req: Request, res: Response) => {
     const search = (req.query.search as string) || '';
     const branch = (req.query.branch as string) || '';
     const dateStr = (req.query.date as string) || '';
+    const entityId = parseInt(req.query.entityId as string) || null;
 
     const skip = (page - 1) * limit;
 
@@ -369,6 +370,10 @@ export const getAttendanceAuditLogs = async (req: Request, res: Response) => {
         entityType: 'Attendance',
         action: { in: ['ATTENDANCE_OVERRIDE', 'ADJUSTMENT_APPROVE'] }
     };
+
+    if (entityId) {
+        where.entityId = entityId;
+    }
 
     if (dateStr) {
       const start = new Date(dateStr);

@@ -93,7 +93,7 @@ export function AttendanceDesktopTable({
               </td>
               {/* Clock Out */}
               <td className="px-4 py-4 text-sm font-mono text-muted-foreground font-bold">
-                {(row as any).notes?.includes('Early punch detected') ? (
+                {row.isEarlyPunch ? (
                   <div className="flex flex-col">
                     {row.isShiftActive ? (
                       <span className="inline-flex items-center gap-2 text-blue-500 font-bold text-[10px] uppercase tracking-wider">
@@ -102,7 +102,7 @@ export function AttendanceDesktopTable({
                     ) : row.checkOut !== '—' ? (
                       <span>{row.checkOut}</span>
                     ) : null}
-                    <span className="inline-flex items-center gap-1 text-orange-500 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap mt-0.5" title={(row as any).notes}>
+                    <span className="inline-flex items-center gap-1 text-orange-500 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap mt-0.5" title={row.notes ?? undefined}>
                       <AlertCircle className="w-3 h-3" /> Early punch flagged
                     </span>
                   </div>
@@ -110,15 +110,15 @@ export function AttendanceDesktopTable({
                   <span className="inline-flex items-center gap-2 text-blue-500 font-bold text-[10px] uppercase tracking-wider">
                     <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span></span>Active
                   </span>
-                ) : row.displayStatus === 'missing_checkout' ? (
+                ) : row.displayStatus === 'missing_checkout' || row.isMissingCheckout ? (
                   <div className="flex flex-col gap-1">
-                    <span className="inline-flex items-center gap-1 text-amber-600 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title={(row as any).notes}>
+                    <span className="inline-flex items-center gap-1 text-amber-600 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title={row.notes ?? undefined}>
                       <AlertCircle className="w-3 h-3" /> No checkout
                     </span>
                   </div>
-                ) : row.checkOut === '—' && (row as any).notes?.includes('No checkout recorded') ? (
+                ) : row.checkOut === '—' && row.isMissingCheckout ? (
                   <div className="flex flex-col gap-1">
-                    <span className="inline-flex items-center gap-1 text-amber-600 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title={(row as any).notes}>
+                    <span className="inline-flex items-center gap-1 text-amber-600 font-bold text-[10px] uppercase tracking-wider whitespace-nowrap" title={row.notes ?? undefined}>
                       <AlertCircle className="w-3 h-3" /> No checkout
                     </span>
                   </div>

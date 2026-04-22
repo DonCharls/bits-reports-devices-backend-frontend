@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useRef, useState } from 'react';
-import { Search, CalendarSearch, X, ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Search, CalendarSearch, X, ChevronUp, ChevronDown, Loader2, Filter } from 'lucide-react';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/ui/SortableHeader';
@@ -70,11 +71,21 @@ function getChangeColor(field: string, newValue: string | null): string {
 }
 
 export function AdjustmentAuditLogsDashboard() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const entityIdParam = parseInt(searchParams.get('entityId') || '') || null;
+
   const {
     groupedLogs, loading, totalCount, totalPages, currentPage,
     searchQuery, branchFilter, logDate, branches, itemsPerPage,
     setCurrentPage, setSearchQuery, setBranchFilter, setLogDate
-  } = useAdjustmentLogs();
+  } = useAdjustmentLogs({ initialEntityId: entityIdParam });
+
+  const clearEntityFilter = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('entityId');
+    router.push(`?${params.toString()}`, { scroll: false });
+  };
 
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const logDateRef = useRef<HTMLInputElement>(null);
@@ -133,12 +144,23 @@ export function AdjustmentAuditLogsDashboard() {
 
   return (
     <div className="space-y-6 relative" onClick={() => setOpenDropdown(null)}>
-      <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight leading-none">Adjustment Logs</h1>
-          <p className="text-slate-500 text-sm font-medium mt-1">Full audit trail of manual biometric data modifications</p>
+      {/* Sub-panel: title is owned by AdjustmentsDashboard History tab */}
+
+      {/* Active entityId filter banner */}
+      {entityIdParam && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm">
+          <Filter size={14} className="text-red-600 shrink-0" />
+          <span className="text-red-700 font-bold flex-1">
+            Showing audit trail for a specific adjustment record
+          </span>
+          <button
+            onClick={clearEntityFilter}
+            className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-red-600 hover:text-red-800 transition-colors"
+          >
+            <X size={12} /> Clear Filter
+          </button>
         </div>
-      </div>
+      )}
 
       <div className="flex flex-col md:flex-row items-center bg-white p-2 rounded-2xl border border-slate-200 shadow-sm gap-4" onClick={(e) => e.stopPropagation()}>
         <div className="relative flex-1">
@@ -214,7 +236,7 @@ export function AdjustmentAuditLogsDashboard() {
                   <td className="px-4 py-2.5 font-bold text-slate-700 align-top">{group.employeeName}</td>
                   <td className="px-4 py-2.5 align-top">
                     <div className="flex flex-col gap-1.5">
-                      {group.logs.map((log: any) => (
+                      {group.logs.map((log: { id: string | number; field: string; oldValue: string | null; newValue: string | null }) => (
                         <span key={log.id} className="text-[10px] font-black uppercase tracking-tight text-slate-600">
                           {fieldLabels[log.field] || log.field}
                         </span>
@@ -223,7 +245,7 @@ export function AdjustmentAuditLogsDashboard() {
                   </td>
                   <td className="px-4 py-2.5 align-top">
                     <div className="flex flex-col gap-1.5">
-                      {group.logs.map((log: any) => (
+                      {group.logs.map((log: { id: string | number; field: string; oldValue: string | null; newValue: string | null }) => (
                         <div key={log.id} className="flex items-center gap-2 whitespace-nowrap">
                           <span className="text-[10px] text-slate-400 line-through decoration-slate-300">
                             {formatValue(log.field, log.oldValue)}

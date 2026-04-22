@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import {
-  Users, Clock, FileText, LayoutDashboard, UserCog, UserX, Building2, Fingerprint, RadioTower, ScrollText, Server, History, FileCheck
+  Users, Clock, FileText, LayoutDashboard, UserCog, UserX, Building2, Fingerprint, RadioTower, ScrollText, Server, FileCheck
 } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { BaseSidebar, useSidebarCollapsed } from './shared/BaseSidebar'
@@ -41,30 +41,28 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
   }, [fetchPendingCount])
 
   const isOnEmployees = pathname.startsWith('/employees')
-  const isOnReports = pathname.startsWith('/reports') || pathname === '/adjust' || pathname.startsWith('/adjust/')
 
   const [inactiveOpen, setInactiveOpen] = useState(isOnEmployees)
-  const [reportsOpen, setReportsOpen] = useState(isOnReports)
 
   // Flat list matching rendered <li> order for indicator
   const allItems = [
     { href: '/dashboard' },
     { href: '/attendance' },
-    { href: '/adjustments' },
+    { href: '/adjustments', matchPrefix: '/adjustments' },
     { href: '/employees', matchPrefix: '/employees' },
     { href: '/shifts' },
     { href: '/organization' },
     { href: '/devices' },
-    { href: '/reports', matchFn: () => isOnReports },
+    { href: '/reports' },
     { href: '/logs' },
     { href: '/system' },
     { href: '/user-accounts' },
   ]
 
   const activeIndex = allItems.findIndex(item =>
-    'matchFn' in item && item.matchFn ? item.matchFn() :
-    'matchPrefix' in item && item.matchPrefix ? pathname.startsWith(item.matchPrefix) :
-    pathname === item.href
+    'matchPrefix' in item && item.matchPrefix
+      ? pathname.startsWith(item.matchPrefix as string)
+      : pathname === item.href
   )
 
   return (
@@ -75,7 +73,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
       onToggleCollapse={onToggleCollapse}
       title="Admin Panel"
       activeIndex={activeIndex}
-      indicatorDeps={[inactiveOpen, reportsOpen]}
+      indicatorDeps={[inactiveOpen]}
       expandedWidth="lg:w-63"
     >
       {/* Dashboard */}
@@ -84,19 +82,19 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
       {/* Attendance */}
       <SidebarNavItem href="/attendance" label="Attendance" icon={Fingerprint} active={pathname === '/attendance'} collapsed={collapsed} labelStyle={labelStyle} onClick={onClose} />
 
-      {/* Approval Queue */}
+      {/* Adjustments — unified queue + audit trail */}
       <SidebarNavItem
         href="/adjustments"
-        label="Approval Queue"
+        label="Adjustments"
         icon={FileCheck}
-        active={pathname === '/adjustments'}
+        active={pathname.startsWith('/adjustments')}
         collapsed={collapsed}
         labelStyle={labelStyle}
         onClick={onClose}
         badge={!collapsed && pendingCount > 0 ? (
           <span
             style={labelStyle}
-            className={`ml-auto mr-4 px-2 py-0.5 text-[10px] font-black rounded-full shadow-sm transition-colors duration-300 ${pathname === '/adjustments' ? 'bg-[#E60000] text-white' : 'bg-white text-[#E60000]'}`}
+            className={`ml-auto mr-4 px-2 py-0.5 text-[10px] font-black rounded-full shadow-sm transition-colors duration-300 ${pathname.startsWith('/adjustments') ? 'bg-[#E60000] text-white' : 'bg-white text-[#E60000]'}`}
           >
             {pendingCount > 99 ? '99+' : pendingCount}
           </span>
@@ -133,26 +131,8 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
       {/* Devices */}
       <SidebarNavItem href="/devices" label="Devices" icon={RadioTower} active={pathname === '/devices'} collapsed={collapsed} labelStyle={labelStyle} onClick={onClose} />
 
-      {/* Reports (with submenu) */}
-      <SidebarSubMenu
-        href="/reports"
-        label="Reports"
-        icon={FileText}
-        isGroupActive={isOnReports}
-        isOpen={reportsOpen}
-        onToggle={() => setReportsOpen(o => !o)}
-        collapsed={collapsed}
-        labelStyle={labelStyle}
-        onClose={onClose}
-        subItems={[
-          {
-            href: '/adjust',
-            label: 'Adjustment Logs',
-            icon: History,
-            isActive: pathname === '/adjust',
-          },
-        ]}
-      />
+      {/* Reports */}
+      <SidebarNavItem href="/reports" label="Reports" icon={FileText} active={pathname.startsWith('/reports')} collapsed={collapsed} labelStyle={labelStyle} onClick={onClose} />
 
       {/* System Logs */}
       <SidebarNavItem href="/logs" label="System Logs" icon={ScrollText} active={pathname === '/logs'} collapsed={collapsed} labelStyle={labelStyle} onClick={onClose} />
