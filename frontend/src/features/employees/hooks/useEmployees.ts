@@ -72,7 +72,7 @@ export function useEmployees({ statusFilter = 'ACTIVE' }: UseEmployeesProps = {}
         fullName.includes(searchStr) ||
         (emp.email || '').toLowerCase().includes(searchStr) ||
         (emp.employeeNumber || '').toLowerCase().includes(searchStr) ||
-        (emp.contactNumber || '').toLowerCase().includes(searchStr) ||
+        (emp.contactNumber || '').replace(/\s/g, '').toLowerCase().includes(searchStr.replace(/\s/g, '')) ||
         (emp.Shift?.name || '').toLowerCase().includes(searchStr) ||
         (emp.Shift?.shiftCode || '').toLowerCase().includes(searchStr) ||
         // Only compare zkId if the query is purely numeric (it's an Int)
