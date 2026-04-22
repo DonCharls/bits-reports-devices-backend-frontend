@@ -42,9 +42,11 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
 
   const isOnEmployees = pathname.startsWith('/employees')
   const isOnReports = pathname.startsWith('/reports') || pathname === '/adjust' || pathname.startsWith('/adjust/')
+  const isOnSystem = pathname.startsWith('/logs') || pathname.startsWith('/system') || pathname.startsWith('/user-accounts')
 
   const [inactiveOpen, setInactiveOpen] = useState(isOnEmployees)
   const [reportsOpen, setReportsOpen] = useState(isOnReports)
+  const [systemOpen, setSystemOpen] = useState(isOnSystem)
 
   // Flat list matching rendered <li> order for indicator
   const allItems = [
@@ -56,9 +58,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
     { href: '/organization' },
     { href: '/devices' },
     { href: '/reports', matchFn: () => isOnReports },
-    { href: '/logs' },
-    { href: '/system' },
-    { href: '/user-accounts' },
+    { href: '/system', matchFn: () => isOnSystem },
   ]
 
   const activeIndex = allItems.findIndex(item =>
@@ -75,7 +75,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
       onToggleCollapse={onToggleCollapse}
       title="Admin Panel"
       activeIndex={activeIndex}
-      indicatorDeps={[inactiveOpen, reportsOpen]}
+      indicatorDeps={[inactiveOpen, reportsOpen, systemOpen]}
       expandedWidth="lg:w-63"
     >
       {/* Dashboard */}
@@ -154,14 +154,38 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
         ]}
       />
 
-      {/* System Logs */}
-      <SidebarNavItem href="/logs" label="System Logs" icon={ScrollText} active={pathname === '/logs'} collapsed={collapsed} labelStyle={labelStyle} onClick={onClose} />
-
-      {/* System Settings */}
-      <SidebarNavItem href="/system" label="System Settings" icon={Server} active={pathname === '/system'} collapsed={collapsed} labelStyle={labelStyle} onClick={onClose} />
-
-      {/* User Accounts */}
-      <SidebarNavItem href="/user-accounts" label="User Accounts" icon={UserCog} active={pathname === '/user-accounts'} collapsed={collapsed} labelStyle={labelStyle} onClick={onClose} />
+      {/* System Administration (with submenu) */}
+      <SidebarSubMenu
+        href="/system"
+        label="Administration"
+        icon={Server}
+        isGroupActive={isOnSystem}
+        isOpen={systemOpen}
+        onToggle={() => setSystemOpen(o => !o)}
+        collapsed={collapsed}
+        labelStyle={labelStyle}
+        onClose={onClose}
+        subItems={[
+          {
+            href: '/system',
+            label: 'System Settings',
+            icon: Server,
+            isActive: pathname === '/system',
+          },
+          {
+            href: '/logs',
+            label: 'System Logs',
+            icon: ScrollText,
+            isActive: pathname === '/logs',
+          },
+          {
+            href: '/user-accounts',
+            label: 'User Accounts',
+            icon: UserCog,
+            isActive: pathname === '/user-accounts',
+          },
+        ]}
+      />
     </BaseSidebar>
   )
 }
