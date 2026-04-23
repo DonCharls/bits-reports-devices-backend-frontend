@@ -86,7 +86,7 @@ export function BaseSidebar({
       )}
       
       <aside aria-label="Main navigation" className={`
-      fixed z-60 bg-[#E60000] flex flex-col transition-all duration-300 ease-in-out
+      fixed z-60 bg-brand flex flex-col transition-all duration-300 ease-in-out
       
       /* Mobile View: Full height, flush to edges */
       top-0 bottom-0 left-0 rounded-none w-72
@@ -147,10 +147,10 @@ export function BaseSidebar({
             >
               {/* Only show the inverse curves when NOT collapsed */}
               <div className="absolute right-0 -top-[30px] w-[30px] h-[30px] bg-gray-50 hidden lg:block" style={{ opacity: collapsed ? 0 : 1, transition: 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1)' }}>
-                <div className="absolute inset-0 bg-[#E60000] rounded-br-[30px]" />
+                <div className="absolute inset-0 bg-brand rounded-br-[30px]" />
               </div>
               <div className="absolute right-0 -bottom-[30px] w-[30px] h-[30px] bg-gray-50 hidden lg:block" style={{ opacity: collapsed ? 0 : 1, transition: 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1)' }}>
-                <div className="absolute inset-0 bg-[#E60000] rounded-tr-[30px]" />
+                <div className="absolute inset-0 bg-brand rounded-tr-[30px]" />
               </div>
             </div>
           )}

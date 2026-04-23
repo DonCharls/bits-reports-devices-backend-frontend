@@ -96,7 +96,7 @@ export function AdminSidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }:
         badge={!collapsed && pendingCount > 0 ? (
           <span
             style={labelStyle}
-            className={`ml-auto mr-4 px-2 py-0.5 text-[10px] font-black rounded-full shadow-sm transition-colors duration-300 ${pathname.startsWith('/adjustments') ? 'bg-[#E60000] text-white' : 'bg-white text-[#E60000]'}`}
+            className={`ml-auto mr-4 px-2 py-0.5 text-[10px] font-black rounded-full shadow-sm transition-colors duration-300 ${pathname.startsWith('/adjustments') ? 'bg-brand text-white' : 'bg-white text-brand'}`}
           >
             {pendingCount > 99 ? '99+' : pendingCount}
           </span>

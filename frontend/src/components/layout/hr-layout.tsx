@@ -12,7 +12,7 @@ export function HRLayout({ children }: { children: React.ReactNode }) {
         <div className="h-screen bg-slate-50 overflow-hidden relative">
             <a
                 href="#main-content"
-                className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-4 focus:left-4 focus:px-4 focus:py-2 focus:rounded-lg focus:bg-white focus:text-[#E60000] focus:font-bold"
+                className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-4 focus:left-4 focus:px-4 focus:py-2 focus:rounded-lg focus:bg-white focus:text-brand focus:font-bold"
             >
                 Skip to main content
             </a>

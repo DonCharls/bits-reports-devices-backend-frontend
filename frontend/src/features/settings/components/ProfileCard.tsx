@@ -19,10 +19,10 @@ export function ProfileCard({
 }: ProfileCardProps) {
   return (
     <div className="bg-white border border-slate-200 overflow-hidden shadow-sm rounded-3xl">
-      <div className="h-32 bg-[#E60000]" />
+      <div className="h-32 bg-brand" />
       <div className="px-8 pb-8">
         <div className="relative flex justify-between items-end -mt-12 mb-6">
-          <div className="h-24 w-24 rounded-3xl bg-[#FE0908] p-1 shadow-xl border border-slate-100 overflow-hidden">
+          <div className="h-24 w-24 rounded-3xl bg-brand-bright p-1 shadow-xl border border-slate-100 overflow-hidden">
             <div className="h-full w-full rounded-2xl overflow-hidden relative">
               <Image
                 src="/images/av.jpg"

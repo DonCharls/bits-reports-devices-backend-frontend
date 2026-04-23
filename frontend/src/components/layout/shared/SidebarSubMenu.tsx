@@ -45,17 +45,17 @@ export function SidebarSubMenu({
         <Link
           href={href}
           onClick={onClose}
-          className={`flex items-center gap-4 py-2.5 flex-1 cursor-pointer ${isGroupActive ? 'text-[#E60000]' : 'text-white/70 hover:text-white'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:bg-white/5 rounded-l-xl transition-colors duration-200`}
+          className={`flex items-center gap-4 py-2.5 flex-1 cursor-pointer ${isGroupActive ? 'text-brand' : 'text-white/70 hover:text-white'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:bg-white/5 rounded-l-xl transition-colors duration-200`}
           style={{ paddingLeft: '12px' }}
         >
-          <Icon size={22} className={`shrink-0 ${isGroupActive ? 'text-[#E60000]' : 'text-white/70'}`} />
+          <Icon size={22} className={`shrink-0 ${isGroupActive ? 'text-brand' : 'text-white/70'}`} />
           <span className="font-bold text-[15px] whitespace-nowrap motion-reduce:transition-none" style={labelStyle}>{label}</span>
           {badge}
         </Link>
         {!collapsed && (
           <button
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle(); }}
-            className={`p-2 mr-2 rounded-lg transition-colors shrink-0 ${isGroupActive ? 'text-[#E60000]' : 'text-white/70 hover:text-white'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:bg-white/10`}
+            className={`p-2 mr-2 rounded-lg transition-colors shrink-0 ${isGroupActive ? 'text-brand' : 'text-white/70 hover:text-white'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:bg-white/10`}
             title="Toggle submenu"
             aria-expanded={isOpen}
             aria-label={`Toggle ${label} submenu`}
@@ -86,8 +86,8 @@ export function SidebarSubMenu({
                     onClick={onClose}
                     className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[14px] font-semibold transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:bg-white/5 ${
                       sub.isActive
-                        ? isGroupActive ? 'bg-[#E60000]/10 text-[#E60000]' : 'bg-white/15 text-white'
-                        : isGroupActive ? 'text-[#E60000]/70 hover:text-[#E60000] hover:bg-[#E60000]/5' : 'text-white/70 hover:text-white hover:bg-white/5'
+                        ? isGroupActive ? 'bg-brand/10 text-brand' : 'bg-white/15 text-white'
+                        : isGroupActive ? 'text-brand/70 hover:text-brand hover:bg-brand/5' : 'text-white/70 hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <SubIcon size={15} className="shrink-0" />

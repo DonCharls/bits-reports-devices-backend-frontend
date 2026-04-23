@@ -22,10 +22,10 @@ export function SidebarNavItem({
       <Link
         href={href}
         onClick={onClick}
-        className={`flex items-center gap-4 py-2.5 relative z-10 cursor-pointer ${active ? 'text-[#E60000]' : 'text-white/70 hover:text-white'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:bg-white/5 rounded-l-xl transition-colors duration-200`}
+        className={`flex items-center gap-4 py-2.5 relative z-10 cursor-pointer ${active ? 'text-brand' : 'text-white/70 hover:text-white'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:bg-white/5 rounded-l-xl transition-colors duration-200`}
         style={{ paddingLeft: '12px', paddingRight: collapsed ? '12px' : '24px' }}
       >
-        <Icon size={22} className={`shrink-0 ${active ? 'text-[#E60000]' : 'text-white/70'}`} />
+        <Icon size={22} className={`shrink-0 ${active ? 'text-brand' : 'text-white/70'}`} />
         <span className="font-bold text-[15px] whitespace-nowrap motion-reduce:transition-none" style={labelStyle}>{label}</span>
         {badge}
       </Link>

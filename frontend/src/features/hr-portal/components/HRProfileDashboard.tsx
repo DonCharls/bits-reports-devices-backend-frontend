@@ -27,7 +27,7 @@ export function HRProfileDashboard() {
       </div>
 
       <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
-        <div className="h-32 bg-[#E60000]" />
+        <div className="h-32 bg-brand" />
 
         <div className="px-8 pb-8">
           <div className="relative flex justify-between items-end -mt-12 mb-6">
