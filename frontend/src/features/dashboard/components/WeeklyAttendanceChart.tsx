@@ -43,17 +43,17 @@ export function WeeklyAttendanceChart({ weeklyData }: WeeklyAttendanceChartProps
             <div className="flex-1 min-h-0 p-3">
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={weeklyData} barGap={2} barCategoryGap="20%">
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                        <XAxis dataKey="day" tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 10, fontWeight: 600, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={32} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-chart-grid)" vertical={false} />
+                        <XAxis dataKey="day" tick={{ fontSize: 11, fontWeight: 700, fill: 'var(--color-chart-axis-primary)' }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10, fontWeight: 600, fill: 'var(--color-chart-axis-secondary)' }} axisLine={false} tickLine={false} width={32} />
                         <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)', radius: 4 }} />
-                        <Bar dataKey="present" fill="#10b981" radius={[4, 4, 0, 0]} name="Present">
+                        <Bar dataKey="present" fill="var(--color-chart-success)" radius={[4, 4, 0, 0]} name="Present">
                             {weeklyData.map((entry, i) => <Cell key={i} opacity={entry.day === todayName ? 1 : 0.7} />)}
                         </Bar>
-                        <Bar dataKey="late" fill="#f59e0b" radius={[4, 4, 0, 0]} name="Late">
+                        <Bar dataKey="late" fill="var(--color-chart-warning)" radius={[4, 4, 0, 0]} name="Late">
                             {weeklyData.map((entry, i) => <Cell key={i} opacity={entry.day === todayName ? 1 : 0.7} />)}
                         </Bar>
-                        <Bar dataKey="absent" fill="#f43f5e" radius={[4, 4, 0, 0]} name="Absent">
+                        <Bar dataKey="absent" fill="var(--color-chart-danger)" radius={[4, 4, 0, 0]} name="Absent">
                             {weeklyData.map((entry, i) => <Cell key={i} opacity={entry.day === todayName ? 1 : 0.7} />)}
                         </Bar>
                     </BarChart>

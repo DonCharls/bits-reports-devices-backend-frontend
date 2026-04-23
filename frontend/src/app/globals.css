@@ -40,6 +40,13 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  /* Chart semantic colors — referenced by Recharts via var() */
+  --color-chart-success: #10b981;
+  --color-chart-warning: #f59e0b;
+  --color-chart-danger: #f43f5e;
+  --color-chart-grid: #f1f5f9;
+  --color-chart-axis-primary: #64748b;
+  --color-chart-axis-secondary: #94a3b8;
 }
 
 .dark {
