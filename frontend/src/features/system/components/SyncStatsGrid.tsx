@@ -5,22 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 
-interface SyncStatus {
-    isActive: boolean;
-    intervalSec: number;
-    lastSyncAt: string | null;
-    nextSyncAt: string | null;
-    shiftAwareMode: boolean;
-    configUpdatedAt: string | null;
-    globalSyncEnabled: boolean;
-    currentMode?: 'PEAK' | 'OFF-PEAK' | 'DEFAULT';
-    healthCheck?: {
-        isActive: boolean;
-        intervalSec: number;
-        lastCheckAt: string | null;
-        nextCheckAt: string | null;
-    };
-}
+import { SyncStatus } from '../types';
 
 interface SyncStatsGridProps {
     status: SyncStatus;

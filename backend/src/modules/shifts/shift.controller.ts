@@ -1,6 +1,40 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../shared/lib/prisma';
 import { audit } from '../../shared/lib/auditLogger';
+import { auditUpdate, auditCreate, auditDelete, buildChanges } from '../../shared/lib/auditHelpers';
+
+const FIELD_NAMES: Record<string, string> = {
+    shiftCode: 'Shift Code',
+    name: 'Name',
+    startTime: 'Start Time',
+    endTime: 'End Time',
+    graceMinutes: 'Grace Period (mins)',
+    breakMinutes: 'Break Duration (mins)',
+    isNightShift: 'Night Shift',
+    isActive: 'Status',
+    description: 'Description',
+    workDays: 'Work Days',
+    halfDays: 'Half Days',
+    halfDayHours: 'Half Day Hours',
+    breaks: 'Breaks'
+};
+
+const formatShiftValue = (key: string, val: unknown): string => {
+    if (val === null || val === undefined) return 'None';
+    if (key === 'isNightShift') return val ? 'Yes' : 'No';
+    if (key === 'isActive') return val ? 'Active' : 'Inactive';
+    if (key === 'workDays' || key === 'halfDays' || key === 'breaks') {
+        try {
+            const parsed = typeof val === 'string' ? JSON.parse(val) : val;
+            if (Array.isArray(parsed)) {
+                if (parsed.length === 0) return 'None';
+                if (key === 'breaks') return parsed.map((b: { start?: string; from?: string; end?: string; to?: string }) => `${b.start || b.from || ''} to ${b.end || b.to || ''}`).join(', ');
+                return parsed.join(', ');
+            }
+        } catch { }
+    }
+    return String(val);
+};
 
 // GET /api/shifts - Get all shifts
 export const getAllShifts = async (req: Request, res: Response) => {
@@ -139,14 +173,21 @@ export const createShift = async (req: Request, res: Response) => {
             }
         });
 
-        void audit({
-            action: 'CREATE',
+        void auditCreate({
             entityType: 'Shift',
             entityId: shift.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Created new shift "${shift.name}" (${shift.shiftCode})`,
             correlationId: req.correlationId
+        }, {
+            'Shift Code': shift.shiftCode,
+            'Name': shift.name,
+            'Schedule': `${shift.startTime} - ${shift.endTime}`,
+            'Night Shift': shift.isNightShift ? 'Yes' : 'No',
+            'Work Days': formatShiftValue('workDays', shift.workDays),
+            'Breaks': formatShiftValue('breaks', shift.breaks),
+            'Grace Period': `${shift.graceMinutes} mins`
         });
 
         res.status(201).json({ success: true, shift });
@@ -263,28 +304,23 @@ export const updateShift = async (req: Request, res: Response) => {
             data: updateData
         });
 
-        const changes: string[] = [];
-        for (const [key, newValue] of Object.entries(updateData)) {
-            const oldValue = (existing as Record<string, unknown>)[key];
-            if (oldValue !== newValue) {
-                const oldValStr = oldValue || 'empty';
-                const newValStr = newValue || 'empty';
-                if (oldValStr !== newValStr) {
-                    changes.push(`Updated ${key.replace(/([A-Z])/g, ' $1').toLowerCase().trim()} from "${oldValStr}" to "${newValStr}"`);
-                }
-            }
-        }
+        const trackedFields = Object.keys(updateData).filter(k => k !== 'updatedAt');
+        const rawChanges = buildChanges(existing as Record<string, unknown>, updateData, trackedFields);
 
-        void audit({
-            action: 'UPDATE',
+        const readableChanges = rawChanges.map(c => ({
+            field: FIELD_NAMES[c.field] || c.field,
+            oldValue: formatShiftValue(c.field, c.oldValue),
+            newValue: formatShiftValue(c.field, c.newValue)
+        }));
+
+        void auditUpdate({
             entityType: 'Shift',
             entityId: shift.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Updated shift "${shift.name}" (${shift.shiftCode})`,
-            metadata: changes.length > 0 ? { updates: changes } : undefined,
             correlationId: req.correlationId
-        });
+        }, readableChanges);
 
         res.json({ success: true, shift });
     } catch (error: unknown) {
@@ -307,15 +343,16 @@ export const toggleShift = async (req: Request, res: Response) => {
             data: { isActive: !existing.isActive }
         });
 
-        void audit({
-            action: 'STATUS_CHANGE',
+        void auditUpdate({
             entityType: 'Shift',
             entityId: shift.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Shift "${shift.name}" was ${shift.isActive ? 'activated' : 'deactivated'}`,
             correlationId: req.correlationId
-        });
+        }, [
+            { field: 'Status', oldValue: existing.isActive ? 'Active' : 'Inactive', newValue: shift.isActive ? 'Active' : 'Inactive' }
+        ]);
 
         res.json({ success: true, shift, message: `Shift ${shift.isActive ? 'activated' : 'deactivated'}` });
     } catch (error) {
@@ -345,8 +382,7 @@ export const deleteShift = async (req: Request, res: Response) => {
 
         await prisma.shift.delete({ where: { id } });
 
-        void audit({
-            action: 'DELETE',
+        void auditDelete({
             entityType: 'Shift',
             entityId: id,
             performedBy: req.user?.employeeId,
@@ -354,6 +390,10 @@ export const deleteShift = async (req: Request, res: Response) => {
             level: 'WARN',
             details: `Deleted shift "${existing.name}"`,
             correlationId: req.correlationId
+        }, {
+            'Shift Code': existing.shiftCode,
+            'Name': existing.name,
+            'Schedule': `${existing.startTime} - ${existing.endTime}`
         });
 
         res.json({ success: true, message: `Shift "${existing.name}" deleted` });

@@ -8,12 +8,14 @@ import { Timer } from 'lucide-react';
 interface TimeSyncConfigSectionProps {
     autoTimeSyncEnabled: boolean;
     timeSyncIntervalSec: number;
+    limits: Record<string, number> | null;
     onChange: (patch: Record<string, unknown>) => void;
 }
 
 export function TimeSyncConfigSection({
     autoTimeSyncEnabled,
     timeSyncIntervalSec,
+    limits,
     onChange,
 }: TimeSyncConfigSectionProps) {
     return (
@@ -42,8 +44,10 @@ export function TimeSyncConfigSection({
                 {autoTimeSyncEnabled && (
                     <DurationInput
                         label="Sync Interval"
-                        description="How often to correct device clocks (recommended: 1–24 hours)."
+                        description="How often to test the connection and adjust the device clock (minimum 5m)."
                         totalSeconds={timeSyncIntervalSec}
+                        minTotalSeconds={limits?.TIME_SYNC_INTERVAL_MIN_SEC}
+                        maxTotalSeconds={limits?.TIME_SYNC_INTERVAL_MAX_SEC}
                         onChange={(sec) => onChange({ timeSyncIntervalSec: sec })}
                     />
                 )}

@@ -3,6 +3,7 @@ import { ZKDriver } from '../../../shared/lib/zk-driver';
 import { processAttendanceLogs } from '../../attendance/attendance.service';
 import deviceEmitter from '../../../shared/events/deviceEmitter';
 import { audit } from '../../../shared/lib/auditLogger';
+import { auditBatch } from '../../../shared/lib/auditHelpers';
 import { getDriver, connectWithRetry, zkErrMsg } from './zk-connection.service';
 import { tryAcquireDeviceLock, releaseDeviceLock } from './zk-lock.service';
 
@@ -215,15 +216,21 @@ async function syncSingleDevice(dbDevice: {
             lastPolledAt: new Date()
         });
 
-        void audit({
-            action: 'DEVICE_SYNC',
-            entityType: 'Device',
-            entityId: dbDevice.id,
-            source: 'cron',
-            level: 'INFO',
-            details: `Synced ${newCount} new logs from ${dbDevice.name}`,
-            metadata: { deviceId: dbDevice.id, deviceName: dbDevice.name, newLogs: newCount }
-        });
+        if (newCount > 0) {
+            void auditBatch({
+                action: 'DEVICE_SYNC',
+                entityType: 'Device',
+                entityId: dbDevice.id,
+                source: 'cron',
+                level: 'INFO',
+                details: `Synced ${newCount} new logs from ${dbDevice.name}`
+            }, {
+                affectedCount: newCount,
+                summary: `Synced ${newCount} logs from ${dbDevice.name}`,
+                deviceName: dbDevice.name,
+                newLogs: newCount
+            });
+        }
 
         console.log(`[ZK] Device "${dbDevice.name}" sync complete. ${newCount} new logs.`);
         return { deviceId: dbDevice.id, newLogs: newCount, skipped: false };
@@ -231,13 +238,13 @@ async function syncSingleDevice(dbDevice: {
     } catch (deviceErr: unknown) {
         console.error(`[ZK] Error syncing "${dbDevice.name}" (${dbDevice.ip}): ${zkErrMsg(deviceErr)}`);
 
-        // Record sync failure.
+        // Record sync failure — intentionally omit lastPolledAt since a failed
+        // sync does not confirm the device is reachable.
         await prisma.device.update({
             where: { id: dbDevice.id },
             data: { 
                 lastSyncStatus: 'FAILED',
                 lastSyncError: zkErrMsg(deviceErr),
-                lastPolledAt: new Date()
             }
         }).catch(() => { /* ignore */ });
 
@@ -249,14 +256,18 @@ async function syncSingleDevice(dbDevice: {
             lastPolledAt: new Date()
         });
 
-        void audit({
+        void auditBatch({
             action: 'DEVICE_SYNC',
             entityType: 'Device',
             entityId: dbDevice.id,
             source: 'cron',
             level: 'ERROR',
-            details: `Sync failed for ${dbDevice.name}: ${zkErrMsg(deviceErr)}`,
-            metadata: { deviceId: dbDevice.id, deviceName: dbDevice.name, error: zkErrMsg(deviceErr) }
+            details: `Sync failed for ${dbDevice.name}: ${zkErrMsg(deviceErr)}`
+        }, {
+            affectedCount: 0,
+            summary: `Sync failed: ${zkErrMsg(deviceErr)}`,
+            deviceName: dbDevice.name,
+            error: zkErrMsg(deviceErr)
         });
 
         return { deviceId: dbDevice.id, newLogs: 0, skipped: false, error: zkErrMsg(deviceErr) };

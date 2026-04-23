@@ -240,8 +240,8 @@ export function AdjustmentAuditLogsDashboard() {
                   <td className="px-4 py-2.5 font-bold text-slate-700 align-top">{group.employeeName}</td>
                   <td className="px-4 py-2.5 align-top">
                     <div className="flex flex-col gap-1.5">
-                      {group.logs.map((log: { id: string | number; field: string; oldValue: string | null; newValue: string | null }) => (
-                        <span key={log.id} className="text-[10px] font-black uppercase tracking-tight text-slate-600">
+                      {group.logs.map((log: { id: string | number; field: string; oldValue: string | null; newValue: string | null }, idx: number) => (
+                        <span key={`field-${idx}`} className="text-[10px] font-black uppercase tracking-tight text-slate-600">
                           {fieldLabels[log.field] || log.field}
                         </span>
                       ))}
@@ -249,8 +249,8 @@ export function AdjustmentAuditLogsDashboard() {
                   </td>
                   <td className="px-4 py-2.5 align-top">
                     <div className="flex flex-col gap-1.5">
-                      {group.logs.map((log: { id: string | number; field: string; oldValue: string | null; newValue: string | null }) => (
-                        <div key={log.id} className="flex items-center gap-2 whitespace-nowrap">
+                      {group.logs.map((log: { id: string | number; field: string; oldValue: string | null; newValue: string | null }, idx: number) => (
+                        <div key={`change-${idx}`} className="flex items-center gap-2 whitespace-nowrap">
                           <span className="text-[10px] text-slate-400 line-through decoration-slate-300">
                             {formatValue(log.field, log.oldValue)}
                           </span>

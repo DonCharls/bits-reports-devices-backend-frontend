@@ -59,7 +59,7 @@ export const ReportTable: React.FC<ReportTableProps> = ({
               <SortableHeader label="Late" sortKey="lateMinutes" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
               <SortableHeader label="Overtime" sortKey="overtime" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
               <SortableHeader label="Undertime" sortKey="undertime" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
-              <SortableHeader label="Hours Worked" sortKey="totalHours" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
+              <SortableHeader label="Reg Hrs" sortKey="totalHours" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
               <th className="px-6 py-4 text-center"></th>
             </tr>
           </thead>
@@ -154,7 +154,7 @@ export const ReportTable: React.FC<ReportTableProps> = ({
                   </td>
                   <td className="px-6 py-5 text-center">
                     <span className="text-sm font-bold font-mono text-slate-800">
-                      {employee.totalHours.toFixed(2)}
+                      {Math.max(0, employee.totalHours - employee.overtime).toFixed(2)}
                     </span>
                   </td>
                   <td className="px-6 py-5">

@@ -57,7 +57,7 @@ export const handleExport = (
     'Late (Duration)',
     'Overtime',
     'Undertime',
-    'Total (Hrs)',
+    'Reg Hrs',
   ]);
 
   filteredData.forEach((e) => {
@@ -72,7 +72,7 @@ export const handleExport = (
       formatLateHrs(e.lateMinutes),
       e.overtime > 0 ? formatHrsMins(e.overtime) : '—', // Removed + sign
       e.undertime > 0 ? formatHrsMins(e.undertime) : '—', // Removed - sign
-      e.totalHours.toFixed(2),
+      Math.max(0, e.totalHours - e.overtime).toFixed(2),
     ]);
   });
 
@@ -135,7 +135,7 @@ export const handleExportIndividual = (
     'PRESENT',
     'LATE DAYS',
     'LATE TOTAL',
-    'TOTAL HOURS',
+    'REG HOURS',
   ]); // Removed ABSENT
   const rate =
     emp.totalDays > 0 ? Math.round((emp.present / emp.totalDays) * 100) : 0;
@@ -144,7 +144,7 @@ export const handleExportIndividual = (
     emp.present,
     emp.late,
     formatLateHrs(emp.lateMinutes),
-    emp.totalHours.toFixed(2),
+    Math.max(0, emp.totalHours - emp.overtime).toFixed(2),
   ]);
   allRows.push([]);
 
@@ -158,7 +158,7 @@ export const handleExportIndividual = (
     'Day',
     'Check In',
     'Check Out',
-    'Hours',
+    'Reg Hrs',
     'Late',
     'OT',
     'UT',
@@ -202,7 +202,7 @@ export const handleExportIndividual = (
       // Record exists — mirrors EmployeeModal record branch
       const checkIn = new Date(r.checkInTime);
       const checkOut = r.checkOutTime ? new Date(r.checkOutTime) : null;
-      const hoursWorked = r.totalHours ? r.totalHours.toFixed(2) : '—';
+      const hoursWorked = r.totalHours ? Math.max(0, r.totalHours - ((r.overtimeMinutes ?? 0) / 60)).toFixed(2) : '—';
       const statusLabel = getRecordStatusFromBackend(r);
       const lateMins = r.lateMinutes ?? 0;
       const otMins = r.overtimeMinutes ?? 0;

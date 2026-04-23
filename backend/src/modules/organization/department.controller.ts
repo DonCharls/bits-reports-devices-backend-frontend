@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../shared/lib/prisma';
-import { audit } from '../../shared/lib/auditLogger';
+import { auditCreate, auditUpdate, auditDelete } from '../../shared/lib/auditHelpers';
 
 // GET /api/departments
 export const getAllDepartments = async (req: Request, res: Response) => {
@@ -37,14 +37,15 @@ export const createDepartment = async (req: Request, res: Response) => {
         }
         const department = await prisma.department.create({ data: { name: trimmedName, updatedAt: new Date() } });
 
-        void audit({
-            action: 'CREATE',
+        void auditCreate({
             entityType: 'Department',
             entityId: department.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Created new department "${department.name}"`,
             correlationId: req.correlationId
+        }, {
+            'Name': department.name
         });
 
         res.status(201).json({ success: true, department });
@@ -80,21 +81,19 @@ export const renameDepartment = async (req: Request, res: Response) => {
             data: { name: trimmedName, updatedAt: new Date() }
         });
 
-        const changes: string[] = [];
+        const changes = [];
         if (target.name !== trimmedName) {
-            changes.push(`Updated name from "${target.name}" to "${trimmedName}"`);
+            changes.push({ field: 'Name', oldValue: target.name, newValue: trimmedName });
         }
 
-        void audit({
-            action: 'UPDATE',
+        void auditUpdate({
             entityType: 'Department',
             entityId: department.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Renamed department to "${department.name}"`,
-            metadata: changes.length > 0 ? { updates: changes } : undefined,
             correlationId: req.correlationId
-        });
+        }, changes);
 
         res.json({ success: true, department });
     } catch (error) {
@@ -131,8 +130,7 @@ export const deleteDepartment = async (req: Request, res: Response) => {
 
         await prisma.department.delete({ where: { id } });
 
-        void audit({
-            action: 'DELETE',
+        void auditDelete({
             entityType: 'Department',
             entityId: id,
             performedBy: req.user?.employeeId,
@@ -140,6 +138,8 @@ export const deleteDepartment = async (req: Request, res: Response) => {
             level: 'WARN',
             details: `Deleted department "${existing.name}"`,
             correlationId: req.correlationId
+        }, {
+            'Name': existing.name
         });
 
         res.json({ success: true, message: `Department "${existing.name}" deleted` });

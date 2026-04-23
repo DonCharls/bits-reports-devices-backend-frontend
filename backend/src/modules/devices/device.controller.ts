@@ -4,6 +4,7 @@ import { ZKDriver } from '../../shared/lib/zk-driver';
 import { forceReleaseLock } from './zk';
 import deviceEmitter from '../../shared/events/deviceEmitter';
 import { audit } from '../../shared/lib/auditLogger';
+import { auditUpdate, auditCreate, auditDelete, auditBatch, buildChanges } from '../../shared/lib/auditHelpers';
 
 /** Unwrap node-zklib's ZKError: { err: Error, ip, command } → readable string */
 function zkErrMsg(err: unknown): string {
@@ -76,14 +77,16 @@ export const createDevice = async (req: Request, res: Response) => {
 
         console.log(`[Devices] Created device "${device.name}" (${device.ip}:${device.port})`);
 
-        void audit({
-            action: 'CREATE',
+        void auditCreate({
             entityType: 'Device',
             entityId: device.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Added new device "${device.name}" (${device.ip})`,
             correlationId: req.correlationId
+        }, {
+            name: device.name,
+            ip: device.ip
         });
 
         res.status(201).json({ success: true, message: `Device "${device.name}" added successfully`, device });
@@ -124,24 +127,18 @@ export const updateDevice = async (req: Request, res: Response) => {
             }
         });
 
-        const changes: string[] = [];
-        if (existing.name !== device.name) changes.push(`Updated name from "${existing.name}" to "${device.name}"`);
-        if (existing.ip !== device.ip) changes.push(`Updated IP from "${existing.ip}" to "${device.ip}"`);
-        if (existing.port !== device.port) changes.push(`Updated port from "${existing.port}" to "${device.port}"`);
-        if (existing.location !== device.location) changes.push(`Updated location from "${existing.location || 'empty'}" to "${device.location || 'empty'}"`);
+        const trackedFields = ['name', 'ip', 'port', 'location'];
+        const updateData = { name: device.name, ip: device.ip, port: device.port, location: device.location };
+        const changes = buildChanges(existing as Record<string, unknown>, updateData, trackedFields);
 
-        console.log(`[Devices] Updated device ID ${id}: "${device.name}" (${device.ip}:${device.port})`);
-
-        void audit({
-            action: 'UPDATE',
+        void auditUpdate({
             entityType: 'Device',
             entityId: device.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Updated device "${device.name}" (${device.ip})`,
-            metadata: changes.length > 0 ? { updates: changes } : undefined,
             correlationId: req.correlationId
-        });
+        }, changes);
 
         res.json({ success: true, message: `Device "${device.name}" updated. Please test the connection.`, device });
     } catch (error: unknown) {
@@ -162,8 +159,7 @@ export const deleteDevice = async (req: Request, res: Response) => {
 
         await prisma.device.delete({ where: { id } });
 
-        void audit({
-            action: 'DELETE',
+        void auditDelete({
             entityType: 'Device',
             entityId: id,
             performedBy: req.user?.employeeId,
@@ -171,6 +167,9 @@ export const deleteDevice = async (req: Request, res: Response) => {
             level: 'WARN',
             details: `Removed device "${existing.name}"`,
             correlationId: req.correlationId
+        }, {
+            name: existing.name,
+            ip: existing.ip
         });
 
         console.log(`[Devices] Deleted device ID ${id}: "${existing.name}"`);
@@ -333,14 +332,19 @@ export const reconcileDevice = async (req: Request, res: Response) => {
         const mode = dryRun ? 'Preview (dry run)' : 'Reconcile Queued';
 
         if (!dryRun) {
-            void audit({
-                action: 'SYNC',
+            void auditBatch({
+                action: 'DEVICE_SYNC',
                 entityType: 'Device',
                 entityId: id,
                 performedBy: req.user?.employeeId,
                 source: 'admin-panel',
                 details: `Reconciled device (queued): pushing ${report.pushed.length}, removing ${report.deleted.length}`,
                 correlationId: req.correlationId
+            }, {
+                affectedCount: report.pushed.length + report.deleted.length,
+                summary: `Pushed ${report.pushed.length}, Deleted ${report.deleted.length}`,
+                pushed: report.pushed.length,
+                deleted: report.deleted.length
             });
         }
 
@@ -380,15 +384,16 @@ export const toggleDevice = async (req: Request, res: Response) => {
         const state = updated.syncEnabled ? 'enabled' : 'disabled';
         console.log(`[Devices] Sync ${state} for "${updated.name}" (${updated.ip})`);
 
-        void audit({
-            action: 'STATUS_CHANGE',
+        void auditUpdate({
             entityType: 'Device',
             entityId: updated.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Device sync was ${state}`,
             correlationId: req.correlationId
-        });
+        }, [
+            { field: 'syncEnabled', oldValue: existing.syncEnabled, newValue: updated.syncEnabled }
+        ]);
 
         return res.json({ success: true, message: `Sync ${state} for "${updated.name}"`, device: updated });
     } catch (error: unknown) {
@@ -431,15 +436,19 @@ export const syncBiometrics = async (req: Request, res: Response) => {
 
             console.log(`[GlobalSync] Completed. ${successCount} successful, ${failCount} failed.`);
             
-            void audit({
-                action: 'SYNC',
+            void auditBatch({
+                action: 'DEVICE_SYNC',
                 entityType: 'System',
                 entityId: 0,
                 performedBy: req.user?.employeeId,
                 source: 'admin-panel',
                 details: `Global biometric sync completed. ${successCount} success, ${failCount} failed.`,
-                metadata: { successCount, failCount },
                 correlationId: req.correlationId
+            }, {
+                affectedCount: employees.length,
+                summary: `Global biometric sync: ${successCount} success, ${failCount} failed.`,
+                successCount,
+                failCount
             });
         });
 
