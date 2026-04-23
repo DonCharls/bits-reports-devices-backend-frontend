@@ -5,6 +5,7 @@ import { timeSyncScheduler } from './timeSyncScheduler';
 import { healthCheckScheduler } from './healthCheckScheduler';
 import { logBufferMaintenanceScheduler } from './logBufferMaintenanceScheduler';
 import { audit } from '../../shared/lib/auditLogger';
+import { auditUpdate } from '../../shared/lib/auditHelpers';
 import { z } from 'zod';
 import deviceEmitter from '../../shared/events/deviceEmitter';
 import { SYNC_LIMITS, USER_LIMITS } from './system.constants';
@@ -141,7 +142,7 @@ export const updateSyncConfig = async (req: Request, res: Response) => {
         });
 
         // Build human-readable change summaries
-        const changes: string[] = [];
+        const changes: { field: string; oldValue: string; newValue: string }[] = [];
         const trackableFields: Array<{ key: keyof typeof data; label: string; suffix?: string }> = [
             { key: 'defaultIntervalSec', label: 'Sync interval', suffix: 's' },
             { key: 'highFreqIntervalSec', label: 'Peak interval', suffix: 's' },
@@ -163,30 +164,23 @@ export const updateSyncConfig = async (req: Request, res: Response) => {
             if (newVal === undefined) continue;
             const oldVal = previousConfig[field.key];
             if (oldVal !== newVal) {
-                if (typeof newVal === 'boolean') {
-                    changes.push(`${field.label} ${newVal ? 'enabled' : 'disabled'}`);
-                } else {
-                    changes.push(`${field.label} updated from ${oldVal}${field.suffix ?? ''} → ${newVal}${field.suffix ?? ''}`);
-                }
+                let formattedOldVal = typeof oldVal === 'boolean' ? (oldVal ? 'Enabled' : 'Disabled') : String(oldVal) + (field.suffix ?? '');
+                let formattedNewVal = typeof newVal === 'boolean' ? (newVal ? 'Enabled' : 'Disabled') : String(newVal) + (field.suffix ?? '');
+                changes.push({ field: field.label, oldValue: formattedOldVal, newValue: formattedNewVal });
             }
         }
 
         // Only log if something actually changed
         if (changes.length > 0) {
-            void audit({
-                action: 'CONFIG_UPDATE',
+            void auditUpdate({
                 entityType: 'System',
                 entityId: 1,
                 performedBy: req.user?.employeeId,
                 source: 'admin-panel',
                 level: warningMessage ? 'WARN' : 'INFO',
-                details: changes.join('; '),
-                metadata: {
-                    updates: changes,
-                    ...(warningMessage ? { warning: warningMessage } : {}),
-                },
+                details: `System configuration updated${warningMessage ? ' (with warnings)' : ''}`,
                 correlationId: req.correlationId
-            });
+            }, changes);
         }
 
         // Restart the scheduler countdown immediately so the new interval applies right now
@@ -232,15 +226,16 @@ export const toggleGlobalSync = async (req: Request, res: Response) => {
         const state = enabled ? 'enabled' : 'disabled';
         console.log(`[System] Global sync has been ${state}`);
 
-        void audit({
-            action: 'STATUS_CHANGE',
+        void auditUpdate({
             entityType: 'System',
             entityId: 1,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Global sync was ${state}`,
             correlationId: req.correlationId
-        });
+        }, [
+            { field: 'Global Sync', oldValue: enabled ? 'Disabled' : 'Enabled', newValue: enabled ? 'Enabled' : 'Disabled' }
+        ]);
 
         res.json({ success: true, message: `Global sync has been ${state}`, config });
     } catch (error: unknown) {
@@ -271,10 +266,12 @@ export const triggerManualSync = async (req: Request, res: Response) => {
             performedBy: req.user?.employeeId,
             details: syncResult?.message || (result.success ? 'Manual sync completed successfully' : 'Manual sync failed'),
             metadata: syncResult ? { 
-                syncStatus: syncResult.status,
-                totalDevices: syncResult.totalDevices,
-                successfulDevices: syncResult.successfulDevices,
-                newLogsCount: syncResult.newLogs,
+                snapshot: {
+                    'Sync Status': syncResult.status,
+                    'Total Devices': String(syncResult.totalDevices),
+                    'Successful Devices': String(syncResult.successfulDevices),
+                    'New Logs Count': String(syncResult.newLogs),
+                }
             } : undefined,
             correlationId: req.correlationId
         });
@@ -305,7 +302,7 @@ export const triggerManualTimeSync = async (req: Request, res: Response) => {
             level: result.success ? 'INFO' : 'ERROR',
             performedBy: req.user?.employeeId,
             details: result.success ? 'Manual device clock sync completed' : 'Manual device clock sync failed',
-            metadata: { target: 'time_sync', message: result.message },
+            metadata: { snapshot: { 'Target': 'time_sync', 'Message': result.message } },
             correlationId: req.correlationId
         });
 

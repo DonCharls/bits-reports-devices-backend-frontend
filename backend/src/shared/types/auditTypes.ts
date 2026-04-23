@@ -23,6 +23,8 @@ export type AuditAction =
     // Device / Sync
     | 'SYNC'
     | 'MANUAL_SYNC'
+    | 'DEVICE_SYNC'
+    | 'DUPLICATE_PUNCH'
     | 'DEVICE_CONNECT'
     | 'DEVICE_DISCONNECT'
     | 'DEVICE_LOG_BUFFER_CLEAR'

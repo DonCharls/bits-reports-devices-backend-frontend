@@ -28,6 +28,16 @@ export function useSystemLogs({ initialLimit = 30 }: UseSystemLogsProps = {}) {
     const [page, setPage] = useState(1)
     const limit = initialLimit
 
+    // Debounce the search query
+    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery)
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedSearchQuery(searchQuery)
+        }, 500)
+        return () => clearTimeout(handler)
+    }, [searchQuery])
+
     const fetchLogs = useCallback(async () => {
         try {
             const params = new URLSearchParams({
@@ -37,6 +47,7 @@ export function useSystemLogs({ initialLimit = 30 }: UseSystemLogsProps = {}) {
                 level: activeLevel,
                 page: String(page),
                 limit: String(limit),
+                ...(debouncedSearchQuery.trim() ? { search: debouncedSearchQuery.trim() } : {})
             })
 
             const res = await fetch(`/api/logs?${params}`, { credentials: 'include' })
@@ -57,7 +68,7 @@ export function useSystemLogs({ initialLimit = 30 }: UseSystemLogsProps = {}) {
             setLoading(false)
             setRefreshing(false)
         }
-    }, [router, startDate, endDate, activeCategory, activeLevel, page, limit])
+    }, [router, startDate, endDate, activeCategory, activeLevel, page, limit, debouncedSearchQuery])
 
     useEffect(() => {
         setLoading(true)
@@ -83,18 +94,10 @@ export function useSystemLogs({ initialLimit = 30 }: UseSystemLogsProps = {}) {
         setPage(newPage)
     }, [])
 
-    // Filter logs by search query (client-side as per original)
-    const filteredLogs = searchQuery.trim()
-        ? logs.filter(l =>
-            l.employeeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            l.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            l.details?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            l.source?.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-        : logs
+    // Filter logs by search query (client-side as per original) -> Now handled server-side!
 
     return {
-        logs: filteredLogs,
+        logs,
         rawLogs: logs,
         meta,
         loading,

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import attendanceEmitter from '../../shared/events/attendanceEmitter';
 import { audit } from '../../shared/lib/auditLogger';
+import { auditBatch } from '../../shared/lib/auditHelpers';
 import { ATTENDANCE_LIMITS } from '../system/system.constants';
 
 /**
@@ -136,7 +137,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         entityId: createdRecord.id,
                         performedBy: createdRecord.employeeId,
                         source: 'device-sync',
-                        details: `Employee checked in (${isLate ? 'Late' : 'On-time'})`
+                        details: `Employee checked in (${isLate ? 'Late' : 'On-time'})`,
+                        metadata: { snapshot: { status: createdRecord.status, checkInTime: createdRecord.checkInTime.toISOString() } }
                     });
 
                     const shift = createdRecord.employee?.Shift ?? null;
@@ -250,7 +252,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             entityId: updatedRecord.id,
                             performedBy: updatedRecord.employeeId,
                             source: 'device-sync',
-                            details: `Employee checked out (updated)`
+                            details: `Employee checked out (updated)`,
+                            metadata: { changes: [{ field: 'checkOutTime', oldValue: existingAttendance.checkOutTime ? existingAttendance.checkOutTime.toISOString() : null, newValue: log.timestamp.toISOString() }] }
                         });
 
                         const shift = updatedRecord.employee?.Shift ?? null;
@@ -324,7 +327,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         entityId: updatedRecord2.id,
                         performedBy: updatedRecord2.employeeId,
                         source: 'device-sync',
-                        details: `Employee checked out`
+                        details: `Employee checked out`,
+                        metadata: { changes: [{ field: 'checkOutTime', oldValue: null, newValue: log.timestamp.toISOString() }] }
                     });
 
                     const shift2 = updatedRecord2.employee?.Shift ?? null;
@@ -428,11 +432,14 @@ export const autoCloseIncompleteAttendance = async (): Promise<number> => {
         }
 
         if (flaggedCount > 0) {
-            void audit({
+            void auditBatch({
                 action: 'FLAG_MISSING_CHECKOUT',
                 entityType: 'System',
                 source: 'cron',
                 details: `Flagged ${flaggedCount} incomplete records (no checkout) for manual review`
+            }, {
+                affectedCount: flaggedCount,
+                summary: `Flagged ${flaggedCount} incomplete attendance records for manual review.`
             });
         }
 
@@ -524,11 +531,14 @@ export const autoCheckoutEmployees = async (): Promise<number> => {
         }
 
         if (count > 0) {
-            void audit({
+            void auditBatch({
                 action: 'AUTO_CHECKOUT',
                 entityType: 'System',
                 source: 'cron',
                 details: `Auto-checkout applied to ${count} records`
+            }, {
+                affectedCount: count,
+                summary: `Automatically checked out ${count} employees.`
             });
         }
 
@@ -605,11 +615,14 @@ export const repairMissingCheckouts = async (): Promise<number> => {
         }
 
         if (flaggedCount > 0) {
-            void audit({
+            void auditBatch({
                 action: 'FLAG_MISSING_CHECKOUT',
                 entityType: 'System',
                 source: 'startup-repair',
                 details: `Startup: Flagged ${flaggedCount} records with missing checkouts for manual review`
+            }, {
+                affectedCount: flaggedCount,
+                summary: `Startup repair: Flagged ${flaggedCount} incomplete attendance records for manual review.`
             });
         }
 

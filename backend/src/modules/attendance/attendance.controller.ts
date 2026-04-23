@@ -248,8 +248,7 @@ export const updateAttendance = async (req: Request, res: Response) => {
                 entityId: recordId,
                 performedBy: adjustedById,
                 source: 'admin-panel',
-                details: `Attendance adjustment submitted for record #${recordId}`,
-                metadata: { adjustmentId: adjustment.id, reason: String(reason).trim(), requestedCheckIn: checkInTime || null, requestedCheckOut: checkOutTime || null },
+                details: `Attendance adjustment submitted for ${existing.employee.firstName} ${existing.employee.lastName}`,
                 correlationId: req.correlationId
             });
             return;
@@ -330,8 +329,7 @@ export const updateAttendance = async (req: Request, res: Response) => {
                 performedBy: adjustedById,
                 source: 'admin-panel',
                 level: 'WARN',
-                details: `Admin performed an immediate override on attendance record #${recordId}`,
-                metadata: { changes: auditEntries, reason },
+                details: `Admin performed an immediate override on attendance for ${existing.employee.firstName} ${existing.employee.lastName}`,
                 correlationId: req.correlationId
             });
         }
@@ -616,8 +614,7 @@ export const reviewAdjustment = async (req: Request, res: Response) => {
           entityId: adjustment.attendanceId,
           performedBy: reviewerId,
           source: 'admin-panel',
-          details: `Adjustment #${adjustmentId} rejected`,
-          metadata: { adjustmentId, rejectionReason: String(rejectionReason).trim() },
+          details: `Adjustment for ${adjustment.attendance.employee.firstName} ${adjustment.attendance.employee.lastName} was rejected`,
           correlationId: req.correlationId
       });
 
@@ -705,8 +702,7 @@ export const reviewAdjustment = async (req: Request, res: Response) => {
         entityId: adjustment.attendanceId,
         performedBy: reviewerId,
         source: 'admin-panel',
-        details: `Adjustment #${adjustmentId} approved and applied`,
-        metadata: { adjustmentId, changesApplied: auditEntries.length, changes: auditEntries, reason: adjustment.reason },
+        details: `Adjustment for ${adjustment.attendance.employee.firstName} ${adjustment.attendance.employee.lastName} was approved and applied`,
         correlationId: req.correlationId
     });
 

@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../shared/lib/prisma';
-import { audit } from '../../shared/lib/auditLogger';
+import { auditCreate, auditUpdate, auditDelete } from '../../shared/lib/auditHelpers';
 
 // GET /api/branches - Get all branches
 export const getBranches = async (req: Request, res: Response) => {
@@ -41,14 +41,15 @@ export const createBranch = async (req: Request, res: Response) => {
             data: { name: name.trim(), updatedAt: new Date() }
         });
 
-        void audit({
-            action: 'CREATE',
+        void auditCreate({
             entityType: 'Branch',
             entityId: branch.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Created new branch "${branch.name}"`,
             correlationId: req.correlationId
+        }, {
+            'Name': branch.name
         });
 
         res.status(201).json({ success: true, branch });
@@ -84,21 +85,19 @@ export const renameBranch = async (req: Request, res: Response) => {
             data: { name: trimmedName, updatedAt: new Date() }
         });
 
-        const changes: string[] = [];
+        const changes = [];
         if (target.name !== trimmedName) {
-            changes.push(`Updated name from "${target.name}" to "${trimmedName}"`);
+            changes.push({ field: 'Name', oldValue: target.name, newValue: trimmedName });
         }
 
-        void audit({
-            action: 'UPDATE',
+        void auditUpdate({
             entityType: 'Branch',
             entityId: branch.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Renamed branch to "${branch.name}"`,
-            metadata: changes.length > 0 ? { updates: changes } : undefined,
             correlationId: req.correlationId
-        });
+        }, changes);
 
         res.json({ success: true, branch });
     } catch (error) {
@@ -136,8 +135,7 @@ export const deleteBranch = async (req: Request, res: Response) => {
 
         await prisma.branch.delete({ where: { id } });
 
-        void audit({
-            action: 'DELETE',
+        void auditDelete({
             entityType: 'Branch',
             entityId: id,
             performedBy: req.user?.employeeId,
@@ -145,6 +143,8 @@ export const deleteBranch = async (req: Request, res: Response) => {
             level: 'WARN',
             details: `Deleted branch "${existing.name}"`,
             correlationId: req.correlationId
+        }, {
+            'Name': existing.name
         });
 
         res.json({ success: true, message: `Branch "${existing.name}" deleted` });
