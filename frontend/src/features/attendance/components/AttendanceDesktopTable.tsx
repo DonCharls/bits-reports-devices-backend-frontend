@@ -181,16 +181,27 @@ export function AttendanceDesktopTable({
               </td>
               {/* Status */}
               <td className="px-4 py-4 text-center">
-                <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${
-                  row.displayStatus === 'present'           ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
-                  : row.displayStatus === 'IN_PROGRESS'      ? 'text-blue-500 bg-blue-500/10 border-blue-500/20'
-                  : row.displayStatus === 'late'             ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
-                  : row.displayStatus === 'missing_checkout' ? 'text-amber-600 bg-amber-500/10 border-amber-500/20'
-                  : row.displayStatus === 'incomplete'       ? 'text-amber-500 bg-amber-500/10 border-amber-500/20'
-                  : 'text-red-500 bg-red-500/10 border-red-500/20'
-                }`}>
-                  {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus === 'missing_checkout' ? 'Missing Checkout' : row.displayStatus}
-                </span>
+                <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                  <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${
+                    row.displayStatus === 'present'           ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
+                    : row.displayStatus === 'IN_PROGRESS'      ? 'text-blue-500 bg-blue-500/10 border-blue-500/20'
+                    : row.displayStatus === 'late'             ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
+                    : row.displayStatus === 'missing_checkout' ? 'text-amber-600 bg-amber-500/10 border-amber-500/20'
+                    : row.displayStatus === 'incomplete'       ? 'text-amber-500 bg-amber-500/10 border-amber-500/20'
+                    : row.displayStatus === 'pending'          ? 'text-slate-500 bg-slate-500/10 border-slate-500/20'
+                    : 'text-red-500 bg-red-500/10 border-red-500/20'
+                  }`}>
+                    {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus === 'missing_checkout' ? 'Missing Checkout' : row.displayStatus === 'pending' ? 'Pending Request' : row.displayStatus}
+                  </span>
+                  {row.isEdited && (
+                    <span 
+                      title={row.notes || 'Manually adjusted'}
+                      className="font-black text-[10px] uppercase px-2 py-0.5 rounded-full border whitespace-nowrap text-violet-500 bg-violet-500/10 border-violet-500/20 cursor-help"
+                    >
+                      Edited
+                    </span>
+                  )}
+                </div>
               </td>
               {/* Actions */}
               <td className="px-4 py-4 text-center">

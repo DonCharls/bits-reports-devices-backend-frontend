@@ -708,6 +708,7 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
             checkOutTimePH: record.checkOutTime ? formatToPhilippineTime(record.checkOutTime) : null,
             isEarlyPunch: (record.notes ?? '').includes('Early punch'),
             isMissingCheckout: (record.notes ?? '').includes('No checkout recorded'),
+            isEdited: !!(record.checkin_updated || record.checkout_updated),
             ...metrics,
         };
     });

@@ -329,6 +329,7 @@ export function AdminDetailView({
                                                 </span>
                                             </td>
                                             <td className="px-5 py-3.5">
+                                                <div className="flex flex-col items-start gap-1">
                                                 {statusType === 'in-progress' ? (
                                                     <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-600 border border-blue-200 w-fit">
                                                         In Progress
@@ -361,6 +362,15 @@ export function AdminDetailView({
                                                         On Time
                                                     </span>
                                                 )}
+                                                {record && (record.checkin_updated || record.checkout_updated) && (
+                                                    <span 
+                                                        title={record.notes || 'Manually adjusted'}
+                                                        className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-violet-50 text-violet-600 border border-violet-100 w-fit cursor-help"
+                                                    >
+                                                        Edited
+                                                    </span>
+                                                )}
+                                                </div>
                                             </td>
                                         </tr>
                                     );

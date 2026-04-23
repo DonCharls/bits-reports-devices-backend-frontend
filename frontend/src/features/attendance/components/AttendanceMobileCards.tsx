@@ -48,16 +48,25 @@ export function AttendanceMobileCards({
               <p className="font-black text-foreground text-sm truncate uppercase tracking-tight">{row.employeeName}</p>
               <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">{row.department} • {row.branchName}</p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
               <span className={`font-black text-[10px] uppercase px-3 py-1 rounded-full border whitespace-nowrap ${
                 row.displayStatus === 'present'           ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
                   : row.displayStatus === 'IN_PROGRESS'      ? 'text-blue-500 bg-blue-500/10 border-blue-500/20'
                   : row.displayStatus === 'late'             ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
                   : row.displayStatus === 'missing_checkout' ? 'text-amber-600 bg-amber-500/10 border-amber-500/20'
+                  : row.displayStatus === 'pending'          ? 'text-slate-500 bg-slate-500/10 border-slate-500/20'
                   : 'text-red-500 bg-red-500/10 border-red-500/20'
               }`}>
-                {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus === 'missing_checkout' ? 'Missing Checkout' : row.displayStatus}
+                {row.displayStatus === 'present' ? 'On Time' : row.displayStatus === 'IN_PROGRESS' ? 'In Progress' : row.displayStatus === 'missing_checkout' ? 'Missing Checkout' : row.displayStatus === 'pending' ? 'Pending Request' : row.displayStatus}
               </span>
+              {row.isEdited && (
+                <span 
+                  title={row.notes || 'Manually adjusted'}
+                  className="font-black text-[10px] uppercase px-2 py-0.5 rounded-full border whitespace-nowrap text-violet-500 bg-violet-500/10 border-violet-500/20 cursor-help"
+                >
+                  Edited
+                </span>
+              )}
               <button onClick={() => handleEditClick(row)} className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-all">
                 <Edit2 size={14} />
               </button>

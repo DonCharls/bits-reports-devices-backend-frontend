@@ -32,6 +32,7 @@ export interface PortalAttendanceRecord {
   shiftCode?: string | null // Found in detailed view
   isShiftActive?: boolean // Found in detailed view
   gracePeriodApplied?: boolean // Found in detailed view
+  isEdited?: boolean // True when checkin/checkout was manually adjusted
 }
 
 export interface PortalShiftData {

@@ -6,6 +6,7 @@ import {
     getToday,
     getEmployeeHistory,
     updateAttendance,
+    createManualAttendance,
     streamAttendance,
     getAttendanceAuditLogs,
     getAdjustments,
@@ -71,6 +72,20 @@ router.post('/sync', syncAttendance);
  *         description: Record added
  */
 router.post('/user', addUser);
+
+/**
+ * @swagger
+ * /api/attendance/manual:
+ *   post:
+ *     summary: Manually create a new attendance record
+ *     tags: [Attendance]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Record created or submitted for approval
+ */
+router.post('/manual', createManualAttendance);
 
 /**
  * @swagger
