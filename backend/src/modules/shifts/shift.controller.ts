@@ -120,6 +120,33 @@ export const createShift = async (req: Request, res: Response) => {
                         message: `Break "to" time (${brkTo}) must be later than "from" time (${brkFrom}).`
                     });
                 }
+
+                const shiftStart = (startTime || '').trim()
+                const shiftEnd = (endTime || '').trim()
+                if (shiftStart && shiftEnd) {
+                    const shiftStartMins = toMinutes(shiftStart)
+                    const shiftEndMins = toMinutes(shiftEnd)
+                    const breakStartMins = toMinutes(brkFrom)
+                    const breakEndMins = toMinutes(brkTo)
+                    const isOvernight = shiftEndMins <= shiftStartMins
+                    if (isOvernight) {
+                        const validStart = breakStartMins >= shiftStartMins || breakStartMins < shiftEndMins
+                        const validEnd = breakEndMins > shiftStartMins || breakEndMins <= shiftEndMins
+                        if (!validStart || !validEnd) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `Break ${brkFrom}–${brkTo} must fall within the shift hours (${shiftStart}–${shiftEnd}).`
+                            })
+                        }
+                    } else {
+                        if (breakStartMins < shiftStartMins || breakEndMins > shiftEndMins) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `Break ${brkFrom}–${brkTo} must fall within the shift hours (${shiftStart}–${shiftEnd}).`
+                            })
+                        }
+                    }
+                }
             }
         }
 
@@ -215,6 +242,33 @@ export const updateShift = async (req: Request, res: Response) => {
                         success: false,
                         message: `Break "to" time (${brkTo}) must be later than "from" time (${brkFrom}).`
                     });
+                }
+
+                const effectiveStart = (startTime || existing.startTime || '').trim()
+                const effectiveEnd = (endTime || existing.endTime || '').trim()
+                if (effectiveStart && effectiveEnd) {
+                    const shiftStartMins = toMinutes(effectiveStart)
+                    const shiftEndMins = toMinutes(effectiveEnd)
+                    const breakStartMins = toMinutes(brkFrom)
+                    const breakEndMins = toMinutes(brkTo)
+                    const isOvernight = shiftEndMins <= shiftStartMins
+                    if (isOvernight) {
+                        const validStart = breakStartMins >= shiftStartMins || breakStartMins < shiftEndMins
+                        const validEnd = breakEndMins > shiftStartMins || breakEndMins <= shiftEndMins
+                        if (!validStart || !validEnd) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `Break ${brkFrom}–${brkTo} must fall within the shift hours (${effectiveStart}–${effectiveEnd}).`
+                            })
+                        }
+                    } else {
+                        if (breakStartMins < shiftStartMins || breakEndMins > shiftEndMins) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `Break ${brkFrom}–${brkTo} must fall within the shift hours (${effectiveStart}–${effectiveEnd}).`
+                            })
+                        }
+                    }
                 }
             }
         }

@@ -56,7 +56,22 @@ export function useShifts() {
   // Break validation helper
   const hasInvalidBreaks = form.breaks.some(b => {
     if (!b.start || !b.end) return false
-    return toMinutes(b.end) <= toMinutes(b.start)
+    if (toMinutes(b.end) <= toMinutes(b.start)) return true
+    if (form.startTime && form.endTime) {
+      const shiftStartMins = toMinutes(form.startTime)
+      const shiftEndMins = toMinutes(form.endTime)
+      const breakStartMins = toMinutes(b.start)
+      const breakEndMins = toMinutes(b.end)
+      const isOvernight = shiftEndMins <= shiftStartMins
+      if (isOvernight) {
+        const validStart = breakStartMins >= shiftStartMins || breakStartMins < shiftEndMins
+        const validEnd = breakEndMins > shiftStartMins || breakEndMins <= shiftEndMins
+        if (!validStart || !validEnd) return true
+      } else {
+        if (breakStartMins < shiftStartMins || breakEndMins > shiftEndMins) return true
+      }
+    }
+    return false
   })
 
   const openCreate = () => {
