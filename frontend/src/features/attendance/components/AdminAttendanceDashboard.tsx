@@ -59,7 +59,11 @@ function AdminAttendanceContent() {
             value={selectedDate}
           />
           <button
-            onClick={() => dateInputRef.current?.showPicker()}
+            onClick={() => {
+              if (dateInputRef.current && 'showPicker' in dateInputRef.current) {
+                dateInputRef.current.showPicker()
+              }
+            }}
             className="flex items-center gap-2 px-4 py-2.5 bg-secondary border border-border rounded-xl text-sm font-bold text-foreground hover:bg-secondary/80 transition-all shadow-sm"
           >
             <CalendarIcon className="w-4 h-4 text-primary" />

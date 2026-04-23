@@ -108,7 +108,7 @@ export function AdjustmentAuditLogsDashboard() {
       <div className="relative min-w-[180px]">
         <button
           onClick={(e) => { e.stopPropagation(); setOpenDropdown(isOpen ? null : id); }}
-          className={`w-full flex items-center justify-between px-5 py-3 bg-[#E60000] text-white rounded-lg text-xs font-bold transition-all ${isOpen ? 'rounded-b-none' : 'shadow-md'}`}
+          className={`w-full flex items-center justify-between px-5 py-3 bg-brand text-white rounded-lg text-xs font-bold transition-all ${isOpen ? 'rounded-b-none' : 'shadow-md'}`}
         >
           <span>{value}</span>
           {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -116,7 +116,7 @@ export function AdjustmentAuditLogsDashboard() {
         {isOpen && (
           <div className="absolute top-full left-0 right-0 z-50 flex flex-col pt-1">
             <button
-              className="w-full text-left px-5 py-3 bg-[#CC0000] text-white hover:bg-red-500 transition-colors text-xs font-bold first:mt-0 mt-px rounded-sm shadow-sm"
+              className="w-full text-left px-5 py-3 bg-brand-dark text-white hover:bg-red-500 transition-colors text-xs font-bold first:mt-0 mt-px rounded-sm shadow-sm"
               onClick={() => {
                 onChange("All Branches");
                 setOpenDropdown(null);
@@ -127,7 +127,7 @@ export function AdjustmentAuditLogsDashboard() {
             {options.map((opt: string) => (
               <button
                 key={opt}
-                className="w-full text-left px-5 py-3 bg-[#CC0000] text-white hover:bg-red-500 transition-colors text-xs font-bold first:mt-0 mt-px rounded-sm last:rounded-b-lg shadow-sm"
+                className="w-full text-left px-5 py-3 bg-brand-dark text-white hover:bg-red-500 transition-colors text-xs font-bold first:mt-0 mt-px rounded-sm last:rounded-b-lg shadow-sm"
                 onClick={() => {
                   onChange(opt);
                   setOpenDropdown(null);
@@ -184,7 +184,11 @@ export function AdjustmentAuditLogsDashboard() {
               className="absolute opacity-0 pointer-events-none"
             />
             <button
-              onClick={() => logDateRef.current?.showPicker()}
+              onClick={() => {
+                if (logDateRef.current && 'showPicker' in logDateRef.current) {
+                  logDateRef.current.showPicker()
+                }
+              }}
               className="min-w-[180px] flex items-center justify-between px-5 py-3 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 outline-none shadow-sm hover:border-red-200 transition-all"
             >
               <div className="flex items-center gap-3">

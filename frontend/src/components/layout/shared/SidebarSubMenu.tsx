@@ -45,18 +45,18 @@ export function SidebarSubMenu({
         <Link
           href={href}
           onClick={onClose}
-          className={`flex items-center gap-4 py-3 flex-1 ${isGroupActive ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+          className={`flex items-center gap-4 py-3 flex-1 ${isGroupActive ? 'text-brand' : 'text-white/60 hover:text-white'}`}
           style={{ paddingLeft: '12px' }}
           title={collapsed ? label : undefined}
         >
-          <Icon size={22} className={`shrink-0 ${isGroupActive ? 'text-[#E60000]' : 'text-white'}`} />
+          <Icon size={22} className={`shrink-0 ${isGroupActive ? 'text-brand' : 'text-white'}`} />
           <span className="font-bold text-lg whitespace-nowrap" style={labelStyle}>{label}</span>
           {badge}
         </Link>
         {!collapsed && (
           <button
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle(); }}
-            className={`p-2 mr-2 rounded-lg transition-colors shrink-0 ${isGroupActive ? 'text-[#E60000]' : 'text-white/60 hover:text-white'}`}
+            className={`p-2 mr-2 rounded-lg transition-colors shrink-0 ${isGroupActive ? 'text-brand' : 'text-white/60 hover:text-white'}`}
             title="Toggle submenu"
           >
             <ChevronDown
@@ -82,8 +82,8 @@ export function SidebarSubMenu({
                   href={sub.href}
                   onClick={onClose}
                   className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${sub.isActive
-                    ? isGroupActive ? 'text-[#E60000]' : 'text-white'
-                    : isGroupActive ? 'text-[#E60000]/60 hover:text-[#E60000]' : 'text-white/60 hover:text-white'
+                    ? isGroupActive ? 'text-brand' : 'text-white'
+                    : isGroupActive ? 'text-brand/60 hover:text-brand' : 'text-white/60 hover:text-white'
                     }`}
                 >
                   <SubIcon size={15} className="shrink-0" />

@@ -55,7 +55,11 @@ export function AdjustmentListPage({ role }: AdjustmentListPageProps) {
                         <div className="relative">
                             <input type="date" ref={logDateRef} value={logDate} onChange={(e) => setLogDate(e.target.value)}
                                 className="absolute opacity-0 pointer-events-none" />
-                            <button onClick={() => logDateRef.current?.showPicker()}
+                            <button onClick={() => {
+                              if (logDateRef.current && 'showPicker' in logDateRef.current) {
+                                logDateRef.current.showPicker()
+                              }
+                            }}
                                 className="min-w-[180px] flex items-center justify-between px-5 py-3 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 outline-none shadow-sm hover:border-red-200 transition-all">
                                 <div className="flex items-center gap-3">
                                     <CalendarSearch size={14} className="text-slate-400" />
