@@ -17,7 +17,7 @@ import deviceRoutes from './modules/devices/device.routes';
 import systemRoutes from './modules/system/system.routes';
 import logsRoutes from './modules/logs/logs.routes';
 import shiftRoutes from './modules/shifts/shift.routes';
-import reportRoutes from './modules/reports/report.routes';
+
 import timeRoutes from './modules/system/time.routes';
 import meRoutes from './modules/me/me.routes';
 import { correlationId } from './shared/middleware/correlationId.middleware';
@@ -66,7 +66,7 @@ app.use('/api/devices', deviceRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/shifts', shiftRoutes);
-app.use('/api/reports', reportRoutes);
+
 app.use('/api/time', timeRoutes);
 app.use('/api/me', meRoutes);
 

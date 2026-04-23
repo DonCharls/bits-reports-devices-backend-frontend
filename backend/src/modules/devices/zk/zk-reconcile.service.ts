@@ -182,9 +182,11 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
             }
         }
 
-        // Skip refresh and isActive update in dry-run — the device state was not changed
+        // Skip reconcile-specific updates in dry-run — the device state was not changed
         if (!dryRun) {
-            await prisma.device.update({ where: { id: deviceId }, data: { isActive: true, updatedAt: new Date() } });
+            // NOTE: We intentionally do NOT set isActive here.
+            // The healthCheckScheduler is the single source of truth for device connectivity.
+            await prisma.device.update({ where: { id: deviceId }, data: { lastReconciledAt: new Date(), updatedAt: new Date() } });
 
             // Fire async fingerprint queueing for users that were newly pushed or found missing fingerprints
             if (report.needsEnrollment.length > 0) {
@@ -224,8 +226,9 @@ export const reconcileDeviceWithDB = async (deviceId: number, dryRun: boolean = 
     } catch (error: unknown) {
         const msg = zkErrMsg(error);
         console.error(`[Reconcile] Fatal error: ${msg}`);
-        // Mark device offline
-        await prisma.device.update({ where: { id: deviceId }, data: { isActive: false, updatedAt: new Date() } }).catch(() => { });
+        // NOTE: We intentionally do NOT set isActive: false here.
+        // A reconcile can fail for non-network reasons (protocol error, lock conflict).
+        // The healthCheckScheduler is the single source of truth for device connectivity.
         throw new Error(`Reconcile failed: ${msg}`);
     } finally {
         try { await zk.disconnect(); } catch { /* ignore */ }

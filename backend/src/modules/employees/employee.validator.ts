@@ -3,8 +3,12 @@ import { body, query } from 'express-validator';
 export const createEmployeeValidator = [
     body('firstName').notEmpty().withMessage('First Name is required').trim(),
     body('lastName').notEmpty().withMessage('Last Name is required').trim(),
-    body('email').optional().isEmail().withMessage('Valid email is required').normalizeEmail(),
-    body('role').optional().isIn(['USER', 'ADMIN', 'HR']).withMessage('Invalid role'),
+    body('employeeNumber')
+        .notEmpty().withMessage('Employee ID is required.')
+        .trim()
+        .isLength({ min: 2 }).withMessage('Employee ID must be at least 2 characters long.'),
+    body('email').optional({ values: 'falsy' }).isEmail().withMessage('Valid email is required').normalizeEmail(),
+    body('role').optional().isIn(['USER']).withMessage('Employee registration only supports USER role. Admin/HR accounts must be created via User Accounts.'),
     body('zkId').optional().isInt().withMessage('ZK ID must be an integer'),
 ];
 
@@ -31,22 +35,4 @@ export const enrollCardValidator = [
         .isInt({ min: 1, max: 4294967295 })
         .withMessage('Card number must be a valid uint32 (1–4294967295)'),
 ];
-
-export const validateEmployeeId = (id: string | null | undefined): { isValid: boolean; error?: string } => {
-  if (!id || id.trim() === '') {
-    return { isValid: false, error: 'Employee ID is required.' };
-  }
-  
-  const trimmedId = id.trim();
-  
-  // Accept any string with at least 2 characters (alphanumeric, dashes, etc.)
-  if (trimmedId.length < 2) {
-    return { 
-      isValid: false, 
-      error: 'Employee ID must be at least 2 characters long.' 
-    };
-  }
-
-  return { isValid: true };
-};
 

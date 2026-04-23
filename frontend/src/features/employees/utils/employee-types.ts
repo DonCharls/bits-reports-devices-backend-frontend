@@ -11,11 +11,11 @@ export type Employee = {
   suffix: string | null
   email: string | null
   role: string
-  department: string | null
-  Department?: { name: string } | null
-  departmentId?: number | null
+  departmentId: number | null
+  Department: { name: string } | null
+  branchId: number | null
+  Branch: { name: string } | null
   position: string | null
-  branch: string | null
   contactNumber: string | null
   hireDate: string | null
   gender: string | null

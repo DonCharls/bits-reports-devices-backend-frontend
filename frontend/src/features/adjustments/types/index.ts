@@ -17,7 +17,7 @@ export interface Adjustment {
             lastName: string;
             middleName?: string | null;
             suffix?: string | null;
-            branch: string | null;
+            branch: { name: string } | null;
             Department?: { name: string } | null;
         };
     };

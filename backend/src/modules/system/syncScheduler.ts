@@ -2,6 +2,7 @@ import { prisma } from '../../shared/lib/prisma';
 import { syncZkData, SyncZkDataResult } from '../devices/zk';
 import { audit } from '../../shared/lib/auditLogger';
 import { isCurrentlyInPeakWindow } from '../shifts/shiftUtils';
+import { processAttendanceLogs } from '../attendance/attendance.service';
 
 /** Returns a formatted timestamp string for console logging (e.g. "11:15:30") */
 function ts(): string {
@@ -24,6 +25,7 @@ export interface SyncSchedulerStatus {
 
 class SyncScheduler {
     private timer: NodeJS.Timeout | null = null;
+    private recoveryTimer: NodeJS.Timeout | null = null;
     private running: boolean = false;
     private lastSyncAt: Date | null = null;
     private nextSyncAt: Date | null = null;
@@ -40,8 +42,15 @@ class SyncScheduler {
         if (this.running) return;
         this.running = true;
         console.log(`[${ts()}] [SyncScheduler] Started background service`);
-        // Schedule next tick immediately
+        
+        // Schedule next sync tick immediately
         this.scheduleNextTick(0);
+
+        // Schedule orphan safety-net immediately, and then every 5 minutes
+        this.runOrphanRecovery().catch(err => console.error(`[${ts()}] [SyncScheduler] initial orphan recovery error:`, err));
+        this.recoveryTimer = setInterval(() => {
+            this.runOrphanRecovery().catch(err => console.error(`[${ts()}] [SyncScheduler] Orphan recovery error:`, err));
+        }, 5 * 60 * 1000);
     }
 
     /**
@@ -50,10 +59,17 @@ class SyncScheduler {
      */
     public stop() {
         this.running = false;
+        
         if (this.timer) {
             clearTimeout(this.timer);
             this.timer = null;
         }
+        
+        if (this.recoveryTimer) {
+            clearInterval(this.recoveryTimer);
+            this.recoveryTimer = null;
+        }
+        
         this.nextSyncAt = null;
         console.log(`[${ts()}] [SyncScheduler] Stopped background service`);
     }
@@ -92,6 +108,31 @@ class SyncScheduler {
         } catch (error) {
             console.error(`[${ts()}] [SyncScheduler] Manual sync failed:`, error);
             return { success: false, pushed: 0 };
+        }
+    }
+
+    /**
+     * Safety net: detects device logs that were successfully imported but failed processing,
+     * and forces a retry. This guarantees logs aren't lost if the primary sync cycle is interrupted.
+     */
+    private async runOrphanRecovery() {
+        if (!this.running) return;
+        try {
+            // Find if there are any orphaned logs older than 5 minutes
+            const cutoff = new Date(Date.now() - 5 * 60 * 1000);
+            const orphanedCount = await prisma.attendanceLog.count({
+                where: {
+                    processedAt: null,
+                    timestamp: { lte: cutoff }
+                }
+            });
+
+            if (orphanedCount > 0) {
+                console.warn(`[${ts()}] [SyncScheduler] Safety Net: Found ${orphanedCount} orphaned logs older than 5 minutes. Triggering recovery...`);
+                await processAttendanceLogs();
+            }
+        } catch (err) {
+            console.error(`[${ts()}] [SyncScheduler] Orphan recovery check failed:`, err);
         }
     }
 

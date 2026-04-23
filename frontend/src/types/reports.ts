@@ -17,6 +17,7 @@ export type AttendanceRecord = {
   checkInTime: string;
   checkOutTime: string | null;
   status: string;
+  notes?: string | null;
   totalHours?: number;
   lateMinutes?: number;
   overtimeMinutes?: number;
@@ -26,13 +27,16 @@ export type AttendanceRecord = {
   shiftCode?: string | null;
   isShiftActive?: boolean;
   gracePeriodApplied?: boolean;
+  checkin_updated?: string | null;
+  checkout_updated?: string | null;
   employee: {
     id: number;
     firstName: string;
     lastName: string;
-    department: string | null;
+    departmentId: number | null;
     Department?: { name: string } | null;
-    branch: string | null;
+    branchId: number | null;
+    Branch?: { name: string } | null;
     Shift?: EmployeeShift | null;
   };
 };
@@ -40,6 +44,8 @@ export type AttendanceRecord = {
 export type ReportRow = {
   id: number;
   name: string;
+  employeeNumber: string | null;
+  zkId: number | null;
   department: string;
   branch: string;
   totalDays: number;
@@ -51,4 +57,6 @@ export type ReportRow = {
   totalHours: number;
   shift: EmployeeShift | null;
   hasAnomaly: boolean;
+  hasMissingCheckout: boolean;
+  missingCheckoutsCount: number;
 };

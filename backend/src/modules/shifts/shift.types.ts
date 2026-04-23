@@ -10,6 +10,7 @@ export interface CreateShiftRequest {
     description?: string;
     workDays?: string[]; // Array of Mon, Tue etc.
     halfDays?: string[]; 
+    halfDayHours?: number | null; // When set, half-day = this many hours; null = use midpoint
     breaks?: string;     // JSON string or structured object depending on usage
 }
 

@@ -5,10 +5,10 @@ import { Prisma } from '@prisma/client';
 import { syncEmployeesToDevice, enrollEmployeeFingerprint, enrollEmployeeCard, deleteEmployeeCard, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex, deleteFingerprintGlobally, syncEmployeeFingerprints } from '../devices/zk';
 import { enqueueGlobalUpsertUser, enqueueGlobalDeleteUser, processDeviceSyncQueue } from '../devices/deviceSyncQueue.service';
 import { audit } from '../../shared/lib/auditLogger';
+import { auditUpdate, auditCreate, auditDelete, buildChanges } from '../../shared/lib/auditHelpers';
 import bcrypt from 'bcryptjs';
 import { generateRandomPassword } from '../../shared/utils/password.utils';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../../shared/lib/email.service';
-import { validateEmployeeId } from './employee.validator';
 
 // GET /api/employees - Get all employees
 export const getAllEmployees = async (req: Request, res: Response) => {
@@ -27,11 +27,11 @@ export const getAllEmployees = async (req: Request, res: Response) => {
                 dateOfBirth: true,
                 email: true,
                 role: true,
-                department: true,
                 departmentId: true,
                 Department: { select: { name: true } },
+                branchId: true,
+                Branch: { select: { name: true } },
                 position: true,
-                branch: true,
                 contactNumber: true,
                 hireDate: true,
                 employmentStatus: true,
@@ -131,15 +131,15 @@ export const deleteEmployee = async (req: Request, res: Response) => {
             },
         });
 
-        void audit({
-            action: 'STATUS_CHANGE',
+        void auditUpdate({
             entityType: 'Employee',
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             details: `Employee ${employee.firstName} ${employee.lastName} deactivated`,
-            metadata: { previousStatus: employee.employmentStatus, newStatus: 'INACTIVE' },
             correlationId: req.correlationId
-        });
+        }, [
+            { field: 'employmentStatus', oldValue: employee.employmentStatus, newValue: 'INACTIVE' }
+        ]);
 
         res.json({
             success: true,
@@ -200,15 +200,15 @@ export const reactivateEmployee = async (req: Request, res: Response) => {
             },
         });
 
-        void audit({
-            action: 'STATUS_CHANGE',
+        void auditUpdate({
             entityType: 'Employee',
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             details: `Employee ${updatedEmployee.firstName} ${updatedEmployee.lastName} reactivated`,
-            metadata: { previousStatus: existingEmployee.employmentStatus, newStatus: 'ACTIVE' },
             correlationId: req.correlationId
-        });
+        }, [
+            { field: 'employmentStatus', oldValue: existingEmployee.employmentStatus, newValue: 'ACTIVE' }
+        ]);
 
         res.json({
             success: true,
@@ -237,23 +237,16 @@ export const createEmployee = async (req: Request, res: Response) => {
             dateOfBirth,
             email,
             role,
-            department,
+            departmentId,
             position,
-            branch,
+            branchId,
             contactNumber,
             hireDate,
             employmentStatus,
             shiftId
         } = req.body;
 
-        // Validate Employee ID
-        const empIdValidation = validateEmployeeId(employeeNumber);
-        if (!empIdValidation.isValid) {
-            return res.status(400).json({
-                success: false,
-                message: empIdValidation.error
-            });
-        }
+        // The validators have already handled empty formats
 
         // Validate required fields
         if (!firstName || !lastName) {
@@ -271,11 +264,23 @@ export const createEmployee = async (req: Request, res: Response) => {
             });
         }
 
-        // Validate role
-        if (role && !['USER', 'ADMIN', 'HR'].includes(role)) {
-            return res.status(400).json({
+        // Enforce USER role — Admin/HR must be created via /api/users
+        // This is the second line of defense after the validator
+        if (role && role !== 'USER') {
+            void audit({
+                action: 'CREATE',
+                level: 'WARN',
+                entityType: 'Employee',
+                performedBy: req.user?.employeeId,
+                source: 'admin-panel',
+                details: `Blocked role escalation attempt: tried to create employee with role "${role}"`,
+                metadata: { attemptedRole: role, email },
+                correlationId: req.correlationId
+            });
+
+            return res.status(403).json({
                 success: false,
-                message: 'Invalid role. Must be USER, ADMIN, or HR'
+                message: 'Employee registration only supports USER role. Admin/HR accounts must be created via User Accounts.'
             });
         }
 
@@ -293,19 +298,24 @@ export const createEmployee = async (req: Request, res: Response) => {
                 OR: [
                     { email: email || undefined },
                     { employeeNumber: employeeNumber || undefined },
+                    { contactNumber: contactNumber || undefined },
                 ]
             }
         });
 
         if (existingEmployee) {
-            const duplicateField = existingEmployee.email === email ? 'email address' : 'employee number';
+            let duplicateField = 'information';
+            if (email && existingEmployee.email === email) duplicateField = 'email address';
+            else if (employeeNumber && existingEmployee.employeeNumber === employeeNumber) duplicateField = 'employee number';
+            else if (contactNumber && existingEmployee.contactNumber === contactNumber) duplicateField = 'contact number';
+
             void audit({
                 action: 'CREATE',
                 level: 'WARN',
                 entityType: 'Employee',
                 performedBy: req.user?.employeeId,
                 details: `Failed to create employee: duplicate ${duplicateField}`,
-                metadata: { email, employeeNumber },
+                metadata: { email, employeeNumber, contactNumber },
                 correlationId: req.correlationId
             });
 
@@ -340,10 +350,10 @@ export const createEmployee = async (req: Request, res: Response) => {
                     dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
                     email,
                     password: hashedPassword,
-                    role: role || 'USER',
-                    department,
+                    role: 'USER',
+                    departmentId: departmentId ? parseInt(departmentId, 10) : null,
                     position,
-                    branch,
+                    branchId: branchId ? parseInt(branchId, 10) : null,
                     contactNumber,
                     hireDate: hireDate ? new Date(hireDate) : undefined,
                     employmentStatus: employmentStatus || 'ACTIVE',
@@ -364,9 +374,11 @@ export const createEmployee = async (req: Request, res: Response) => {
                     dateOfBirth: true,
                     email: true,
                     role: true,
-                    department: true,
+                    departmentId: true,
+                    Department: { select: { name: true } },
                     position: true,
-                    branch: true,
+                    branchId: true,
+                    Branch: { select: { name: true } },
                     contactNumber: true,
                     hireDate: true,
                     employmentStatus: true,
@@ -388,14 +400,16 @@ export const createEmployee = async (req: Request, res: Response) => {
 
         console.log(`[API] Created employee: ${newEmployee.firstName} ${newEmployee.lastName} (zkId: ${newEmployee.zkId})`);
 
-        void audit({
-            action: 'CREATE',
+        void auditCreate({
             entityType: 'Employee',
             entityId: newEmployee.id,
             performedBy: req.user?.employeeId,
             details: `Created employee ${newEmployee.firstName} ${newEmployee.lastName}`,
-            metadata: { email, role: newEmployee.role, department, employeeNumber },
             correlationId: req.correlationId
+        }, { 
+            email, 
+            role: newEmployee.role, 
+            employeeNumber 
         });
 
         // ── Respond immediately — device sync happens in the background ──────
@@ -480,9 +494,8 @@ export const updateEmployee = async (req: Request, res: Response) => {
             email,
             contactNumber,
             position,
-            department,
             departmentId,
-            branch,
+            branchId,
             hireDate,
             shiftId,
             employmentStatus
@@ -500,23 +513,16 @@ export const updateEmployee = async (req: Request, res: Response) => {
             });
         }
 
-        if (employeeNumber !== undefined) {
-            const empIdValidation = validateEmployeeId(employeeNumber);
-            if (!empIdValidation.isValid) {
+        // Validate employeeNumber uniqueness (exclude the current employee)
+        if (employeeNumber !== undefined && employeeNumber !== '' && employeeNumber !== existingEmployee.employeeNumber) {
+            const dup = await prisma.employee.findFirst({
+                where: { employeeNumber: employeeNumber.trim(), id: { not: employeeId } }
+            });
+            if (dup) {
                 return res.status(400).json({
                     success: false,
-                    message: empIdValidation.error
+                    message: 'Employee ID is already in use by another employee'
                 });
-            }
-
-            if (employeeNumber && employeeNumber !== existingEmployee.employeeNumber) {
-                const dup = await prisma.employee.findUnique({ where: { employeeNumber: employeeNumber.trim() } });
-                if (dup) {
-                    return res.status(400).json({
-                        success: false,
-                        message: 'Employee ID is already in use by another employee'
-                    });
-                }
             }
         }
 
@@ -533,6 +539,39 @@ export const updateEmployee = async (req: Request, res: Response) => {
             }
         }
 
+        // Validate contact number uniqueness (exclude current employee)
+        if (contactNumber !== undefined && contactNumber !== '' && contactNumber !== existingEmployee.contactNumber) {
+            const contactDup = await prisma.employee.findFirst({
+                where: { contactNumber, id: { not: employeeId } }
+            });
+            if (contactDup) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'This contact number is already in use by another employee'
+                });
+            }
+        }
+
+        // Block role escalation — prevent promoting USER to ADMIN/HR via this endpoint
+        if (req.body.role && ['ADMIN', 'HR'].includes(req.body.role) && existingEmployee.role === 'USER') {
+            void audit({
+                action: 'UPDATE',
+                level: 'WARN',
+                entityType: 'Employee',
+                entityId: employeeId,
+                performedBy: req.user?.employeeId,
+                source: 'admin-panel',
+                details: `Blocked role escalation attempt on employee ID ${employeeId}: tried to change from USER to ${req.body.role}`,
+                metadata: { attemptedRole: req.body.role },
+                correlationId: req.correlationId
+            });
+
+            return res.status(403).json({
+                success: false,
+                message: 'Role escalation not allowed. Admin/HR accounts must be managed via User Accounts.'
+            });
+        }
+
         // Prepare data for update
         const updateData: Record<string, unknown> = {};
         if (employeeNumber !== undefined) updateData.employeeNumber = employeeNumber.trim();
@@ -545,11 +584,12 @@ export const updateEmployee = async (req: Request, res: Response) => {
         if (email !== undefined) updateData.email = email === '' ? null : email;
         if (contactNumber !== undefined) updateData.contactNumber = contactNumber;
         if (position !== undefined) updateData.position = position;
-        if (department !== undefined) updateData.department = department || null;
         if (departmentId !== undefined) {
             updateData.departmentId = departmentId ? parseInt(departmentId, 10) : null;
         }
-        if (branch !== undefined) updateData.branch = branch || null;
+        if (branchId !== undefined) {
+            updateData.branchId = branchId ? parseInt(branchId, 10) : null;
+        }
         if (hireDate !== undefined) updateData.hireDate = hireDate ? new Date(hireDate) : null;
         if (shiftId !== undefined) updateData.shiftId = shiftId ? parseInt(shiftId, 10) : null;
         if (employmentStatus !== undefined && ['ACTIVE', 'INACTIVE', 'TERMINATED'].includes(employmentStatus)) {
@@ -574,11 +614,11 @@ export const updateEmployee = async (req: Request, res: Response) => {
                 dateOfBirth: true,
                 email: true,
                 role: true,
-                department: true,
-                Department: { select: { name: true } },
                 departmentId: true,
+                Department: { select: { name: true } },
                 position: true,
-                branch: true,
+                branchId: true,
+                Branch: { select: { name: true } },
                 contactNumber: true,
                 hireDate: true,
                 employmentStatus: true,
@@ -589,28 +629,16 @@ export const updateEmployee = async (req: Request, res: Response) => {
             },
         });
 
-        const changes: string[] = [];
-        for (const [key, newValue] of Object.entries(updateData)) {
-            if (key === 'updatedAt' || key === 'password') continue;
-            const oldValue = (existingEmployee as Record<string, unknown>)[key];
-            if (oldValue !== newValue) {
-                const oldValStr = oldValue instanceof Date ? oldValue.toISOString().split('T')[0] : (oldValue || 'empty');
-                const newValStr = newValue instanceof Date ? newValue.toISOString().split('T')[0] : (newValue || 'empty');
-                if (oldValStr !== newValStr) {
-                    changes.push(`Updated ${key.replace(/([A-Z])/g, ' $1').toLowerCase().trim()} from "${oldValStr}" to "${newValStr}"`);
-                }
-            }
-        }
+        const trackedFields = Object.keys(updateData).filter(k => k !== 'updatedAt' && k !== 'password');
+        const changes = buildChanges(existingEmployee as Record<string, unknown>, updateData, trackedFields);
 
-        void audit({
-            action: 'UPDATE',
+        void auditUpdate({
             entityType: 'Employee',
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             details: `Updated employee ${updatedEmployee.firstName} ${updatedEmployee.lastName}`,
-            metadata: changes.length > 0 ? { updates: changes } : undefined,
             correlationId: req.correlationId
-        });
+        }, changes);
 
         res.json({
             success: true,
@@ -711,15 +739,16 @@ export const permanentDeleteEmployee = async (req: Request, res: Response) => {
             await tx.employee.delete({ where: { id: employeeId } });
         });
 
-        void audit({
-            action: 'DELETE',
+        void auditDelete({
             entityType: 'Employee',
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             level: 'WARN',
             details: `Permanently deleted employee ${employee.firstName} ${employee.lastName}`,
-            metadata: { email: employee.email, role: employee.role },
             correlationId: req.correlationId
+        }, { 
+            email: employee.email, 
+            role: employee.role 
         });
 
         res.json({
@@ -828,16 +857,25 @@ export const resetEmployeePassword = async (req: Request, res: Response) => {
         });
     }
 };
-// GET /api/employees/check-email?email=...&excludeId=...
-export const checkEmailAvailability = async (req: Request, res: Response) => {
+// GET /api/employees/check-duplicate?field=email&value=...&excludeId=...
+export const checkDuplicate = async (req: Request, res: Response) => {
     try {
-        const { email, excludeId } = req.query;
+        const { field, value, excludeId } = req.query;
 
-        if (!email || typeof email !== 'string') {
-            return res.status(400).json({ success: false, message: 'Email is required' });
+        if (!field || typeof field !== 'string' || !['email', 'employeeNumber', 'contactNumber'].includes(field)) {
+            return res.status(400).json({ success: false, message: 'Valid field is required' });
+        }
+        
+        if (!value || typeof value !== 'string') {
+            return res.status(400).json({ success: false, message: 'Value is required' });
         }
 
-        const where: Prisma.EmployeeWhereInput = { email: email.trim().toLowerCase() };
+        const where: any = {};
+        where[field] = value.trim();
+        if (field === 'email') {
+            where[field] = value.trim().toLowerCase();
+        }
+
         if (excludeId) {
             where.id = { not: parseInt(excludeId as string, 10) };
         }
@@ -849,10 +887,10 @@ export const checkEmailAvailability = async (req: Request, res: Response) => {
             available: !existing,
         });
     } catch (error: unknown) {
-        console.error('Error checking email:', error);
+        console.error('Error checking duplicate:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to check email availability',
+            message: 'Failed to check duplicate availability',
         });
     }
 };

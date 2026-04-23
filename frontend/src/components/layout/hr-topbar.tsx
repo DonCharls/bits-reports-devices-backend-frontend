@@ -47,16 +47,16 @@ export default function TopBar({ setIsMobileOpen }: { setIsMobileOpen: (val: boo
   };
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-8 sticky top-0 z-[100]">
+    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-8 sticky top-0 z-40">
       <div className="flex items-center gap-4 flex-1">
         <button onClick={() => setIsMobileOpen(true)} className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg">
           <Menu size={24} />
         </button>
         <div className="flex items-center gap-3">
-          <div className="relative h-9 w-13 overflow-hidden rounded-md border border-red-700 bg-[#FE0908]">
+          <div className="relative h-9 w-13 overflow-hidden rounded-md border border-red-700 bg-brand-bright">
             <Image src="/images/av.jpg" alt="Logo" fill className="object-contain" priority quality={100} />
           </div>
-          <h1 className="text-[#E60000] font-black text-2xl tracking-tighter uppercase whitespace-nowrap">BITS</h1>
+          <h1 className="text-brand font-black text-2xl tracking-tighter uppercase whitespace-nowrap">BITS</h1>
           <span className="hidden md:inline text-gray-400 text-xs font-semibold tracking-wide whitespace-nowrap border-l border-gray-200 pl-3 ml-1">Biometric Integrated Timekeeping System</span>
         </div>
       </div>

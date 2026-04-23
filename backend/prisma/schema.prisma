@@ -19,6 +19,7 @@ model Attendance {
   notes                String?
   checkInDeviceId      Int?
   checkOutDeviceId     Int?
+  checkoutSource       String?
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   employee             Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -68,19 +69,21 @@ model AttendanceAdjustment {
 }
 
 model AttendanceLog {
-  id         Int      @id @default(autoincrement())
-  timestamp  DateTime
-  status     Int
-  employeeId Int
-  deviceId   Int?
-  createdAt  DateTime @default(now())
-  Device     Device?  @relation(fields: [deviceId], references: [id])
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  id          Int       @id @default(autoincrement())
+  timestamp   DateTime
+  status      Int
+  employeeId  Int
+  deviceId    Int?
+  createdAt   DateTime  @default(now())
+  processedAt DateTime? // Stamped when this log is converted into an Attendance record; NULL = pending
+  Device      Device?   @relation(fields: [deviceId], references: [id])
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([timestamp, employeeId])
   @@index([deviceId])
   @@index([employeeId])
   @@index([timestamp])
+  @@index([processedAt]) // Enables fast filtering of unprocessed logs (WHERE processedAt IS NULL)
 }
 
 model Department {
@@ -143,10 +146,8 @@ model Employee {
   employmentStatus    EmploymentStatus @default(ACTIVE)
 
   // Secondary Info
-  department     String?
   position       String?
-  branch         String?
-  contactNumber  String?
+  contactNumber  String?          @unique
   employeeNumber String?   @unique
   hireDate       DateTime?
   createdAt      DateTime  @default(now())
@@ -191,6 +192,7 @@ model Shift {
   description  String?
   workDays     String     @default("[\"Mon\",\"Tue\",\"Wed\",\"Thu\",\"Fri\"]")
   halfDays     String     @default("[]")
+  halfDayHours Float?     // When set, half-day expected hours = this value; when null, midpoint is used
   breaks       String     @default("[]")
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt

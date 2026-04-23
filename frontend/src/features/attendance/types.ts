@@ -9,12 +9,23 @@ export interface AttendanceRecord {
   checkOut: string;
   status: string;
   notes?: string;
+  isEarlyPunch?: boolean;
+  isMissingCheckout?: boolean;
   lateMinutes: number;
   totalHours: number;
   overtimeMinutes: number;
   undertimeMinutes: number;
   shiftCode: string | null;
   isNightShift: boolean;
+  isAnomaly?: boolean;
+  isEarlyOut?: boolean;
+  isShiftActive?: boolean;
+  gracePeriodApplied?: boolean;
+  displayStatus?: string;
+  checkInDevice?: string | null;
+  checkOutDevice?: string | null;
+  checkoutSource?: string | null;
+  isEdited?: boolean;
 }
 
 export interface AttendanceStats {
@@ -23,4 +34,5 @@ export interface AttendanceStats {
   late: number;
   absent: number;
   onLeave: number;
+  incomplete: number;
 }

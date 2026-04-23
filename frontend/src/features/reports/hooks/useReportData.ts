@@ -87,9 +87,10 @@ export const useReportData = (startDate: string, endDate: string) => {
           lastName: string;
           middleName?: string;
           suffix?: string;
-          department?: string;
+          employeeNumber?: string | null;
+          zkId?: number | null;
           Department?: { name: string };
-          branch?: string;
+          Branch?: { name: string };
           employmentStatus: string;
           role: string;
           Shift?: {
@@ -127,8 +128,10 @@ export const useReportData = (startDate: string, endDate: string) => {
           rowMap.set(e.id, {
             id: e.id,
             name: `${e.firstName}${e.middleName ? ` ${e.middleName[0]}.` : ''} ${e.lastName}${e.suffix ? ` ${e.suffix}` : ''}`.trim(),
-            department: e.Department?.name || e.department || '—',
-            branch: e.branch || '—',
+            employeeNumber: e.employeeNumber ?? null,
+            zkId: e.zkId ?? null,
+            department: e.Department?.name || '—',
+            branch: e.Branch?.name || '—',
             totalDays,
             present: 0,
             late: 0,
@@ -137,6 +140,8 @@ export const useReportData = (startDate: string, endDate: string) => {
             undertime: 0,
             totalHours: 0,
             hasAnomaly: false,
+            hasMissingCheckout: false,
+            missingCheckoutsCount: 0,
             shift: e.Shift
               ? {
                   id: e.Shift.id,
@@ -166,6 +171,11 @@ export const useReportData = (startDate: string, endDate: string) => {
 
           if (r.isAnomaly) {
             row.hasAnomaly = true;
+          }
+
+          if (r.checkOutTime === null && r.status === 'incomplete') {
+            row.hasMissingCheckout = true;
+            row.missingCheckoutsCount++;
           }
 
           row.totalHours += r.totalHours ?? 0;

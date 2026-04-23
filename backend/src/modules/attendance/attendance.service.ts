@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import attendanceEmitter from '../../shared/events/attendanceEmitter';
 import { audit } from '../../shared/lib/auditLogger';
+import { auditBatch } from '../../shared/lib/auditHelpers';
+import { ATTENDANCE_LIMITS } from '../system/system.constants';
 
 /**
  * Attendance Service - Strategy C (Grace Period Toggle)
@@ -44,9 +46,8 @@ interface AttendanceFilters {
     endDate?: Date;
     employeeId?: number;
     status?: string;
-    branch?: string;           // filter by employee.branch (string)
+    branchId?: number;        // filter by employee.branchId (FK)
     departmentId?: number;    // filter by employee.departmentId (FK)
-    departmentName?: string;  // filter by employee.department (string, fallback)
 }
 
 /**
@@ -62,7 +63,10 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
 
         // Get recent logs ordered by timestamp
         const logs = await prisma.attendanceLog.findMany({
-            where: { timestamp: { gte: cutoff } },
+            where: { 
+                timestamp: { gte: cutoff },
+                processedAt: null // Fix #3: Only process logs that haven't been synced to an Attendance record
+            },
             orderBy: { timestamp: 'asc' },
             include: { employee: { include: { Shift: true } } }
         });
@@ -96,7 +100,7 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                 const empShift = log.employee?.Shift;
                 const shiftStartMins = empShift
                     ? Number(empShift.startTime.split(':')[0]) * 60 + Number(empShift.startTime.split(':')[1])
-                    : 8 * 60; // fallback to 8:00 AM if no shift
+                    : ATTENDANCE_LIMITS.DEFAULT_SHIFT_START_HOUR * 60; // fallback if no shift
                 const graceMins = empShift?.graceMinutes ?? 0;
                 const checkInMins = checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes();
                 const isLate = checkInMins > (shiftStartMins + graceMins);
@@ -116,9 +120,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                                     id: true,
                                     firstName: true,
                                     lastName: true,
-                                    department: true,
                                     Department: { select: { name: true } },
-                                    branch: true,
+                                    Branch: { select: { name: true } },
                                     Shift: true,
                                 }
                             },
@@ -134,7 +137,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         entityId: createdRecord.id,
                         performedBy: createdRecord.employeeId,
                         source: 'device-sync',
-                        details: `Employee checked in (${isLate ? 'Late' : 'On-time'})`
+                        details: `Employee checked in (${isLate ? 'Late' : 'On-time'})`,
+                        metadata: { snapshot: { status: createdRecord.status, checkInTime: createdRecord.checkInTime.toISOString() } }
                     });
 
                     const shift = createdRecord.employee?.Shift ?? null;
@@ -153,17 +157,31 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             ...metrics,
                         },
                     });
+
+                    // Mark log as successfully processed
+                    await prisma.attendanceLog.update({ where: { id: log.id }, data: { processedAt: new Date() } });
                 } catch (err: unknown) {
                     if (err instanceof PrismaClientKnownRequestError && err.code === 'P2002') {
                         // Duplicate record — silently skip, this is expected behavior
                         console.debug(`[Attendance] Duplicate record skipped for employeeId=${log.employeeId} on ${dateOnly}`);
+                        await prisma.attendanceLog.update({ where: { id: log.id }, data: { processedAt: new Date() } });
                         continue;
                     }
-                    throw err; // Re-throw unexpected errors so the outer catch handles them
+                    // Unexpected error on this individual log — log full context and advance to the
+                    // next log rather than re-throwing. Re-throwing would abort the entire batch,
+                    // leaving all subsequent logs unprocessed (orphaned) for this tick.
+                    // Fix #1 ensures processAttendanceLogs() is retried on the next tick, so this
+                    // log will be re-evaluated automatically without requiring a second punch.
+                    console.error(
+                        `[Attendance] Failed to process check-in log id=${log.id} for employeeId=${log.employeeId} on ${dateOnly}:`,
+                        err
+                    );
+                    continue;
                 }
             } else {
-                // Record exists. Check if this is a valid check-out or just a duplicate/early scan
-                const checkInTime = new Date(existingAttendance.checkInTime);
+                try {
+                    // Record exists. Check if this is a valid check-out or just a duplicate/early scan
+                    const checkInTime = new Date(existingAttendance.checkInTime);
                 const logTime = new Date(log.timestamp);
                 const diffMs = logTime.getTime() - checkInTime.getTime();
                 const diffHours = diffMs / (1000 * 60 * 60); //for every 1000 milliseconds, it will be 1 second
@@ -172,28 +190,53 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                 if (diffHours < minCheckoutHours) {
                     // Too soon to check out - ignore this log
                     // This prevents accidental double-scans from closing the attendance
+                    await prisma.attendanceLog.update({ where: { id: log.id }, data: { processedAt: new Date() } });
                     continue;
                 }
 
                 // If existing check-out exists, only update if this new log is LATER (user left later)
                 if (existingAttendance.checkOutTime) {
                     if (log.timestamp > existingAttendance.checkOutTime) {
+                        const updateData: Record<string, unknown> = {
+                            checkOutTime: log.timestamp,
+                            updatedAt: new Date(),
+                            checkOutDeviceId: log.deviceId,
+                            checkoutSource: 'device',
+                        };
+
+                        if (existingAttendance.status === 'incomplete') {
+                            const empShift = log.employee?.Shift;
+                            if (empShift) {
+                                const [startH, startM] = empShift.startTime.split(':').map(Number);
+                                const grace = empShift.graceMinutes ?? 0;
+                                const checkInPHT = new Date(existingAttendance.checkInTime.getTime() + 8 * 60 * 60 * 1000);
+                                const checkInMins = checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes();
+                                updateData.status = checkInMins <= (startH * 60 + startM + grace) ? 'present' : 'late';
+                            } else {
+                                updateData.status = 'present';
+                            }
+
+                            if (existingAttendance.notes?.includes('No checkout recorded')) {
+                                updateData.notes = existingAttendance.notes.replace(/\s*\|?\s*No checkout recorded.*$/i, '') || null;
+                            }
+
+                            console.log(
+                                `[Attendance] Self-healed: employee ${existingAttendance.employeeId} ` +
+                                `record restored from 'incomplete' to '${updateData.status}' via delayed device scan`
+                            );
+                        }
+
                         const updatedRecord = await prisma.attendance.update({
                             where: { id: existingAttendance.id },
-                            data: {
-                                checkOutTime: log.timestamp,
-                                updatedAt: new Date(),
-                                checkOutDeviceId: log.deviceId
-                            },
+                            data: updateData,
                             include: {
                                 employee: {
                                     select: {
                                         id: true,
                                         firstName: true,
                                         lastName: true,
-                                        department: true,
                                         Department: { select: { name: true } },
-                                        branch: true,
+                                        Branch: { select: { name: true } },
                                         Shift: true,
                                     }
                                 },
@@ -209,7 +252,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             entityId: updatedRecord.id,
                             performedBy: updatedRecord.employeeId,
                             source: 'device-sync',
-                            details: `Employee checked out (updated)`
+                            details: `Employee checked out (updated)`,
+                            metadata: { changes: [{ field: 'checkOutTime', oldValue: existingAttendance.checkOutTime ? existingAttendance.checkOutTime.toISOString() : null, newValue: log.timestamp.toISOString() }] }
                         });
 
                         const shift = updatedRecord.employee?.Shift ?? null;
@@ -228,23 +272,46 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         });
                     }
                 } else {
-                    // No check-out yet, and > 2 hours have passed -> Valid Check-Out
+                    const updateData: Record<string, unknown> = {
+                        checkOutTime: log.timestamp,
+                        updatedAt: new Date(),
+                        checkOutDeviceId: log.deviceId,
+                        checkoutSource: 'device',
+                    };
+
+                    if (existingAttendance.status === 'incomplete') {
+                        const empShift = log.employee?.Shift;
+                        if (empShift) {
+                            const [startH, startM] = empShift.startTime.split(':').map(Number);
+                            const grace = empShift.graceMinutes ?? 0;
+                            const checkInPHT = new Date(existingAttendance.checkInTime.getTime() + 8 * 60 * 60 * 1000);
+                            const checkInMins = checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes();
+                            updateData.status = checkInMins <= (startH * 60 + startM + grace) ? 'present' : 'late';
+                        } else {
+                            updateData.status = 'present';
+                        }
+
+                        if (existingAttendance.notes?.includes('No checkout recorded')) {
+                            updateData.notes = existingAttendance.notes.replace(/\s*\|?\s*No checkout recorded.*$/i, '') || null;
+                        }
+
+                        console.log(
+                            `[Attendance] Self-healed: employee ${existingAttendance.employeeId} ` +
+                            `record restored from 'incomplete' to '${updateData.status}' via delayed device scan`
+                        );
+                    }
+
                     const updatedRecord2 = await prisma.attendance.update({
                         where: { id: existingAttendance.id },
-                        data: {
-                            checkOutTime: log.timestamp,
-                            updatedAt: new Date(),
-                            checkOutDeviceId: log.deviceId
-                        },
+                        data: updateData,
                         include: {
                             employee: {
                                 select: {
                                     id: true,
                                     firstName: true,
                                     lastName: true,
-                                    department: true,
                                     Department: { select: { name: true } },
-                                    branch: true,
+                                    Branch: { select: { name: true } },
                                     Shift: true,
                                 }
                             },
@@ -260,7 +327,8 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                         entityId: updatedRecord2.id,
                         performedBy: updatedRecord2.employeeId,
                         source: 'device-sync',
-                        details: `Employee checked out`
+                        details: `Employee checked out`,
+                        metadata: { changes: [{ field: 'checkOutTime', oldValue: null, newValue: log.timestamp.toISOString() }] }
                     });
 
                     const shift2 = updatedRecord2.employee?.Shift ?? null;
@@ -277,6 +345,14 @@ export const processAttendanceLogs = async (): Promise<ProcessResult> => {
                             ...metrics2,
                         },
                     });
+                }
+
+                // Mark log as successfully processed for all checkout paths
+                await prisma.attendanceLog.update({ where: { id: log.id }, data: { processedAt: new Date() } });
+
+                } catch (err: unknown) {
+                    console.error(`[Attendance] Failed to process check-out log id=${log.id} for employeeId=${log.employeeId}:`, err);
+                    continue;
                 }
             }
         }
@@ -308,13 +384,14 @@ export const autoCloseIncompleteAttendance = async (): Promise<number> => {
     try {
         const today = getTodayPHT();
 
-        // Find all records before today with no check-out time that haven't been flagged yet
         const incompleteRecords = await prisma.attendance.findMany({
             where: {
                 date: { lt: today },
                 checkOutTime: null,
-                NOT: { notes: { contains: 'No checkout recorded' } }
-            }
+                checkoutSource: null,
+                status: { not: 'incomplete' }
+            },
+            include: { employee: { include: { Shift: true } } }
         });
 
         if (incompleteRecords.length === 0) return 0;
@@ -322,6 +399,21 @@ export const autoCloseIncompleteAttendance = async (): Promise<number> => {
         let flaggedCount = 0;
 
         for (const record of incompleteRecords) {
+            const shift = record.employee?.Shift;
+
+            if (shift?.isNightShift) {
+                const [endH, endM] = shift.endTime.split(':').map(Number);
+                const recordDateMs = record.date.getTime() + 8 * 60 * 60 * 1000;
+                const shiftEndAbsolute = new Date(
+                    recordDateMs + 24 * 60 * 60 * 1000
+                    + (endH * 60 + endM) * 60 * 1000
+                    - 8 * 60 * 60 * 1000
+                );
+                if (Date.now() < shiftEndAbsolute.getTime()) {
+                    continue;
+                }
+            }
+
             const existingNotes = record.notes || '';
             const flagNote = 'No checkout recorded \u2014 please review and adjust manually';
             const newNotes = existingNotes
@@ -337,6 +429,18 @@ export const autoCloseIncompleteAttendance = async (): Promise<number> => {
                 }
             });
             flaggedCount++;
+        }
+
+        if (flaggedCount > 0) {
+            void auditBatch({
+                action: 'FLAG_MISSING_CHECKOUT',
+                entityType: 'System',
+                source: 'cron',
+                details: `Flagged ${flaggedCount} incomplete records (no checkout) for manual review`
+            }, {
+                affectedCount: flaggedCount,
+                summary: `Flagged ${flaggedCount} incomplete attendance records for manual review.`
+            });
         }
 
         console.log(`[Attendance] Flagged ${flaggedCount} incomplete records (no checkout) for manual review`);
@@ -376,8 +480,8 @@ export const autoCheckoutEmployees = async (): Promise<number> => {
         for (const record of incompleteRecords) {
             const shift = record.employee?.Shift ?? null;
 
-            let checkoutHour = 17;
-            let checkoutMin = 0;
+            let checkoutHour: number = ATTENDANCE_LIMITS.AUTO_CHECKOUT_FALLBACK_HOUR;
+            let checkoutMin: number = 0;
             let shiftLabel = 'default (no shift assigned)';
 
             if (shift) {
@@ -427,11 +531,14 @@ export const autoCheckoutEmployees = async (): Promise<number> => {
         }
 
         if (count > 0) {
-            void audit({
+            void auditBatch({
                 action: 'AUTO_CHECKOUT',
                 entityType: 'System',
                 source: 'cron',
                 details: `Auto-checkout applied to ${count} records`
+            }, {
+                affectedCount: count,
+                summary: `Automatically checked out ${count} employees.`
             });
         }
 
@@ -459,8 +566,10 @@ export const repairMissingCheckouts = async (): Promise<number> => {
             where: {
                 date: { lt: today },
                 checkOutTime: null,
-                NOT: { notes: { contains: 'No checkout recorded' } }
-            }
+                checkoutSource: null,
+                status: { not: 'incomplete' }
+            },
+            include: { employee: { include: { Shift: true } } }
         });
 
         if (records.length === 0) return 0;
@@ -468,6 +577,21 @@ export const repairMissingCheckouts = async (): Promise<number> => {
         let flaggedCount = 0;
 
         for (const record of records) {
+            const shift = record.employee?.Shift;
+
+            if (shift?.isNightShift) {
+                const [endH, endM] = shift.endTime.split(':').map(Number);
+                const recordDateMs = record.date.getTime() + 8 * 60 * 60 * 1000;
+                const shiftEndAbsolute = new Date(
+                    recordDateMs + 24 * 60 * 60 * 1000
+                    + (endH * 60 + endM) * 60 * 1000
+                    - 8 * 60 * 60 * 1000
+                );
+                if (Date.now() < shiftEndAbsolute.getTime()) {
+                    continue;
+                }
+            }
+
             const existingNotes = record.notes || '';
             const flagNote = 'No checkout recorded \u2014 please review and adjust manually';
             const newNotes = existingNotes
@@ -491,11 +615,14 @@ export const repairMissingCheckouts = async (): Promise<number> => {
         }
 
         if (flaggedCount > 0) {
-            void audit({
+            void auditBatch({
                 action: 'FLAG_MISSING_CHECKOUT',
                 entityType: 'System',
                 source: 'startup-repair',
                 details: `Startup: Flagged ${flaggedCount} records with missing checkouts for manual review`
+            }, {
+                affectedCount: flaggedCount,
+                summary: `Startup repair: Flagged ${flaggedCount} incomplete attendance records for manual review.`
             });
         }
 
@@ -531,18 +658,14 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
     }
 
     // Branch / department filters — applied via nested employee relation
-    // Use OR for department: filter by FK (if set) OR string field (legacy)
     const empConditions: Prisma.EmployeeWhereInput = {}
-    if (filters.branch) empConditions.branch = filters.branch
+    if (filters.branchId) empConditions.branchId = filters.branchId
 
-    if (filters.departmentId || filters.departmentName) {
-        const deptOr: Prisma.EmployeeWhereInput[] = []
-        if (filters.departmentId) deptOr.push({ departmentId: filters.departmentId })
-        if (filters.departmentName) deptOr.push({ department: { equals: filters.departmentName, mode: 'insensitive' } })
-        if (Object.keys(empConditions).length > 0 || deptOr.length > 0) {
-            where.employee = deptOr.length === 1
-                ? { ...empConditions, ...deptOr[0] }
-                : { ...empConditions, OR: deptOr }
+    if (filters.departmentId) {
+        if (Object.keys(empConditions).length > 0) {
+            where.employee = { ...empConditions, departmentId: filters.departmentId }
+        } else {
+            where.employee = { departmentId: filters.departmentId }
         }
     } else if (Object.keys(empConditions).length > 0) {
         where.employee = empConditions
@@ -583,6 +706,9 @@ export const getAttendanceRecords = async (filters: AttendanceFilters = {}, page
             checkOutDeviceName: record.checkOutDevice?.name || null,
             checkInTimePH: formatToPhilippineTime(record.checkInTime),
             checkOutTimePH: record.checkOutTime ? formatToPhilippineTime(record.checkOutTime) : null,
+            isEarlyPunch: (record.notes ?? '').includes('Early punch'),
+            isMissingCheckout: (record.notes ?? '').includes('No checkout recorded'),
+            isEdited: !!(record.checkin_updated || record.checkout_updated),
             ...metrics,
         };
     });
@@ -619,20 +745,24 @@ export function calculateAttendanceMetrics(record: BasicAttendanceRecord, shift:
         const checkOut = record.checkOutTime ? new Date(record.checkOutTime) : null;
         const totalMs = checkOut ? checkOut.getTime() - checkIn.getTime() : 0;
         const totalHours = parseFloat((totalMs / (1000 * 60 * 60)).toFixed(2));
-        const expectedHours = 8;
+        const expectedHours = ATTENDANCE_LIMITS.DEFAULT_EXPECTED_HOURS;
         const overtime = Math.max(0, totalHours - expectedHours);
         const undertime = totalHours > 0 ? Math.max(0, expectedHours - totalHours) : 0;
 
-        // Late: after 08:00 AM PHT
+        // Late: after default shift start PHT
         const checkInPHT = new Date(checkIn.getTime() + 8 * 60 * 60 * 1000);
-        const lateMinutes = Math.max(0, checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes() - 8 * 60);
+        const lateMinutes = Math.max(0, checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes() - ATTENDANCE_LIMITS.DEFAULT_SHIFT_START_HOUR * 60);
 
-        // Anomaly: Tap in is more than 4 hours away from default 08:00 AM
-        const ANOMALY_THRESHOLD_MINS = 4 * 60;
-        const diffMins = Math.abs(checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes() - 8 * 60);
+        // Anomaly: Tap in is more than threshold away from default shift start
+        const ANOMALY_THRESHOLD_MINS = ATTENDANCE_LIMITS.ANOMALY_THRESHOLD_MINS;
+        const diffMins = Math.abs(checkInPHT.getUTCHours() * 60 + checkInPHT.getUTCMinutes() - ATTENDANCE_LIMITS.DEFAULT_SHIFT_START_HOUR * 60);
         const isAnomaly = diffMins > ANOMALY_THRESHOLD_MINS;
 
-        const isShiftActive = !!record.checkInTime && !record.checkOutTime;
+        const today = getTodayPHT();
+        const recordDateStr = new Date(record.date.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const todayStr = new Date(today.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const isToday = recordDateStr === todayStr;
+        const isShiftActive = !!record.checkInTime && !record.checkOutTime && isToday;
         const status = isShiftActive ? "IN_PROGRESS" : record.status;
 
         return { 
@@ -704,9 +834,14 @@ export function calculateAttendanceMetrics(record: BasicAttendanceRecord, shift:
     }
 
     if (isHalfDay) {
-        // Expected end = midpoint between start and full end
-        const halfMs = (expectedEnd.getTime() - expectedStart.getTime()) / 2;
-        expectedEnd = new Date(expectedStart.getTime() + halfMs);
+        if (shift.halfDayHours != null && shift.halfDayHours > 0) {
+            // Configurable: expected work = exactly halfDayHours from shift start
+            expectedEnd = new Date(expectedStart.getTime() + shift.halfDayHours * 60 * 60 * 1000);
+        } else {
+            // Automatic fallback: midpoint between start and full end
+            const halfMs = (expectedEnd.getTime() - expectedStart.getTime()) / 2;
+            expectedEnd = new Date(expectedStart.getTime() + halfMs);
+        }
     }
 
     // Full expected shift duration (minutes), without break
@@ -715,25 +850,37 @@ export function calculateAttendanceMetrics(record: BasicAttendanceRecord, shift:
     const checkIn = new Date(record.checkInTime);
     const checkOut = record.checkOutTime ? new Date(record.checkOutTime) : null;
 
-    // Only deduct break if employee worked at least HALF of the full shift.
-    // This prevents a lunch deduction for short / partial-day attendances.
-    const rawBreakMins = isHalfDay ? 0 : (explicitBreaks.length > 0 ? calculatedBreakMins : (shift.breakMinutes ?? 60));
-    const halfShiftMins = fullShiftMins / 2;
+    // Build the effective break windows for overlap calculation.
+    // When explicit break ranges are defined → use them directly.
+    // When only breakMinutes is set (no ranges) → synthesize a virtual
+    // break window centered at the shift midpoint. This avoids the old
+    // all-or-nothing threshold and instead only deducts the actual time
+    // the employee's presence overlapped with the break window.
+    let effectiveBreaks = explicitBreaks;
+    if (!isHalfDay && explicitBreaks.length === 0 && (shift.breakMinutes ?? 0) > 0) {
+        const shiftMidMs = expectedStart.getTime() + (expectedEnd.getTime() - expectedStart.getTime()) / 2;
+        const halfBreakMs = ((shift.breakMinutes ?? 60) / 2) * 60 * 1000;
+        effectiveBreaks = [{ start: new Date(shiftMidMs - halfBreakMs), end: new Date(shiftMidMs + halfBreakMs) }];
+    }
+
+    const rawBreakMins = isHalfDay ? 0 : effectiveBreaks.reduce((sum, b) => sum + (b.end.getTime() - b.start.getTime()) / 60000, 0);
 
     // Late: actual check-in minus (expected start + grace)
     const graceMins = shift.graceMinutes ?? 0;
     const lateMs = checkIn.getTime() - (expectedStart.getTime() + graceMins * 60 * 1000);
-    const lateMinutes = Math.max(0, Math.round(lateMs / (1000 * 60)));
+    // Use Math.floor instead of Math.round. This truncates seconds completely.
+    // E.g., being late by 120 minutes and 59 seconds evaluates strictly to 120 minutes.
+    const lateMinutes = Math.max(0, Math.floor(lateMs / 60000));
 
     // Expected net worked minutes (after break deduction)
     const fullExpectedMins = fullShiftMins - rawBreakMins;
 
-    // Anomaly: Tap in is more than 4 hours away from expected shift start
-    const ANOMALY_THRESHOLD_MINS = 4 * 60;
+    // Anomaly: Tap in is more than threshold away from expected shift start
+    const ANOMALY_THRESHOLD_MINS = ATTENDANCE_LIMITS.ANOMALY_THRESHOLD_MINS;
     const diffFromExpectedMins = Math.abs(Math.round((checkIn.getTime() - expectedStart.getTime()) / (1000 * 60)));
     const isAnomaly = diffFromExpectedMins > ANOMALY_THRESHOLD_MINS;
 
-    // Total Hours = (checkOut - effectiveCheckIn) - break (if threshold met), floored at 0
+    // Total Hours = (checkOut - effectiveCheckIn) - break overlap, floored at 0
     let totalHours = 0;
     let undertimeMinutes = 0;
     let overtimeMinutes = 0;
@@ -755,18 +902,18 @@ export function calculateAttendanceMetrics(record: BasicAttendanceRecord, shift:
         const effectiveCheckIn = new Date(Math.max(checkIn.getTime(), expectedStart.getTime()));
         const rawWorkedMins = (checkOut.getTime() - effectiveCheckIn.getTime()) / 60000;
         
-        // Exactly calculate intersecting break overlap during the attended hours
+        // Calculate exact break time that overlaps with the attended period.
+        // Only the portion of the break window that the employee was actually
+        // present for gets deducted — this is "break-window encroachment".
         let overlappingBreakMins = 0;
-        if (explicitBreaks.length > 0 && !isHalfDay) {
-            explicitBreaks.forEach(b => {
+        if (!isHalfDay) {
+            effectiveBreaks.forEach(b => {
                 const overlapStart = Math.max(effectiveCheckIn.getTime(), b.start.getTime());
                 const overlapEnd = Math.min(checkOut.getTime(), b.end.getTime());
                 if (overlapEnd > overlapStart) {
                     overlappingBreakMins += (overlapEnd - overlapStart) / 60000;
                 }
             });
-        } else if (!isHalfDay && rawWorkedMins >= halfShiftMins) {
-            overlappingBreakMins = rawBreakMins;
         }
 
         const workedMins = Math.max(0, rawWorkedMins - overlappingBreakMins);
@@ -778,22 +925,22 @@ export function calculateAttendanceMetrics(record: BasicAttendanceRecord, shift:
             const missingBlockStart = Math.max(checkOut.getTime(), expectedStart.getTime());
             const rawMissingMins = (expectedEnd.getTime() - missingBlockStart) / 60000;
             
+            // Subtract any break time that falls within the missed block,
+            // so employees aren't penalised for the break they would have taken.
             let missingBreakMins = 0;
-            if (explicitBreaks.length > 0 && !isHalfDay) {
-                explicitBreaks.forEach(b => {
+            if (!isHalfDay) {
+                effectiveBreaks.forEach(b => {
                     const overlapStart = Math.max(missingBlockStart, b.start.getTime());
                     const overlapEnd = Math.min(expectedEnd.getTime(), b.end.getTime());
                     if (overlapEnd > overlapStart) {
                         missingBreakMins += (overlapEnd - overlapStart) / 60000;
                     }
                 });
-            } else if (!isHalfDay && rawWorkedMins < halfShiftMins) {
-                // If they checked out super early under legacy definitions, their missed time conceptually contains the full break they failed to encounter
-                missingBreakMins = rawBreakMins;
             }
             missingMins = Math.max(0, rawMissingMins - missingBreakMins);
         }
-        undertimeMinutes = Math.round(missingMins);
+        // Force truncation of any fractional seconds to prevent petty 1-min deductions
+        undertimeMinutes = Math.floor(missingMins);
 
         // Overtime: employee stayed beyond expected end
         const actualEndMs = checkOut.getTime();
@@ -802,7 +949,11 @@ export function calculateAttendanceMetrics(record: BasicAttendanceRecord, shift:
         overtimeMinutes = parseFloat((otMs / (1000 * 60)).toFixed(1));
     }
 
-    const isShiftActive = !!checkIn && !checkOut;
+    const today = getTodayPHT();
+    const recordDateStr = new Date(record.date.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const todayStr = new Date(today.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const isToday = recordDateStr === todayStr;
+    const isShiftActive = !!checkIn && !checkOut && isToday;
     const status = isShiftActive ? "IN_PROGRESS" : record.status;
     const gracePeriodApplied = checkIn.getTime() > expectedStart.getTime() && lateMinutes === 0;
 

@@ -1,3 +1,3 @@
-export * from './report.controller';
-export * from './report.service';
-export { default as reportRoutes } from './report.routes';
+// Reports module — route/controller/service removed (dead code).
+// This barrel file is retained so that any future report features
+// can be added here without restructuring imports.

@@ -1,6 +1,40 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../shared/lib/prisma';
 import { audit } from '../../shared/lib/auditLogger';
+import { auditUpdate, auditCreate, auditDelete, buildChanges } from '../../shared/lib/auditHelpers';
+
+const FIELD_NAMES: Record<string, string> = {
+    shiftCode: 'Shift Code',
+    name: 'Name',
+    startTime: 'Start Time',
+    endTime: 'End Time',
+    graceMinutes: 'Grace Period (mins)',
+    breakMinutes: 'Break Duration (mins)',
+    isNightShift: 'Night Shift',
+    isActive: 'Status',
+    description: 'Description',
+    workDays: 'Work Days',
+    halfDays: 'Half Days',
+    halfDayHours: 'Half Day Hours',
+    breaks: 'Breaks'
+};
+
+const formatShiftValue = (key: string, val: unknown): string => {
+    if (val === null || val === undefined) return 'None';
+    if (key === 'isNightShift') return val ? 'Yes' : 'No';
+    if (key === 'isActive') return val ? 'Active' : 'Inactive';
+    if (key === 'workDays' || key === 'halfDays' || key === 'breaks') {
+        try {
+            const parsed = typeof val === 'string' ? JSON.parse(val) : val;
+            if (Array.isArray(parsed)) {
+                if (parsed.length === 0) return 'None';
+                if (key === 'breaks') return parsed.map((b: { start?: string; from?: string; end?: string; to?: string }) => `${b.start || b.from || ''} to ${b.end || b.to || ''}`).join(', ');
+                return parsed.join(', ');
+            }
+        } catch { }
+    }
+    return String(val);
+};
 
 // GET /api/shifts - Get all shifts
 export const getAllShifts = async (req: Request, res: Response) => {
@@ -40,7 +74,7 @@ export const getShiftById = async (req: Request, res: Response) => {
 // POST /api/shifts - Create a shift
 export const createShift = async (req: Request, res: Response) => {
     try {
-        const { shiftCode, name, startTime, endTime, graceMinutes, breakMinutes, isNightShift, description, workDays, halfDays, breaks } = req.body;
+        const { shiftCode, name, startTime, endTime, graceMinutes, breakMinutes, isNightShift, description, workDays, halfDays, halfDayHours, breaks } = req.body;
 
         if (!shiftCode?.trim() || !name?.trim() || !startTime?.trim() || !endTime?.trim()) {
             return res.status(400).json({
@@ -86,6 +120,33 @@ export const createShift = async (req: Request, res: Response) => {
                         message: `Break "to" time (${brkTo}) must be later than "from" time (${brkFrom}).`
                     });
                 }
+
+                const shiftStart = (startTime || '').trim()
+                const shiftEnd = (endTime || '').trim()
+                if (shiftStart && shiftEnd) {
+                    const shiftStartMins = toMinutes(shiftStart)
+                    const shiftEndMins = toMinutes(shiftEnd)
+                    const breakStartMins = toMinutes(brkFrom)
+                    const breakEndMins = toMinutes(brkTo)
+                    const isOvernight = shiftEndMins <= shiftStartMins
+                    if (isOvernight) {
+                        const validStart = breakStartMins >= shiftStartMins || breakStartMins < shiftEndMins
+                        const validEnd = breakEndMins > shiftStartMins || breakEndMins <= shiftEndMins
+                        if (!validStart || !validEnd) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `Break ${brkFrom}–${brkTo} must fall within the shift hours (${shiftStart}–${shiftEnd}).`
+                            })
+                        }
+                    } else {
+                        if (breakStartMins < shiftStartMins || breakEndMins > shiftEndMins) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `Break ${brkFrom}–${brkTo} must fall within the shift hours (${shiftStart}–${shiftEnd}).`
+                            })
+                        }
+                    }
+                }
             }
         }
 
@@ -107,18 +168,26 @@ export const createShift = async (req: Request, res: Response) => {
                 description: description?.trim() || null,
                 workDays: Array.isArray(workDays) ? JSON.stringify(workDays) : '["Mon","Tue","Wed","Thu","Fri"]',
                 halfDays: Array.isArray(halfDays) ? JSON.stringify(halfDays) : '[]',
+                halfDayHours: halfDayHours != null && parseFloat(halfDayHours) > 0 ? parseFloat(halfDayHours) : null,
                 breaks: Array.isArray(breaks) ? JSON.stringify(breaks) : '[]',
             }
         });
 
-        void audit({
-            action: 'CREATE',
+        void auditCreate({
             entityType: 'Shift',
             entityId: shift.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Created new shift "${shift.name}" (${shift.shiftCode})`,
             correlationId: req.correlationId
+        }, {
+            'Shift Code': shift.shiftCode,
+            'Name': shift.name,
+            'Schedule': `${shift.startTime} - ${shift.endTime}`,
+            'Night Shift': shift.isNightShift ? 'Yes' : 'No',
+            'Work Days': formatShiftValue('workDays', shift.workDays),
+            'Breaks': formatShiftValue('breaks', shift.breaks),
+            'Grace Period': `${shift.graceMinutes} mins`
         });
 
         res.status(201).json({ success: true, shift });
@@ -137,7 +206,7 @@ export const updateShift = async (req: Request, res: Response) => {
         const existing = await prisma.shift.findUnique({ where: { id } });
         if (!existing) return res.status(404).json({ success: false, message: 'Shift not found' });
 
-        const { shiftCode, name, startTime, endTime, graceMinutes, breakMinutes, isNightShift, isActive, description, workDays, halfDays, breaks } = req.body;
+        const { shiftCode, name, startTime, endTime, graceMinutes, breakMinutes, isNightShift, isActive, description, workDays, halfDays, halfDayHours, breaks } = req.body;
 
         const timeRegex = /^([01]?\d|2[0-3]):([0-5]\d)$/;
         if (startTime && !timeRegex.test(startTime)) return res.status(400).json({ success: false, message: 'startTime must be H:MM or HH:MM (24-hour)' });
@@ -174,6 +243,33 @@ export const updateShift = async (req: Request, res: Response) => {
                         message: `Break "to" time (${brkTo}) must be later than "from" time (${brkFrom}).`
                     });
                 }
+
+                const effectiveStart = (startTime || existing.startTime || '').trim()
+                const effectiveEnd = (endTime || existing.endTime || '').trim()
+                if (effectiveStart && effectiveEnd) {
+                    const shiftStartMins = toMinutes(effectiveStart)
+                    const shiftEndMins = toMinutes(effectiveEnd)
+                    const breakStartMins = toMinutes(brkFrom)
+                    const breakEndMins = toMinutes(brkTo)
+                    const isOvernight = shiftEndMins <= shiftStartMins
+                    if (isOvernight) {
+                        const validStart = breakStartMins >= shiftStartMins || breakStartMins < shiftEndMins
+                        const validEnd = breakEndMins > shiftStartMins || breakEndMins <= shiftEndMins
+                        if (!validStart || !validEnd) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `Break ${brkFrom}–${brkTo} must fall within the shift hours (${effectiveStart}–${effectiveEnd}).`
+                            })
+                        }
+                    } else {
+                        if (breakStartMins < shiftStartMins || breakEndMins > shiftEndMins) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `Break ${brkFrom}–${brkTo} must fall within the shift hours (${effectiveStart}–${effectiveEnd}).`
+                            })
+                        }
+                    }
+                }
             }
         }
 
@@ -199,6 +295,7 @@ export const updateShift = async (req: Request, res: Response) => {
             ...(description !== undefined && { description: description?.trim() || null }),
             ...(workDays !== undefined && { workDays: Array.isArray(workDays) ? JSON.stringify(workDays) : workDays }),
             ...(halfDays !== undefined && { halfDays: Array.isArray(halfDays) ? JSON.stringify(halfDays) : halfDays }),
+            ...(halfDayHours !== undefined && { halfDayHours: halfDayHours != null && parseFloat(halfDayHours) > 0 ? parseFloat(halfDayHours) : null }),
             ...(breaks !== undefined && { breaks: Array.isArray(breaks) ? JSON.stringify(breaks) : breaks }),
         };
 
@@ -207,28 +304,23 @@ export const updateShift = async (req: Request, res: Response) => {
             data: updateData
         });
 
-        const changes: string[] = [];
-        for (const [key, newValue] of Object.entries(updateData)) {
-            const oldValue = (existing as Record<string, unknown>)[key];
-            if (oldValue !== newValue) {
-                const oldValStr = oldValue || 'empty';
-                const newValStr = newValue || 'empty';
-                if (oldValStr !== newValStr) {
-                    changes.push(`Updated ${key.replace(/([A-Z])/g, ' $1').toLowerCase().trim()} from "${oldValStr}" to "${newValStr}"`);
-                }
-            }
-        }
+        const trackedFields = Object.keys(updateData).filter(k => k !== 'updatedAt');
+        const rawChanges = buildChanges(existing as Record<string, unknown>, updateData, trackedFields);
 
-        void audit({
-            action: 'UPDATE',
+        const readableChanges = rawChanges.map(c => ({
+            field: FIELD_NAMES[c.field] || c.field,
+            oldValue: formatShiftValue(c.field, c.oldValue),
+            newValue: formatShiftValue(c.field, c.newValue)
+        }));
+
+        void auditUpdate({
             entityType: 'Shift',
             entityId: shift.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Updated shift "${shift.name}" (${shift.shiftCode})`,
-            metadata: changes.length > 0 ? { updates: changes } : undefined,
             correlationId: req.correlationId
-        });
+        }, readableChanges);
 
         res.json({ success: true, shift });
     } catch (error: unknown) {
@@ -251,15 +343,16 @@ export const toggleShift = async (req: Request, res: Response) => {
             data: { isActive: !existing.isActive }
         });
 
-        void audit({
-            action: 'STATUS_CHANGE',
+        void auditUpdate({
             entityType: 'Shift',
             entityId: shift.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Shift "${shift.name}" was ${shift.isActive ? 'activated' : 'deactivated'}`,
             correlationId: req.correlationId
-        });
+        }, [
+            { field: 'Status', oldValue: existing.isActive ? 'Active' : 'Inactive', newValue: shift.isActive ? 'Active' : 'Inactive' }
+        ]);
 
         res.json({ success: true, shift, message: `Shift ${shift.isActive ? 'activated' : 'deactivated'}` });
     } catch (error) {
@@ -289,8 +382,7 @@ export const deleteShift = async (req: Request, res: Response) => {
 
         await prisma.shift.delete({ where: { id } });
 
-        void audit({
-            action: 'DELETE',
+        void auditDelete({
             entityType: 'Shift',
             entityId: id,
             performedBy: req.user?.employeeId,
@@ -298,6 +390,10 @@ export const deleteShift = async (req: Request, res: Response) => {
             level: 'WARN',
             details: `Deleted shift "${existing.name}"`,
             correlationId: req.correlationId
+        }, {
+            'Shift Code': existing.shiftCode,
+            'Name': existing.name,
+            'Schedule': `${existing.startTime} - ${existing.endTime}`
         });
 
         res.json({ success: true, message: `Shift "${existing.name}" deleted` });

@@ -20,9 +20,10 @@ export interface AttendanceStreamPayload {
             id: number
             firstName: string
             lastName: string
-            department: string | null
+            departmentId: number | null
             Department?: { name: string } | null
-            branch: string | null
+            branchId: number | null
+            Branch?: { name: string } | null
             Shift?: any
         }
     }

@@ -70,7 +70,7 @@ export function EmployeeTopbar({ onMenuClick }: EmployeeTopbarProps) {
               e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="44" height="44"%3E%3Crect fill="%23E60000" width="44" height="44" rx="6"/%3E%3Ctext x="50%25" y="50%25" fontSize="16" fill="white" textAnchor="middle" dominantBaseline="middle" fontWeight="bold"%3EB%3C/text%3E%3C/svg%3E'
             }}
           />
-          <h1 className="text-[#E60000] font-black text-2xl tracking-tighter uppercase whitespace-nowrap">BITS</h1>
+          <h1 className="text-brand font-black text-2xl tracking-tighter uppercase whitespace-nowrap">BITS</h1>
         </div>
       </div>
 

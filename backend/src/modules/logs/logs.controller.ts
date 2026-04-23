@@ -61,6 +61,7 @@ export const getLogs = async (req: Request, res: Response) => {
             type = 'all',
             category = 'all',
             level = 'all',
+            search = '',
             page = '1',
             limit = '30',
         } = req.query as Record<string, string>;
@@ -98,8 +99,25 @@ export const getLogs = async (req: Request, res: Response) => {
             listWhere.entityType = { not: 'Attendance' };
         }
 
+        if (search.trim()) {
+            const searchStr = search.trim();
+            listWhere.OR = [
+                { details: { contains: searchStr } },
+                { source: { contains: searchStr } },
+                { action: { contains: searchStr } },
+                {
+                    performer: {
+                        OR: [
+                            { firstName: { contains: searchStr } },
+                            { lastName: { contains: searchStr } },
+                        ]
+                    }
+                }
+            ];
+        }
+
         // 2. Fetch the paginated logs and category counts concurrently
-        const [total, rawLogs, ...categoryCounts] = await Promise.all([
+        const [total, rawLogs, groupCounts] = await Promise.all([
             prisma.auditLog.count({ where: listWhere }),
             prisma.auditLog.findMany({
                 where: listWhere,
@@ -109,7 +127,7 @@ export const getLogs = async (req: Request, res: Response) => {
                             id: true,
                             firstName: true,
                             lastName: true,
-                            department: true,
+                            Department: { select: { name: true } },
                             role: true,
                         }
                     }
@@ -118,16 +136,21 @@ export const getLogs = async (req: Request, res: Response) => {
                 skip: (pageNum - 1) * limitNum,
                 take: limitNum,
             }),
-            // Category counts (without level filter, to show totals in tabs)
-            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, category: 'auth' } }),
-            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, category: 'attendance' } }),
-            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, category: 'device' } }),
-            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, category: 'employee' } }),
-            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, category: 'config' } }),
-            prisma.auditLog.count({ where: { timestamp: { gte: startUTC, lte: endUTC }, category: 'system' } }),
+            prisma.auditLog.groupBy({
+                by: ['category'],
+                where: { timestamp: { gte: startUTC, lte: endUTC } },
+                _count: { _all: true }
+            })
         ]);
 
-        const allCount = categoryCounts.reduce((a, b) => a + b, 0);
+        const counts = { all: 0, auth: 0, attendance: 0, device: 0, employee: 0, config: 0, system: 0 };
+        groupCounts.forEach(g => {
+            const cat = g.category as keyof typeof counts;
+            if (cat && counts[cat] !== undefined) {
+                counts[cat] = g._count._all;
+                counts.all += g._count._all;
+            }
+        });
 
         // 3. Map to the expected format for the frontend
         const mappedLogs = rawLogs.map((log) => {
@@ -136,12 +159,11 @@ export const getLogs = async (req: Request, res: Response) => {
             const logCategory = log.category;
 
             return {
-                id: log.id.toString(),
+                id: `evt_${log.id.toString(36).padStart(8, '0')}`,
                 type: log.entityType === 'Attendance' ? 'timekeeping' : 'system', // legacy compat
                 category: logCategory,
                 timestamp: log.timestamp.toISOString(),
                 employeeName: empName,
-                employeeId: log.performedBy || 0,
                 employeeRole: log.performer?.role || 'SYSTEM',
                 action: log.action,
                 details: log.details || `${log.action} on ${log.entityType}`,
@@ -161,15 +183,15 @@ export const getLogs = async (req: Request, res: Response) => {
                 limit: limitNum,
                 totalPages: Math.ceil(total / limitNum),
                 counts: {
-                    all: allCount,
-                    auth: categoryCounts[0],
-                    attendance: categoryCounts[1],
-                    device: categoryCounts[2],
-                    employee: categoryCounts[3],
-                    config: categoryCounts[4],
-                    system: categoryCounts[5],
+                    all: counts.all,
+                    auth: counts.auth,
+                    attendance: counts.attendance,
+                    device: counts.device,
+                    employee: counts.employee,
+                    config: counts.config,
+                    system: counts.system,
                     // Legacy compat
-                    timekeeping: categoryCounts[1],
+                    timekeeping: counts.attendance,
                 }
             },
         });

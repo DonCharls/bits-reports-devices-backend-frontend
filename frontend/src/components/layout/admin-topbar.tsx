@@ -72,7 +72,7 @@ export function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
 
 
   return (
-    <header className="h-16 bg-gray-50 border-b border-gray-200 flex items-center justify-between px-4 md:px-8 fixed top-0 left-0 right-0 z-70">
+    <header className="h-16 bg-gray-50 border-b border-gray-200 flex items-center justify-between px-4 md:px-8 fixed top-0 left-0 right-0 z-40">
       <div className="flex items-center gap-4 flex-1">
         {/* Mobile Menu Button */}
         <button
@@ -93,7 +93,7 @@ export function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
               e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="44" height="44"%3E%3Crect fill="%23E60000" width="44" height="44" rx="6"/%3E%3Ctext x="50%25" y="50%25" fontSize="16" fill="white" textAnchor="middle" dominantBaseline="middle" fontWeight="bold"%3EB%3C/text%3E%3C/svg%3E'
             }}
           />
-          <h1 className="text-[#E60000] font-black text-2xl tracking-tighter uppercase whitespace-nowrap">BITS</h1>
+          <h1 className="text-brand font-black text-2xl tracking-tighter uppercase whitespace-nowrap">BITS</h1>
           <span className="hidden md:inline text-gray-400 text-xs font-semibold tracking-wide whitespace-nowrap border-l border-gray-200 pl-3 ml-1">Biometric Integrated Timekeeping System</span>
         </div>
       </div>

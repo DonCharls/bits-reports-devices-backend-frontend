@@ -8,7 +8,7 @@ import { audit } from '../../shared/lib/auditLogger';
 import bcrypt from 'bcryptjs';
 import { generateRandomPassword } from '../../shared/utils/password.utils';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../../shared/lib/email.service';
-import { validateEmployeeId } from './employee.validator';
+
 
 // GET /api/employees/export - Export employees to .xlsx
 export const exportEmployees = async (req: Request, res: Response) => {
@@ -19,8 +19,15 @@ export const exportEmployees = async (req: Request, res: Response) => {
             employmentStatus: 'ACTIVE',
             role: 'USER',
         };
-        if (department && department !== 'all') where.department = department as string;
-        if (branch && branch !== 'all') where.branch = branch as string;
+        // Filter by relation name (look up ID first so we can filter by FK)
+        if (department && department !== 'all') {
+            const dept = await prisma.department.findFirst({ where: { name: department as string }, select: { id: true } });
+            if (dept) where.departmentId = dept.id;
+        }
+        if (branch && branch !== 'all') {
+            const br = await prisma.branch.findFirst({ where: { name: branch as string }, select: { id: true } });
+            if (br) where.branchId = br.id;
+        }
 
         const employees = await prisma.employee.findMany({
             where,
@@ -34,8 +41,8 @@ export const exportEmployees = async (req: Request, res: Response) => {
                 dateOfBirth: true,
                 email: true,
                 contactNumber: true,
-                department: true,
-                branch: true,
+                Department: { select: { name: true } },
+                Branch: { select: { name: true } },
                 hireDate: true,
                 Shift: { select: { shiftCode: true } },
                 employmentStatus: true,
@@ -87,8 +94,8 @@ export const exportEmployees = async (req: Request, res: Response) => {
                 dateOfBirth: emp.dateOfBirth ? new Date(emp.dateOfBirth).toISOString().split('T')[0] : '',
                 email: emp.email || '',
                 contactNumber: emp.contactNumber || '',
-                department: emp.department || '',
-                branch: emp.branch || '',
+                department: emp.Department?.name || '',
+                branch: emp.Branch?.name || '',
                 hireDate: emp.hireDate ? new Date(emp.hireDate).toISOString().split('T')[0] : '',
                 shiftCode: emp.Shift?.shiftCode || '',
                 employmentStatus: emp.employmentStatus || '',
@@ -478,10 +485,8 @@ export const bulkCreateEmployees = async (req: Request, res: Response) => {
             const empNum = (emp.employeeNumber || '').toString().trim();
 
             try {
-                // ── Basic validation ─────────────────────────────────────────
-                const empIdValidation = validateEmployeeId(empNum);
-                if (!empIdValidation.isValid) {
-                    results.push({ row: rowNum, employeeNumber: empNum, status: 'failed', reason: empIdValidation.error || 'Invalid employee number' });
+                if (!empNum || empNum.length < 2) {
+                    results.push({ row: rowNum, employeeNumber: empNum, status: 'failed', reason: 'Employee ID must be at least 2 characters long.' });
                     continue;
                 }
 
@@ -536,9 +541,19 @@ export const bulkCreateEmployees = async (req: Request, res: Response) => {
                             email: emp.email,
                             password: hashedPassword,
                             role: 'USER',
-                            department: emp.department || null,
+                            departmentId: emp.department
+                                ? (await prisma.department.findFirst({ 
+                                    where: { name: { equals: emp.department, mode: 'insensitive' } }, 
+                                    select: { id: true } 
+                                }))?.id ?? null
+                                : null,
                             position: null,
-                            branch: emp.branch || null,
+                            branchId: emp.branch
+                                ? (await prisma.branch.findFirst({ 
+                                    where: { name: { equals: emp.branch, mode: 'insensitive' } }, 
+                                    select: { id: true } 
+                                }))?.id ?? null
+                                : null,
                             contactNumber: emp.contactNumber || null,
                             hireDate: emp.hireDate ? new Date(emp.hireDate) : undefined,
                             employmentStatus: 'ACTIVE',

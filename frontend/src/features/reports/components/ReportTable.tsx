@@ -1,5 +1,6 @@
 import React from 'react';
-import { ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
+import { DataTablePagination } from '@/components/ui/DataTablePagination';
 import { ReportRow } from '@/types/reports';
 import { formatHrsMins, formatShiftTime, formatLateHrs } from '@/features/reports/lib/formatters';
 import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll';
@@ -32,25 +33,6 @@ export const ReportTable: React.FC<ReportTableProps> = ({
   sortOrder,
   handleSort,
 }) => {
-  // Generate windowed page numbers
-  const getPageNumbers = () => {
-    const pages = [];
-    const maxVisible = 5;
-    
-    let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
-    let end = start + maxVisible - 1;
-
-    if (end > totalPages) {
-      end = totalPages;
-      start = Math.max(1, end - maxVisible + 1);
-    }
-
-    for (let i = start; i <= end; i++) {
-      pages.push(i);
-    }
-    return pages;
-  };
-
   const dragScrollRef = useHorizontalDragScroll();
 
   // Variant-specific styling
@@ -58,9 +40,6 @@ export const ReportTable: React.FC<ReportTableProps> = ({
     ? "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" 
     : "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden";
 
-  const btnClass = variant === 'hr'
-    ? "px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-full transition-colors shadow-sm"
-    : "px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-full transition-colors shadow-sm"; // Example divergence: we can define Admin vs HR button stylings
 
   return (
     <div className={tableContainerClass}>
@@ -80,7 +59,7 @@ export const ReportTable: React.FC<ReportTableProps> = ({
               <SortableHeader label="Late" sortKey="lateMinutes" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
               <SortableHeader label="Overtime" sortKey="overtime" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
               <SortableHeader label="Undertime" sortKey="undertime" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
-              <SortableHeader label="Hours Worked" sortKey="totalHours" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
+              <SortableHeader label="Reg Hrs" sortKey="totalHours" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="px-6 py-4 text-center" />
               <th className="px-6 py-4 text-center"></th>
             </tr>
           </thead>
@@ -111,6 +90,11 @@ export const ReportTable: React.FC<ReportTableProps> = ({
                       {employee.hasAnomaly && (
                         <span title="This employee has anomalous check-in records">
                           <AlertTriangle className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                        </span>
+                      )}
+                      {employee.hasMissingCheckout && (
+                        <span title="This employee has missing check-outs (incomplete records)">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                         </span>
                       )}
                     </div>
@@ -170,16 +154,13 @@ export const ReportTable: React.FC<ReportTableProps> = ({
                   </td>
                   <td className="px-6 py-5 text-center">
                     <span className="text-sm font-bold font-mono text-slate-800">
-                      {employee.totalHours.toFixed(2)}
+                      {Math.max(0, employee.totalHours - employee.overtime).toFixed(2)}
                     </span>
                   </td>
                   <td className="px-6 py-5">
                     <button
                       onClick={() => setSelectedEmployee(employee)}
-                      className={variant === 'hr' 
-                        ? 'px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-full transition-colors shadow-sm'
-                        : 'px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-full transition-colors shadow-sm'
-                      }
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-full transition-colors shadow-sm"
                     >
                       View History
                     </button>
@@ -192,45 +173,15 @@ export const ReportTable: React.FC<ReportTableProps> = ({
       </div>
 
       {/* Pagination */}
-      <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-        <span className="text-xs text-slate-400 font-bold">
-          Showing {paginatedData.length} of {filteredDataLength} records · Page{' '}
-          {currentPage} of {totalPages}
-        </span>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-            disabled={currentPage === 1}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          
-          {getPageNumbers().map((page) => (
-            <button
-              key={page}
-              onClick={() => setCurrentPage(page)}
-              className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors ${
-                currentPage === page
-                  ? 'bg-red-600 text-white'
-                  : 'text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent'
-              }`}
-            >
-              {page}
-            </button>
-          ))}
-
-          <button
-            onClick={() =>
-              setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-            }
-            disabled={currentPage === totalPages}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-white hover:border-slate-200 border border-transparent transition-colors disabled:opacity-30"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      <DataTablePagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={setCurrentPage}
+        totalCount={filteredDataLength}
+        pageSize={10}
+        entityName="records"
+        loading={loading}
+      />
     </div>
   );
 };

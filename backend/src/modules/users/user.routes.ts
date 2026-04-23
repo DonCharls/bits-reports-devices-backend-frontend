@@ -7,9 +7,12 @@ import {
     toggleUserStatus,
     updateProfile,
     changePassword,
+    permanentDeleteUser,
 } from './user.controller';
 import { authenticate } from '../../shared/middleware/auth.middleware';
 import { adminOnly, adminOrHR } from '../../shared/middleware/role.middleware';
+import { validateZod } from '../../shared/middleware/validation.middleware';
+import { createUserSchema, updateUserSchema, updateProfileSchema, changePasswordSchema } from './user.validator';
 
 const router = Router();
 
@@ -54,7 +57,7 @@ router.use(authenticate);
  *       401:
  *         description: Not authenticated
  */
-router.put('/profile', adminOrHR, updateProfile);
+router.put('/profile', adminOrHR, validateZod(updateProfileSchema), updateProfile);
 
 /**
  * @swagger
@@ -87,7 +90,7 @@ router.put('/profile', adminOrHR, updateProfile);
  *       401:
  *         description: Current password is incorrect
  */
-router.put('/change-password', adminOrHR, changePassword);
+router.put('/change-password', adminOrHR, validateZod(changePasswordSchema), changePassword);
 
 // ── User management routes (ADMIN only) ────────────────────
 
@@ -137,7 +140,7 @@ router.get('/', adminOnly, getAllUsers);
  *                 format: email
  *               password:
  *                 type: string
- *                 minLength: 6
+ *                 minLength: 8
  *               role:
  *                 type: string
  *                 enum: [ADMIN, HR]
@@ -149,7 +152,7 @@ router.get('/', adminOnly, getAllUsers);
  *       403:
  *         description: Admin role required
  */
-router.post('/', adminOnly, createUser);
+router.post('/', adminOnly, validateZod(createUserSchema), createUser);
 
 /**
  * @swagger
@@ -186,7 +189,7 @@ router.post('/', adminOnly, createUser);
  *       404:
  *         description: User not found
  */
-router.put('/:id', adminOnly, updateUser);
+router.put('/:id', adminOnly, validateZod(updateUserSchema), updateUser);
 
 /**
  * @swagger
@@ -231,5 +234,29 @@ router.delete('/:id', adminOnly, deleteUser);
  *         description: User not found
  */
 router.patch('/:id/toggle-status', adminOnly, toggleUserStatus);
+
+/**
+ * @swagger
+ * /api/users/{id}/permanent:
+ *   delete:
+ *     summary: Permanently delete an inactive user account
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: User permanently deleted
+ *       400:
+ *         description: User must be inactive first, or is last admin
+ *       404:
+ *         description: User not found
+ */
+router.delete('/:id/permanent', adminOnly, permanentDeleteUser);
 
 export default router;
