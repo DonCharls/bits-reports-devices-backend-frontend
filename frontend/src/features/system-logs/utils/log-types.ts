@@ -6,14 +6,20 @@ export interface LogEntry {
     category: string
     timestamp: string
     employeeName: string
-    employeeId: number
     action: string
     details: string
     source: string
     status?: string
     level?: 'INFO' | 'WARN' | 'ERROR'
     employeeRole?: string
-    metadata?: any
+    metadata?: {
+        changes?: Array<{ field: string; oldValue: string | null; newValue: string | null }>;
+        snapshot?: Record<string, unknown>;
+        updates?: string[];
+        error?: string;
+        errorMessage?: string;
+        [key: string]: unknown;
+    }
     correlationId?: string
 }
 
@@ -30,7 +36,7 @@ export interface LogMeta {
         employee: number
         config: number
         system: number
-        timekeeping: number
+        timekeeping?: number
     }
 }
 

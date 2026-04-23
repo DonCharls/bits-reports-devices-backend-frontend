@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../../shared/lib/prisma';
 import { audit } from '../../shared/lib/auditLogger';
+import { auditCreate, auditUpdate, auditDelete } from '../../shared/lib/auditHelpers';
 import { enqueueGlobalDeleteUser, processDeviceSyncQueue } from '../devices/deviceSyncQueue.service';
 
 // ── Guards ────────────────────────────────────────────────────────────────────
@@ -63,27 +64,17 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     try {
         const { firstName, lastName, email, password, role } = req.body;
 
-        if (!firstName || !lastName || !email || !password) {
-            res.status(400).json({ success: false, message: 'First name, last name, email, and password are required' });
-            return;
-        }
-
-        if (!['ADMIN', 'HR'].includes(role)) {
-            res.status(400).json({ success: false, message: 'Role must be ADMIN or HR' });
-            return;
-        }
-
         // Check for existing user with same email
         const existing = await prisma.employee.findFirst({ where: { email } });
         if (existing) {
             void audit({
                 action: 'CREATE',
                 level: 'WARN',
-                entityType: 'User Account',
+                entityType: 'Account',
                 performedBy: req.user?.employeeId,
                 source: 'admin-panel',
                 details: `Failed to create admin/HR account: Email already exists`,
-                metadata: { email, role },
+                metadata: { snapshot: { 'Email': email, 'Role': role } },
                 correlationId: req.correlationId
             });
             
@@ -113,14 +104,17 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
             },
         });
 
-        void audit({
-            action: 'CREATE',
-            entityType: 'User Account',
+        void auditCreate({
+            entityType: 'Account',
             entityId: newUser.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Created new ${role} account for ${firstName} ${lastName}`,
             correlationId: req.correlationId
+        }, {
+            'Name': `${firstName} ${lastName}`,
+            'Email': email,
+            'Role': role
         });
 
         res.status(201).json({
@@ -137,11 +131,11 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
         void audit({
             action: 'CREATE',
             level: 'ERROR',
-            entityType: 'User Account',
+            entityType: 'Account',
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Failed to create admin/HR account due to server error: ${error instanceof Error ? error.message : String(error)}`,
-            metadata: { error: error instanceof Error ? error.message : String(error) },
+            metadata: { snapshot: { 'Error': error instanceof Error ? error.message : String(error) } },
             correlationId: req.correlationId
         });
 
@@ -212,32 +206,46 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
             },
         });
 
-        const changes: string[] = [];
+        const changes: { field: string; oldValue: string; newValue: string }[] = [];
         for (const [key, newValue] of Object.entries(updateData)) {
-            if (key === 'password' || key === 'updatedAt') continue;
+            if (key === 'password' || key === 'updatedAt' || key === 'needsPasswordChange') continue;
             const oldValue = (user as Record<string, unknown>)[key];
             if (oldValue !== newValue) {
-                const oldValStr = oldValue instanceof Date ? oldValue.toISOString().split('T')[0] : (oldValue || 'empty');
-                const newValStr = newValue instanceof Date ? newValue.toISOString().split('T')[0] : (newValue || 'empty');
+                const oldValStr = oldValue instanceof Date ? oldValue.toISOString().split('T')[0] : String(oldValue || 'empty');
+                const newValStr = newValue instanceof Date ? newValue.toISOString().split('T')[0] : String(newValue || 'empty');
                 if (oldValStr !== newValStr) {
-                    changes.push(`Updated ${key.replace(/([A-Z])/g, ' $1').toLowerCase().trim()} from "${oldValStr}" to "${newValStr}"`);
+                    changes.push({
+                        field: key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim(),
+                        oldValue: oldValStr,
+                        newValue: newValStr
+                    });
                 }
             }
         }
-        if (password && password.length >= 8) {
-            changes.push('Updated password');
-        }
+        const passwordChanged = password && password.length >= 8;
 
-        void audit({
-            action: 'UPDATE',
-            entityType: 'User Account',
-            entityId: updated.id,
-            performedBy: req.user?.employeeId,
-            source: 'admin-panel',
-            details: `Updated account details for user ID ${updated.id}`,
-            metadata: changes.length > 0 ? { updates: changes } : undefined,
-            correlationId: req.correlationId
-        });
+        if (changes.length > 0) {
+            void auditUpdate({
+                entityType: 'Account',
+                entityId: updated.id,
+                performedBy: req.user?.employeeId,
+                source: 'admin-panel',
+                details: passwordChanged
+                    ? `Updated account details and changed password for ${updated.firstName} ${updated.lastName}`
+                    : `Updated account details for ${updated.firstName} ${updated.lastName}`,
+                correlationId: req.correlationId
+            }, changes);
+        } else if (passwordChanged) {
+            void audit({
+                action: 'UPDATE',
+                entityType: 'Account',
+                entityId: updated.id,
+                performedBy: req.user?.employeeId,
+                source: 'admin-panel',
+                details: `Changed password for ${updated.firstName} ${updated.lastName}`,
+                correlationId: req.correlationId
+            });
+        }
 
         res.json({
             success: true,
@@ -292,16 +300,17 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
         // Invalidate all sessions
         await prisma.refreshToken.deleteMany({ where: { employeeId: id } });
 
-        void audit({
-            action: 'DELETE',
-            entityType: 'User Account',
+        void auditUpdate({
+            entityType: 'Account',
             entityId: id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             level: 'WARN',
-            details: `Deactivated (soft-deleted) user account ID ${id}`,
+            details: `Deactivated (soft-deleted) user account for ${user.firstName} ${user.lastName}`,
             correlationId: req.correlationId
-        });
+        }, [
+            { field: 'Status', oldValue: 'Active', newValue: 'Inactive' }
+        ]);
 
         // Clean up from devices if they have a zkId
         if (user.zkId) {
@@ -401,15 +410,16 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
             }
         }
 
-        void audit({
-            action: 'STATUS_CHANGE',
-            entityType: 'User Account',
+        void auditUpdate({
+            entityType: 'Account',
             entityId: updated.id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
-            details: `Changed user account status to ${newStatus}`,
+            details: `Changed account status to ${newStatus === 'ACTIVE' ? 'Active' : 'Inactive'} for ${updated.firstName} ${updated.lastName}`,
             correlationId: req.correlationId
-        });
+        }, [
+            { field: 'Status', oldValue: user.employmentStatus === 'ACTIVE' ? 'Active' : 'Inactive', newValue: newStatus === 'ACTIVE' ? 'Active' : 'Inactive' }
+        ]);
 
         res.json({
             success: true,
@@ -452,7 +462,7 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
 
         void audit({
             action: 'UPDATE',
-            entityType: 'User Account',
+            entityType: 'Account',
             entityId: updated.id,
             performedBy: employeeId,
             source: 'admin-panel',
@@ -479,16 +489,6 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
         const employeeId = req.user!.employeeId;
         const { currentPassword, newPassword } = req.body;
 
-        if (!currentPassword || !newPassword) {
-            res.status(400).json({ success: false, message: 'Current password and new password are required' });
-            return;
-        }
-
-        if (newPassword.length < 8) {
-            res.status(400).json({ success: false, message: 'New password must be at least 8 characters' });
-            return;
-        }
-
         const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
         if (!employee || !employee.password) {
             res.status(404).json({ success: false, message: 'User not found' });
@@ -509,7 +509,7 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
 
         void audit({
             action: 'UPDATE',
-            entityType: 'User Account',
+            entityType: 'Account',
             entityId: employeeId,
             performedBy: employeeId,
             source: 'admin-panel',
@@ -575,16 +575,17 @@ export const permanentDeleteUser = async (req: Request, res: Response): Promise<
             await tx.employee.delete({ where: { id } });
         });
 
-        void audit({
-            action: 'DELETE',
-            entityType: 'User Account',
+        void auditDelete({
+            entityType: 'Account',
             entityId: id,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             level: 'WARN',
             details: `Permanently deleted user account: ${user.firstName} ${user.lastName} (${user.role})`,
-            metadata: { email: user.email, role: user.role },
             correlationId: req.correlationId
+        }, {
+            'Email': user.email,
+            'Role': user.role
         });
 
         res.json({ success: true, message: `User "${user.firstName} ${user.lastName}" permanently deleted` });

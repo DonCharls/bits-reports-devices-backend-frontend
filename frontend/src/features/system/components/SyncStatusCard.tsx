@@ -6,23 +6,11 @@ import { Server } from 'lucide-react';
 import { useSyncActions } from '../hooks/useSyncActions';
 import { SyncStatsGrid } from './SyncStatsGrid';
 import { SyncResultModal } from './SyncResultModal';
+import { ClearLogsDialog } from './ClearLogsDialog';
+import { SyncConfirmDialog, SyncActionType } from './SyncConfirmDialog';
+import { useState } from 'react';
 
-interface SyncStatus {
-    isActive: boolean;
-    intervalSec: number;
-    lastSyncAt: string | null;
-    nextSyncAt: string | null;
-    shiftAwareMode: boolean;
-    configUpdatedAt: string | null;
-    globalSyncEnabled: boolean;
-    currentMode?: 'PEAK' | 'OFF-PEAK' | 'DEFAULT';
-    healthCheck?: {
-        isActive: boolean;
-        intervalSec: number;
-        lastCheckAt: string | null;
-        nextCheckAt: string | null;
-    };
-}
+import { SyncStatus } from '../types';
 
 interface SyncStatusCardProps {
     status: SyncStatus | null;
@@ -36,6 +24,8 @@ function Skeleton({ className }: { className?: string }) {
 }
 
 export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusCardProps) {
+    const [showClearLogsModal, setShowClearLogsModal] = useState(false);
+    const [syncActionType, setSyncActionType] = useState<SyncActionType>(null);
     const {
         syncing, syncingTime, clearingLogs, toggling,
         syncResult, showResultModal, setShowResultModal,
@@ -109,12 +99,29 @@ export function SyncStatusCard({ status, loading, onStatusRefresh }: SyncStatusC
                         syncing={syncing}
                         syncingTime={syncingTime}
                         clearingLogs={clearingLogs}
-                        onManualSync={handleManualSync}
-                        onManualTimeSync={handleManualTimeSync}
-                        onManualClearLogs={handleManualClearLogs}
+                        onManualSync={() => setSyncActionType('data')}
+                        onManualTimeSync={() => setSyncActionType('time')}
+                        onManualClearLogs={() => setShowClearLogsModal(true)}
                     />
                 </div>
             </div>
+
+            <SyncConfirmDialog
+                type={syncActionType}
+                onOpenChange={(open) => !open && setSyncActionType(null)}
+                onConfirm={() => {
+                    if (syncActionType === 'data') handleManualSync();
+                    else if (syncActionType === 'time') handleManualTimeSync();
+                }}
+                loading={syncActionType === 'data' ? syncing : syncingTime}
+            />
+
+            <ClearLogsDialog
+                open={showClearLogsModal}
+                onOpenChange={setShowClearLogsModal}
+                onConfirm={handleManualClearLogs}
+                clearingLogs={clearingLogs}
+            />
 
             <SyncResultModal
                 open={showResultModal}

@@ -1,27 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import { useToast } from '@/components/ui/use-toast';
 
-export interface SyncConfig {
-    defaultIntervalSec: number;
-    highFreqIntervalSec: number;
-    lowFreqIntervalSec: number;
-    shiftAwareSyncEnabled: boolean;
-    shiftBufferMinutes: number;
-    autoTimeSyncEnabled: boolean;
-    timeSyncIntervalSec: number;
-    globalMinCheckoutMinutes: number;
-    healthCheckEnabled: boolean;
-    healthCheckIntervalSec: number;
-    logBufferMaintenanceEnabled: boolean;
-    logBufferMaintenanceSchedule: 'daily' | 'weekly' | 'monthly';
-    logBufferMaintenanceHour: number;
-}
+import { SyncConfig } from '../types';
 
 export function useSyncConfig() {
     const [config, setConfig] = useState<SyncConfig | null>(null);
     const [initialConfig, setInitialConfig] = useState<SyncConfig | null>(null);
+    const [limits, setLimits] = useState<Record<string, number> | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [showIntervalWarning, setShowIntervalWarning] = useState(false);
@@ -30,14 +18,20 @@ export function useSyncConfig() {
     useEffect(() => {
         const fetchConfig = async () => {
             try {
-                const res = await fetch('/api/system/sync-config', { credentials: 'include' });
-                const data = await res.json();
-                if (data.success) {
-                    setConfig(data.config);
-                    setInitialConfig(data.config);
+                const [configRes, limitsRes] = await Promise.all([
+                    axios.get('/api/system/sync-config', { withCredentials: true }),
+                    axios.get('/api/system/validation-limits', { withCredentials: true }).catch(() => ({ data: { success: false } }))
+                ]);
+
+                if (configRes.data.success) {
+                    setConfig(configRes.data.config);
+                    setInitialConfig(configRes.data.config);
+                }
+                if (limitsRes.data.success) {
+                    setLimits(limitsRes.data.limits);
                 }
             } catch (error) {
-                console.error('Failed to fetch sync config', error);
+                console.error('Failed to fetch sync config or limits', error);
             } finally {
                 setLoading(false);
             }
@@ -88,29 +82,82 @@ export function useSyncConfig() {
         e.preventDefault();
         if (!config) return;
 
-        // Intercept: if interval is below 30s, show warning modal
-        if (config.defaultIntervalSec < 30) {
-            setShowIntervalWarning(true);
-            return;
+        const errors: string[] = [];
+        
+        if (config.defaultIntervalSec < (limits?.DEFAULT_INTERVAL_MIN_SEC ?? 10)) {
+            errors.push(`Default interval must be at least ${limits?.DEFAULT_INTERVAL_MIN_SEC ?? 10}s`);
+        }
+        if (config.defaultIntervalSec > (limits?.DEFAULT_INTERVAL_MAX_SEC ?? 86400)) {
+            errors.push(`Default interval cannot exceed 24 hours (${limits?.DEFAULT_INTERVAL_MAX_SEC ?? 86400}s)`);
         }
         
-        if (config.globalMinCheckoutMinutes < 15) {
+        if (config.timeSyncIntervalSec < (limits?.TIME_SYNC_INTERVAL_MIN_SEC ?? 300)) {
+            errors.push(`Time sync interval must be at least ${limits?.TIME_SYNC_INTERVAL_MIN_SEC ?? 300}s`);
+        }
+        if (config.timeSyncIntervalSec > (limits?.TIME_SYNC_INTERVAL_MAX_SEC ?? 86400)) {
+            errors.push(`Time sync interval cannot exceed 24 hours (${limits?.TIME_SYNC_INTERVAL_MAX_SEC ?? 86400}s)`);
+        }
+
+        if (config.globalMinCheckoutMinutes < (limits?.MIN_CHECKOUT_MIN ?? 15)) {
+            errors.push(`Global Minimum Checkout must be at least ${limits?.MIN_CHECKOUT_MIN ?? 15} minutes`);
+        }
+        if (config.globalMinCheckoutMinutes > (limits?.MIN_CHECKOUT_MAX_MIN ?? 720)) {
+            errors.push(`Global Minimum Checkout cannot exceed 12 hours (${limits?.MIN_CHECKOUT_MAX_MIN ?? 720} minutes)`);
+        }
+
+        if (config.healthCheckIntervalSec < (limits?.HEALTH_CHECK_INTERVAL_MIN_SEC ?? 15)) {
+            errors.push(`Health check interval must be at least ${limits?.HEALTH_CHECK_INTERVAL_MIN_SEC ?? 15}s`);
+        }
+        if (config.healthCheckIntervalSec > (limits?.HEALTH_CHECK_INTERVAL_MAX_SEC ?? 86400)) {
+            errors.push(`Health check interval cannot exceed 24 hours (${limits?.HEALTH_CHECK_INTERVAL_MAX_SEC ?? 86400}s)`);
+        }
+        
+        // Shift-Aware Bounds Check
+        const bufferMin = limits?.SHIFT_BUFFER_MIN ?? 0;
+        const bufferMax = limits?.SHIFT_BUFFER_MAX ?? 120;
+        if (config.shiftBufferMinutes < bufferMin || config.shiftBufferMinutes > bufferMax) {
+            errors.push(`Shift Buffer Window must be between ${bufferMin} and ${bufferMax} minutes.`);
+        }
+        if (config.shiftAwareSyncEnabled && config.highFreqIntervalSec > config.lowFreqIntervalSec) {
+            errors.push("Peak Interval (s) must be less than or equal to Off-Peak Interval (s) so polling is faster during rush hours.");
+        }
+        if (config.highFreqIntervalSec > (limits?.HIGH_FREQ_INTERVAL_MAX_SEC ?? 86400)) {
+            errors.push(`Peak Interval cannot exceed 24 hours (${limits?.HIGH_FREQ_INTERVAL_MAX_SEC ?? 86400}s)`);
+        }
+        if (config.lowFreqIntervalSec > (limits?.LOW_FREQ_INTERVAL_MAX_SEC ?? 86400)) {
+            errors.push(`Off-Peak Interval cannot exceed 24 hours (${limits?.LOW_FREQ_INTERVAL_MAX_SEC ?? 86400}s)`);
+        }
+
+        if (errors.length > 0) {
             toast({
                 title: 'Invalid configuration',
-                description: 'Global Minimum Checkout must be at least 15 minutes.',
+                description: errors.join('\n'),
                 variant: 'destructive'
             });
             return;
         }
 
+        // Intercept: if interval is below warning threshold, show warning modal
+        if (config.defaultIntervalSec < (limits?.LOW_INTERVAL_WARNING_THRESHOLD ?? 30)) {
+            setShowIntervalWarning(true);
+            return;
+        }
+
         await saveConfig();
-    }, [config, saveConfig, toast]);
+    }, [config, limits, saveConfig, toast]);
 
     const isDirty = JSON.stringify(config) !== JSON.stringify(initialConfig);
+
+    const handleDiscard = useCallback(() => {
+        if (initialConfig) {
+            setConfig(initialConfig);
+        }
+    }, [initialConfig]);
 
     return {
         config,
         setConfig,
+        limits,
         loading,
         saving,
         isDirty,
@@ -118,5 +165,6 @@ export function useSyncConfig() {
         setShowIntervalWarning,
         saveConfig,
         handleSubmit,
+        handleDiscard,
     };
 }

@@ -19,7 +19,7 @@ function Skeleton({ className }: { className?: string }) {
 }
 
 export function SyncConfigForm() {
-    const { config, setConfig, loading, saving, isDirty, showIntervalWarning, setShowIntervalWarning, saveConfig, handleSubmit } = useSyncConfig();
+    const { config, setConfig, limits, loading, saving, isDirty, showIntervalWarning, setShowIntervalWarning, saveConfig, handleSubmit, handleDiscard } = useSyncConfig();
 
     if (loading) return (
         <div className="space-y-3">
@@ -48,6 +48,7 @@ export function SyncConfigForm() {
                     highFreqIntervalSec={config.highFreqIntervalSec}
                     lowFreqIntervalSec={config.lowFreqIntervalSec}
                     shiftBufferMinutes={config.shiftBufferMinutes}
+                    limits={limits}
                     onChange={handleChange}
                 />
 
@@ -55,22 +56,26 @@ export function SyncConfigForm() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                     <AttendanceRulesSection
                         globalMinCheckoutMinutes={config.globalMinCheckoutMinutes}
+                        limits={limits}
                         onChange={handleChange}
                     />
                     <TimeSyncConfigSection
                         autoTimeSyncEnabled={config.autoTimeSyncEnabled}
                         timeSyncIntervalSec={config.timeSyncIntervalSec}
+                        limits={limits}
                         onChange={handleChange}
                     />
                     <HealthMonitorConfigSection
                         healthCheckEnabled={config.healthCheckEnabled}
                         healthCheckIntervalSec={config.healthCheckIntervalSec}
+                        limits={limits}
                         onChange={handleChange}
                     />
                     <LogMaintenanceConfigSection
                         logBufferMaintenanceEnabled={config.logBufferMaintenanceEnabled}
                         logBufferMaintenanceSchedule={config.logBufferMaintenanceSchedule}
                         logBufferMaintenanceHour={config.logBufferMaintenanceHour}
+                        limits={limits}
                         onChange={handleChange}
                     />
                 </div>
@@ -87,13 +92,26 @@ export function SyncConfigForm() {
                             'All changes saved'
                         )}
                     </div>
-                    <Button type="submit" disabled={saving || !isDirty} size="sm" className="text-xs font-bold h-8 px-5">
-                        {saving ? (
-                            'Saving...'
-                        ) : (
-                            <><Save className="h-3.5 w-3.5 mr-1.5" /> Save Configuration</>
+                    <div className="flex gap-2">
+                        {isDirty && (
+                            <Button 
+                                type="button" 
+                                variant="ghost" 
+                                disabled={saving} 
+                                onClick={handleDiscard}
+                                className="text-xs font-bold h-8 px-4 text-slate-500 hover:text-slate-700"
+                            >
+                                Discard Changes
+                            </Button>
                         )}
-                    </Button>
+                        <Button type="submit" disabled={saving || !isDirty} size="sm" className="text-xs font-bold h-8 px-5">
+                            {saving ? (
+                                'Saving...'
+                            ) : (
+                                <><Save className="h-3.5 w-3.5 mr-1.5" /> Save Configuration</>
+                            )}
+                        </Button>
+                    </div>
                 </div>
             </form>
 

@@ -167,7 +167,7 @@ class HealthCheckScheduler {
 
         if (healthEnabled) {
             try {
-                await this.probeAllDevices(intervalMs);
+                await this.probeAllDevices();
                 this.lastCheckAt = new Date();
             } catch (error) {
                 console.error(`[${ts()}] [HealthCheck] Probe cycle failed:`, error);
@@ -181,12 +181,13 @@ class HealthCheckScheduler {
 
     /**
      * Probe ALL devices in parallel (regardless of syncEnabled per-device).
-     * 
-     * Smart skip: If a data sync already updated `lastPolledAt` within the current
-     * health check interval, skip the TCP probe for that device — the sync already
-     * confirmed its status.
+     *
+     * The health check is a lightweight TCP ping (~100ms per reachable device)
+     * and always runs unconditionally — it does NOT skip devices based on
+     * sync activity. This ensures device status remains accurate even during
+     * Shift-Aware peak windows when syncs are frequent.
      */
-    private async probeAllDevices(currentIntervalMs: number): Promise<void> {
+    private async probeAllDevices(): Promise<void> {
         // Load ALL devices — health checks are independent of syncEnabled
         const devices = await prisma.device.findMany({
             select: {
@@ -195,7 +196,6 @@ class HealthCheckScheduler {
                 ip: true,
                 port: true,
                 isActive: true,
-                lastPolledAt: true,
             },
             orderBy: { id: 'asc' },
         });
@@ -203,21 +203,9 @@ class HealthCheckScheduler {
         if (devices.length === 0) return;
 
         const timeout = Number(process.env.ZK_TIMEOUT) || 10_000;
-        const now = Date.now();
 
         const results = await Promise.allSettled(
             devices.map(async (device) => {
-                // ── Smart skip ──────────────────────────────────────────
-                // If the data sync (or a previous health check) already
-                // polled this device within the current interval window,
-                // there's no need for a redundant TCP connection.
-                if (device.lastPolledAt) {
-                    const msSinceLastPoll = now - device.lastPolledAt.getTime();
-                    if (msSinceLastPoll < currentIntervalMs) {
-                        return; // Skip — recently polled
-                    }
-                }
-
                 const reachable = await tcpProbe(device.ip, device.port, timeout);
                 const previouslyActive = device.isActive;
 

@@ -1,28 +1,29 @@
-import { body } from 'express-validator';
+import { z } from 'zod';
+import { USER_LIMITS } from '../system/system.constants';
 
-export const createUserValidator = [
-    body('firstName').notEmpty().withMessage('First name is required').trim(),
-    body('lastName').notEmpty().withMessage('Last name is required').trim(),
-    body('email').isEmail().withMessage('Valid email is required').normalizeEmail(),
-    body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
-    body('role').isIn(['ADMIN', 'HR']).withMessage('Role must be ADMIN or HR'),
-];
+export const createUserSchema = z.object({
+    firstName: z.string().min(1, 'First name is required').max(USER_LIMITS.NAME_MAX).trim(),
+    lastName: z.string().min(1, 'Last name is required').max(USER_LIMITS.NAME_MAX).trim(),
+    email: z.string().email('Valid email is required'),
+    password: z.string().min(USER_LIMITS.PASSWORD_MIN, `Password must be at least ${USER_LIMITS.PASSWORD_MIN} characters`).max(USER_LIMITS.PASSWORD_MAX),
+    role: z.enum(['ADMIN', 'HR'], { message: 'Role must be ADMIN or HR' }),
+});
 
-export const updateUserValidator = [
-    body('firstName').optional().notEmpty().withMessage('First name cannot be empty').trim(),
-    body('lastName').optional().notEmpty().withMessage('Last name cannot be empty').trim(),
-    body('email').optional().isEmail().withMessage('Valid email is required').normalizeEmail(),
-    body('role').optional().isIn(['ADMIN', 'HR']).withMessage('Role must be ADMIN or HR'),
-    body('password').optional().isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
-];
+export const updateUserSchema = z.object({
+    firstName: z.string().min(1).max(USER_LIMITS.NAME_MAX).trim().optional(),
+    lastName: z.string().min(1).max(USER_LIMITS.NAME_MAX).trim().optional(),
+    email: z.string().email().optional(),
+    role: z.enum(['ADMIN', 'HR']).optional(),
+    password: z.string().min(USER_LIMITS.PASSWORD_MIN).max(USER_LIMITS.PASSWORD_MAX).optional(),
+});
 
-export const changePasswordValidator = [
-    body('currentPassword').notEmpty().withMessage('Current password is required'),
-    body('newPassword').isLength({ min: 8 }).withMessage('New password must be at least 8 characters'),
-];
+export const changePasswordSchema = z.object({
+    currentPassword: z.string().min(1, 'Current password is required'),
+    newPassword: z.string().min(USER_LIMITS.PASSWORD_MIN, `New password must be at least ${USER_LIMITS.PASSWORD_MIN} characters`).max(USER_LIMITS.PASSWORD_MAX),
+});
 
-export const updateProfileValidator = [
-    body('firstName').optional().notEmpty().withMessage('First name cannot be empty').trim(),
-    body('lastName').optional().notEmpty().withMessage('Last name cannot be empty').trim(),
-    body('contactNumber').optional().trim(),
-];
+export const updateProfileSchema = z.object({
+    firstName: z.string().min(1).max(USER_LIMITS.NAME_MAX).trim().optional(),
+    lastName: z.string().min(1).max(USER_LIMITS.NAME_MAX).trim().optional(),
+    contactNumber: z.string().max(USER_LIMITS.CONTACT_MAX).trim().optional(),
+});

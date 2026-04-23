@@ -75,8 +75,18 @@ export function BaseSidebar({
   }
 
   return (
-    <aside className={`
-      fixed z-60 bg-[#E60000] flex flex-col transition-all duration-300 ease-in-out overflow-y-auto overflow-x-hidden scrollbar-hide-hover scrollbar-slim
+    <>
+      {/* Mobile Backdrop Overlay */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm lg:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+      
+      <aside aria-label="Main navigation" className={`
+      fixed z-60 bg-[#E60000] flex flex-col transition-all duration-300 ease-in-out
       
       /* Mobile View: Full height, flush to edges */
       top-0 bottom-0 left-0 rounded-none w-72
@@ -105,31 +115,41 @@ export function BaseSidebar({
           {title}
         </span>
 
-        <button onClick={onClose} className="lg:hidden absolute right-8 text-white p-2">
+        <button onClick={onClose} className="lg:hidden absolute right-8 text-white p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 rounded-lg">
           <X size={24} />
         </button>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 mt-2 relative flex flex-col min-h-0">
-        <ul ref={listRef} className="relative">
+      <nav 
+        aria-label="Sidebar navigation"
+        role="navigation"
+        className="flex-1 mt-2 relative flex flex-col min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide-hover scrollbar-slim"
+        style={{ WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 8px, black calc(100% - 16px), transparent)' }}
+      >
+        <ul ref={listRef} className="relative pb-4">
 
           {/* Sliding indicator */}
           {indicator && activeIndex >= 0 && (
             <div
-              className="absolute left-4 right-0 bg-gray-50 rounded-l-[30px] z-0"
+              className={`absolute left-4 bg-gray-50 z-0 ${
+                collapsed 
+                  ? 'right-4 rounded-[16px]' // Floating pill when collapsed
+                  : 'right-0 rounded-l-[30px]' // Connected shape when expanded
+              }`}
               style={{
                 top: indicator.top,
                 height: indicator.height,
                 transition: hasMounted
-                  ? 'top 350ms cubic-bezier(0.4, 0, 0.2, 1), height 350ms cubic-bezier(0.4, 0, 0.2, 1)'
+                  ? 'top 350ms cubic-bezier(0.4, 0, 0.2, 1), height 350ms cubic-bezier(0.4, 0, 0.2, 1), right 300ms cubic-bezier(0.4, 0, 0.2, 1), border-radius 300ms cubic-bezier(0.4, 0, 0.2, 1)'
                   : 'none',
               }}
             >
-              <div className="absolute right-0 -top-[30px] w-[30px] h-[30px] bg-gray-50 hidden lg:block" style={{ opacity: collapsed ? 0 : 1 }}>
+              {/* Only show the inverse curves when NOT collapsed */}
+              <div className="absolute right-0 -top-[30px] w-[30px] h-[30px] bg-gray-50 hidden lg:block" style={{ opacity: collapsed ? 0 : 1, transition: 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1)' }}>
                 <div className="absolute inset-0 bg-[#E60000] rounded-br-[30px]" />
               </div>
-              <div className="absolute right-0 -bottom-[30px] w-[30px] h-[30px] bg-gray-50 hidden lg:block" style={{ opacity: collapsed ? 0 : 1 }}>
+              <div className="absolute right-0 -bottom-[30px] w-[30px] h-[30px] bg-gray-50 hidden lg:block" style={{ opacity: collapsed ? 0 : 1, transition: 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1)' }}>
                 <div className="absolute inset-0 bg-[#E60000] rounded-tr-[30px]" />
               </div>
             </div>
@@ -140,6 +160,7 @@ export function BaseSidebar({
         </ul>
       </nav>
     </aside>
+    </>
   )
 }
 

@@ -5,24 +5,52 @@ import { timeSyncScheduler } from './timeSyncScheduler';
 import { healthCheckScheduler } from './healthCheckScheduler';
 import { logBufferMaintenanceScheduler } from './logBufferMaintenanceScheduler';
 import { audit } from '../../shared/lib/auditLogger';
+import { auditUpdate } from '../../shared/lib/auditHelpers';
 import { z } from 'zod';
 import deviceEmitter from '../../shared/events/deviceEmitter';
+import { SYNC_LIMITS, USER_LIMITS } from './system.constants';
 
 const updateSyncConfigSchema = z.object({
-    defaultIntervalSec: z.number().min(10, "Interval must be at least 10s").optional(),
-    highFreqIntervalSec: z.number().min(10, "Interval must be at least 10s").optional(),
-    lowFreqIntervalSec: z.number().min(60, "Low frequency interval must be at least 60s").optional(),
+    defaultIntervalSec: z.number()
+        .min(SYNC_LIMITS.DEFAULT_INTERVAL_MIN_SEC, `Interval must be at least ${SYNC_LIMITS.DEFAULT_INTERVAL_MIN_SEC}s`)
+        .max(SYNC_LIMITS.DEFAULT_INTERVAL_MAX_SEC, `Interval cannot exceed 24 hours (${SYNC_LIMITS.DEFAULT_INTERVAL_MAX_SEC}s)`)
+        .optional(),
+    highFreqIntervalSec: z.number()
+        .min(SYNC_LIMITS.HIGH_FREQ_INTERVAL_MIN_SEC, `Interval must be at least ${SYNC_LIMITS.HIGH_FREQ_INTERVAL_MIN_SEC}s`)
+        .max(SYNC_LIMITS.HIGH_FREQ_INTERVAL_MAX_SEC, `Interval cannot exceed 24 hours (${SYNC_LIMITS.HIGH_FREQ_INTERVAL_MAX_SEC}s)`)
+        .optional(),
+    lowFreqIntervalSec: z.number()
+        .min(SYNC_LIMITS.LOW_FREQ_INTERVAL_MIN_SEC, `Low frequency interval must be at least ${SYNC_LIMITS.LOW_FREQ_INTERVAL_MIN_SEC}s`)
+        .max(SYNC_LIMITS.LOW_FREQ_INTERVAL_MAX_SEC, `Low frequency interval cannot exceed 24 hours (${SYNC_LIMITS.LOW_FREQ_INTERVAL_MAX_SEC}s)`)
+        .optional(),
     shiftAwareSyncEnabled: z.boolean().optional(),
-    shiftBufferMinutes: z.number().max(120, "Shift buffer cannot exceed 2 hours (120 min)").optional(),
+    shiftBufferMinutes: z.number()
+        .min(SYNC_LIMITS.SHIFT_BUFFER_MIN)
+        .max(SYNC_LIMITS.SHIFT_BUFFER_MAX, `Shift buffer cannot exceed ${SYNC_LIMITS.SHIFT_BUFFER_MAX} min`)
+        .optional(),
     autoTimeSyncEnabled: z.boolean().optional(),
-    timeSyncIntervalSec: z.number().min(300, "Time sync interval must be at least 5 minutes (300s)").optional(),
+    timeSyncIntervalSec: z.number()
+        .min(SYNC_LIMITS.TIME_SYNC_INTERVAL_MIN_SEC, `Time sync interval must be at least ${SYNC_LIMITS.TIME_SYNC_INTERVAL_MIN_SEC}s`)
+        .max(SYNC_LIMITS.TIME_SYNC_INTERVAL_MAX_SEC, `Time sync interval cannot exceed 24 hours (${SYNC_LIMITS.TIME_SYNC_INTERVAL_MAX_SEC}s)`)
+        .optional(),
     healthCheckEnabled: z.boolean().optional(),
-    healthCheckIntervalSec: z.number().min(15, "Health check interval must be at least 15s").optional(),
-    globalMinCheckoutMinutes: z.number().min(15, "Global Minimum Checkout must be at least 15 minutes").optional(),
+    healthCheckIntervalSec: z.number()
+        .min(SYNC_LIMITS.HEALTH_CHECK_INTERVAL_MIN_SEC, `Health check interval must be at least ${SYNC_LIMITS.HEALTH_CHECK_INTERVAL_MIN_SEC}s`)
+        .max(SYNC_LIMITS.HEALTH_CHECK_INTERVAL_MAX_SEC, `Health check interval cannot exceed 24 hours (${SYNC_LIMITS.HEALTH_CHECK_INTERVAL_MAX_SEC}s)`)
+        .optional(),
+    globalMinCheckoutMinutes: z.number()
+        .min(SYNC_LIMITS.MIN_CHECKOUT_MIN, `Global Minimum Checkout must be at least ${SYNC_LIMITS.MIN_CHECKOUT_MIN} minutes`)
+        .max(SYNC_LIMITS.MIN_CHECKOUT_MAX_MIN, `Global Minimum Checkout cannot exceed 12 hours (${SYNC_LIMITS.MIN_CHECKOUT_MAX_MIN} minutes)`)
+        .optional(),
     logBufferMaintenanceEnabled: z.boolean().optional(),
     logBufferMaintenanceSchedule: z.enum(['daily', 'weekly', 'monthly']).optional(),
-    logBufferMaintenanceHour: z.number().int().min(0).max(23, "Hour must be 0-23").optional(),
+    logBufferMaintenanceHour: z.number().int().min(SYNC_LIMITS.MAINTENANCE_HOUR_MIN).max(SYNC_LIMITS.MAINTENANCE_HOUR_MAX, `Hour must be ${SYNC_LIMITS.MAINTENANCE_HOUR_MIN}-${SYNC_LIMITS.MAINTENANCE_HOUR_MAX}`).optional(),
 });
+
+// ─── GET /api/system/validation-limits ──────────────────────────────────────────
+export const getValidationLimits = (_req: Request, res: Response) => {
+    res.json({ success: true, limits: { ...SYNC_LIMITS, ...USER_LIMITS } });
+};
 
 // ─── GET /api/system/sync-status ──────────────────────────────────────────────
 export const getSyncStatus = async (req: Request, res: Response) => {
@@ -53,7 +81,24 @@ export const getSyncStatus = async (req: Request, res: Response) => {
 // ─── GET /api/system/sync-config ──────────────────────────────────────────────
 export const getSyncConfig = async (req: Request, res: Response) => {
     try {
-        const config = await prisma.syncConfig.findUnique({ where: { id: 1 } });
+        const config = await prisma.syncConfig.findUnique({
+            where: { id: 1 },
+            select: {
+                defaultIntervalSec: true,
+                highFreqIntervalSec: true,
+                lowFreqIntervalSec: true,
+                shiftAwareSyncEnabled: true,
+                shiftBufferMinutes: true,
+                autoTimeSyncEnabled: true,
+                timeSyncIntervalSec: true,
+                globalMinCheckoutMinutes: true,
+                healthCheckEnabled: true,
+                healthCheckIntervalSec: true,
+                logBufferMaintenanceEnabled: true,
+                logBufferMaintenanceSchedule: true,
+                logBufferMaintenanceHour: true,
+            }
+        });
         if (!config) {
             return res.status(404).json({ success: false, message: 'Sync config not found' });
         }
@@ -97,7 +142,7 @@ export const updateSyncConfig = async (req: Request, res: Response) => {
         });
 
         // Build human-readable change summaries
-        const changes: string[] = [];
+        const changes: { field: string; oldValue: string; newValue: string }[] = [];
         const trackableFields: Array<{ key: keyof typeof data; label: string; suffix?: string }> = [
             { key: 'defaultIntervalSec', label: 'Sync interval', suffix: 's' },
             { key: 'highFreqIntervalSec', label: 'Peak interval', suffix: 's' },
@@ -119,30 +164,23 @@ export const updateSyncConfig = async (req: Request, res: Response) => {
             if (newVal === undefined) continue;
             const oldVal = previousConfig[field.key];
             if (oldVal !== newVal) {
-                if (typeof newVal === 'boolean') {
-                    changes.push(`${field.label} ${newVal ? 'enabled' : 'disabled'}`);
-                } else {
-                    changes.push(`${field.label} updated from ${oldVal}${field.suffix ?? ''} → ${newVal}${field.suffix ?? ''}`);
-                }
+                let formattedOldVal = typeof oldVal === 'boolean' ? (oldVal ? 'Enabled' : 'Disabled') : String(oldVal) + (field.suffix ?? '');
+                let formattedNewVal = typeof newVal === 'boolean' ? (newVal ? 'Enabled' : 'Disabled') : String(newVal) + (field.suffix ?? '');
+                changes.push({ field: field.label, oldValue: formattedOldVal, newValue: formattedNewVal });
             }
         }
 
         // Only log if something actually changed
         if (changes.length > 0) {
-            void audit({
-                action: 'CONFIG_UPDATE',
+            void auditUpdate({
                 entityType: 'System',
                 entityId: 1,
                 performedBy: req.user?.employeeId,
                 source: 'admin-panel',
                 level: warningMessage ? 'WARN' : 'INFO',
-                details: changes.join('; '),
-                metadata: {
-                    updates: changes,
-                    ...(warningMessage ? { warning: warningMessage } : {}),
-                },
+                details: `System configuration updated${warningMessage ? ' (with warnings)' : ''}`,
                 correlationId: req.correlationId
-            });
+            }, changes);
         }
 
         // Restart the scheduler countdown immediately so the new interval applies right now
@@ -168,13 +206,17 @@ export const updateSyncConfig = async (req: Request, res: Response) => {
 };
 
 // ─── POST /api/system/sync-toggle ─────────────────────────────────────────────
+const toggleSyncSchema = z.object({
+    enabled: z.boolean(),
+});
+
 export const toggleGlobalSync = async (req: Request, res: Response) => {
     try {
-        const { enabled } = req.body;
-        
-        if (typeof enabled !== 'boolean') {
+        const parsed = toggleSyncSchema.safeParse(req.body);
+        if (!parsed.success) {
             return res.status(400).json({ success: false, message: 'Missing or invalid "enabled" field' });
         }
+        const { enabled } = parsed.data;
 
         const config = await prisma.syncConfig.update({
             where: { id: 1 },
@@ -184,15 +226,16 @@ export const toggleGlobalSync = async (req: Request, res: Response) => {
         const state = enabled ? 'enabled' : 'disabled';
         console.log(`[System] Global sync has been ${state}`);
 
-        void audit({
-            action: 'STATUS_CHANGE',
+        void auditUpdate({
             entityType: 'System',
             entityId: 1,
             performedBy: req.user?.employeeId,
             source: 'admin-panel',
             details: `Global sync was ${state}`,
             correlationId: req.correlationId
-        });
+        }, [
+            { field: 'Global Sync', oldValue: enabled ? 'Disabled' : 'Enabled', newValue: enabled ? 'Enabled' : 'Disabled' }
+        ]);
 
         res.json({ success: true, message: `Global sync has been ${state}`, config });
     } catch (error: unknown) {
@@ -223,10 +266,12 @@ export const triggerManualSync = async (req: Request, res: Response) => {
             performedBy: req.user?.employeeId,
             details: syncResult?.message || (result.success ? 'Manual sync completed successfully' : 'Manual sync failed'),
             metadata: syncResult ? { 
-                syncStatus: syncResult.status,
-                totalDevices: syncResult.totalDevices,
-                successfulDevices: syncResult.successfulDevices,
-                newLogsCount: syncResult.newLogs,
+                snapshot: {
+                    'Sync Status': syncResult.status,
+                    'Total Devices': String(syncResult.totalDevices),
+                    'Successful Devices': String(syncResult.successfulDevices),
+                    'New Logs Count': String(syncResult.newLogs),
+                }
             } : undefined,
             correlationId: req.correlationId
         });
@@ -257,7 +302,7 @@ export const triggerManualTimeSync = async (req: Request, res: Response) => {
             level: result.success ? 'INFO' : 'ERROR',
             performedBy: req.user?.employeeId,
             details: result.success ? 'Manual device clock sync completed' : 'Manual device clock sync failed',
-            metadata: { target: 'time_sync', message: result.message },
+            metadata: { snapshot: { 'Target': 'time_sync', 'Message': result.message } },
             correlationId: req.correlationId
         });
 

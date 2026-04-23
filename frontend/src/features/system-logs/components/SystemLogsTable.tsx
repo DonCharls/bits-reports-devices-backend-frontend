@@ -186,6 +186,51 @@ export function SystemLogsTable({ logs }: SystemLogsTableProps) {
                                                 </div>
                                             )}
 
+                                            {/* Render structured changes array */}
+                                            {Array.isArray(log.metadata.changes) && log.metadata.changes.length > 0 && (
+                                                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                                    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                                                        <h4 className="text-[10px] font-black uppercase tracking-wider text-indigo-600">Modified Fields</h4>
+                                                    </div>
+                                                    <div className="divide-y divide-slate-100">
+                                                        {log.metadata.changes.map((change: any, i: number) => (
+                                                            <div key={i} className="grid grid-cols-3 text-xs transition-colors hover:bg-slate-50/50">
+                                                                <div className="p-3 bg-slate-50/30 border-r border-slate-100 font-semibold text-slate-600 capitalize flex items-center">
+                                                                    {change.field.replace(/([A-Z])/g, ' $1').trim()}
+                                                                </div>
+                                                                <div className="p-3 text-red-600 line-through decoration-red-300 opacity-80 break-all bg-red-50/10 flex items-center">
+                                                                    {change.oldValue === null ? 'null' : String(change.oldValue)}
+                                                                </div>
+                                                                <div className="p-3 text-emerald-600 font-medium break-all bg-emerald-50/10 flex items-center border-l border-emerald-50">
+                                                                    {change.newValue === null ? 'null' : String(change.newValue)}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Render structured snapshot object */}
+                                            {log.metadata.snapshot && typeof log.metadata.snapshot === 'object' && Object.keys(log.metadata.snapshot).length > 0 && (
+                                                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                                    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                                                        <h4 className="text-[10px] font-black uppercase tracking-wider text-sky-600">Data Snapshot</h4>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-px bg-slate-100">
+                                                        {Object.entries(log.metadata.snapshot).map(([key, value]) => (
+                                                            <div key={key} className="bg-white p-3 flex flex-col gap-1 hover:bg-slate-50 transition-colors">
+                                                                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                                                                    {key.replace(/([A-Z])/g, ' $1').trim()}
+                                                                </span>
+                                                                <span className="text-xs font-semibold text-slate-800 break-all">
+                                                                    {value === null ? 'null' : String(value)}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
                                             {/* Render distinct error card if an error exists */}
                                             {(log.metadata.error || log.metadata.errorMessage) && (
                                                 <div className="bg-red-50 p-4 rounded-xl border border-red-100 shadow-sm flex flex-col gap-1">
@@ -197,6 +242,8 @@ export function SystemLogsTable({ logs }: SystemLogsTableProps) {
                                             {/* Render other primitive info fields, stripping objects/arrays and internal fields */}
                                             {Object.entries(log.metadata).filter(([key, val]) =>
                                                 key !== 'updates' &&
+                                                key !== 'changes' &&
+                                                key !== 'snapshot' &&
                                                 key !== 'error' &&
                                                 key !== 'errorMessage' &&
                                                 key !== 'body' &&
@@ -205,9 +252,11 @@ export function SystemLogsTable({ logs }: SystemLogsTableProps) {
                                                 key !== 'category' &&
                                                 typeof val !== 'object'
                                             ).length > 0 && (
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                                                     {Object.entries(log.metadata).filter(([key, val]) =>
                                                         key !== 'updates' &&
+                                                        key !== 'changes' &&
+                                                        key !== 'snapshot' &&
                                                         key !== 'error' &&
                                                         key !== 'errorMessage' &&
                                                         key !== 'body' &&

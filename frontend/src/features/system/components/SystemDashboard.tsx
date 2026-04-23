@@ -12,34 +12,7 @@ import {
     DeviceSyncResultPayload
 } from '@/features/devices/hooks/useDeviceStream';
 
-interface SyncStatus {
-    isActive: boolean;
-    intervalSec: number;
-    lastSyncAt: string | null;
-    nextSyncAt: string | null;
-    shiftAwareMode: boolean;
-    configUpdatedAt: string | null;
-    globalSyncEnabled: boolean;
-    currentMode?: 'PEAK' | 'OFF-PEAK' | 'DEFAULT';
-    healthCheck?: {
-        isActive: boolean;
-        intervalSec: number;
-        lastCheckAt: string | null;
-        nextCheckAt: string | null;
-    };
-}
-
-interface Device {
-    id: number;
-    name: string;
-    ip: string;
-    isActive: boolean;
-    syncEnabled: boolean;
-    lastSyncedAt: string | null;
-    lastPolledAt: string | null;
-    lastSyncStatus: string | null;
-    lastSyncError: string | null;
-}
+import { SyncStatus, Device } from '../types';
 
 /**
  * Client component that orchestrates the System dashboard.

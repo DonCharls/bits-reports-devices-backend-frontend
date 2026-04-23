@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { syncEmployeesToDevice, enrollEmployeeFingerprint, enrollEmployeeCard, deleteEmployeeCard, addUserToDevice, deleteUserFromDevice, findNextSafeZkId, acquireRegistrationMutex, deleteFingerprintGlobally, syncEmployeeFingerprints } from '../devices/zk';
 import { enqueueGlobalUpsertUser, enqueueGlobalDeleteUser, processDeviceSyncQueue } from '../devices/deviceSyncQueue.service';
 import { audit } from '../../shared/lib/auditLogger';
+import { auditUpdate, auditCreate, auditDelete, buildChanges } from '../../shared/lib/auditHelpers';
 import bcrypt from 'bcryptjs';
 import { generateRandomPassword } from '../../shared/utils/password.utils';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../../shared/lib/email.service';
@@ -130,15 +131,15 @@ export const deleteEmployee = async (req: Request, res: Response) => {
             },
         });
 
-        void audit({
-            action: 'STATUS_CHANGE',
+        void auditUpdate({
             entityType: 'Employee',
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             details: `Employee ${employee.firstName} ${employee.lastName} deactivated`,
-            metadata: { previousStatus: employee.employmentStatus, newStatus: 'INACTIVE' },
             correlationId: req.correlationId
-        });
+        }, [
+            { field: 'employmentStatus', oldValue: employee.employmentStatus, newValue: 'INACTIVE' }
+        ]);
 
         res.json({
             success: true,
@@ -199,15 +200,15 @@ export const reactivateEmployee = async (req: Request, res: Response) => {
             },
         });
 
-        void audit({
-            action: 'STATUS_CHANGE',
+        void auditUpdate({
             entityType: 'Employee',
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             details: `Employee ${updatedEmployee.firstName} ${updatedEmployee.lastName} reactivated`,
-            metadata: { previousStatus: existingEmployee.employmentStatus, newStatus: 'ACTIVE' },
             correlationId: req.correlationId
-        });
+        }, [
+            { field: 'employmentStatus', oldValue: existingEmployee.employmentStatus, newValue: 'ACTIVE' }
+        ]);
 
         res.json({
             success: true,
@@ -399,14 +400,16 @@ export const createEmployee = async (req: Request, res: Response) => {
 
         console.log(`[API] Created employee: ${newEmployee.firstName} ${newEmployee.lastName} (zkId: ${newEmployee.zkId})`);
 
-        void audit({
-            action: 'CREATE',
+        void auditCreate({
             entityType: 'Employee',
             entityId: newEmployee.id,
             performedBy: req.user?.employeeId,
             details: `Created employee ${newEmployee.firstName} ${newEmployee.lastName}`,
-            metadata: { email, role: newEmployee.role, departmentId, employeeNumber },
             correlationId: req.correlationId
+        }, { 
+            email, 
+            role: newEmployee.role, 
+            employeeNumber 
         });
 
         // ── Respond immediately — device sync happens in the background ──────
@@ -626,28 +629,16 @@ export const updateEmployee = async (req: Request, res: Response) => {
             },
         });
 
-        const changes: string[] = [];
-        for (const [key, newValue] of Object.entries(updateData)) {
-            if (key === 'updatedAt' || key === 'password') continue;
-            const oldValue = (existingEmployee as Record<string, unknown>)[key];
-            if (oldValue !== newValue) {
-                const oldValStr = oldValue instanceof Date ? oldValue.toISOString().split('T')[0] : (oldValue || 'empty');
-                const newValStr = newValue instanceof Date ? newValue.toISOString().split('T')[0] : (newValue || 'empty');
-                if (oldValStr !== newValStr) {
-                    changes.push(`Updated ${key.replace(/([A-Z])/g, ' $1').toLowerCase().trim()} from "${oldValStr}" to "${newValStr}"`);
-                }
-            }
-        }
+        const trackedFields = Object.keys(updateData).filter(k => k !== 'updatedAt' && k !== 'password');
+        const changes = buildChanges(existingEmployee as Record<string, unknown>, updateData, trackedFields);
 
-        void audit({
-            action: 'UPDATE',
+        void auditUpdate({
             entityType: 'Employee',
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             details: `Updated employee ${updatedEmployee.firstName} ${updatedEmployee.lastName}`,
-            metadata: changes.length > 0 ? { updates: changes } : undefined,
             correlationId: req.correlationId
-        });
+        }, changes);
 
         res.json({
             success: true,
@@ -748,15 +739,16 @@ export const permanentDeleteEmployee = async (req: Request, res: Response) => {
             await tx.employee.delete({ where: { id: employeeId } });
         });
 
-        void audit({
-            action: 'DELETE',
+        void auditDelete({
             entityType: 'Employee',
             entityId: employeeId,
             performedBy: req.user?.employeeId,
             level: 'WARN',
             details: `Permanently deleted employee ${employee.firstName} ${employee.lastName}`,
-            metadata: { email: employee.email, role: employee.role },
             correlationId: req.correlationId
+        }, { 
+            email: employee.email, 
+            role: employee.role 
         });
 
         res.json({
