@@ -8,7 +8,9 @@ export interface AuditLog {
   attendance: {
     employee: {
       firstName: string;
+      middleName?: string;
       lastName: string;
+      suffix?: string;
       Branch?: { name: string } | null;
       role: string;
     };

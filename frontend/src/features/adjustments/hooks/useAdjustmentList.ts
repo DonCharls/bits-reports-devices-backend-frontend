@@ -6,6 +6,13 @@ import { useHorizontalDragScroll } from '@/hooks/useHorizontalDragScroll'
 import { useTableSort } from '@/hooks/useTableSort'
 import { Adjustment } from '@/features/adjustments/types'
 
+interface EmployeeName {
+  firstName: string
+  middleName?: string | null
+  lastName: string
+  suffix?: string | null
+}
+
 // ─── Local Formatters ─────────────────────────────────────────────────────────
 export function formatTime(iso: string | null): string {
     if (!iso) return '—'
@@ -33,7 +40,7 @@ export function formatDate(iso: string): string {
     } catch { return iso }
 }
 
-export function empName(emp: any): string {
+export function empName(emp: EmployeeName | null | undefined): string {
     if (!emp) return 'Unknown'
     return `${emp.firstName}${emp.middleName ? ` ${emp.middleName[0]}.` : ''} ${emp.lastName}${emp.suffix ? ` ${emp.suffix}` : ''}`
 }
@@ -132,8 +139,8 @@ export function useAdjustmentList(role: 'admin' | 'hr') {
             } else {
                 showToast('error', 'Approval Failed', data.message || 'Failed to approve')
             }
-        } catch (e: any) {
-            showToast('error', 'Approval Failed', e.message || 'Network error')
+        } catch (e: unknown) {
+            showToast('error', 'Approval Failed', e instanceof Error ? e.message : 'Network error')
         } finally {
             setActionLoading(false)
         }
@@ -162,8 +169,8 @@ export function useAdjustmentList(role: 'admin' | 'hr') {
             } else {
                 showToast('error', 'Rejection Failed', data.message || 'Failed to reject')
             }
-        } catch (e: any) {
-            showToast('error', 'Rejection Failed', e.message || 'Network error')
+        } catch (e: unknown) {
+            showToast('error', 'Rejection Failed', e instanceof Error ? e.message : 'Network error')
         } finally {
             setActionLoading(false)
         }

@@ -2,12 +2,12 @@
 
 import React from 'react'
 import Link from 'next/link'
-import { Loader2, CheckCircle2, XCircle, Clock, ExternalLink } from 'lucide-react'
+import { Loader2, CheckCircle2, XCircle, Clock, ExternalLink, LucideIcon } from 'lucide-react'
 import { SortableHeader } from '@/components/ui/SortableHeader'
 import { Adjustment } from '@/features/adjustments/types'
 import { formatTime, formatTimestamp, formatDate, empName } from '../hooks/useAdjustmentList'
 
-const statusConfig: Record<string, { label: string; bg: string; text: string; border: string; icon: any }> = {
+const statusConfig: Record<string, { label: string; bg: string; text: string; border: string; icon: LucideIcon }> = {
     pending: { label: 'Pending', bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200', icon: Clock },
     approved: { label: 'Approved', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', icon: CheckCircle2 },
     rejected: { label: 'Rejected', bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', icon: XCircle },
@@ -17,11 +17,11 @@ export interface AdjustmentTableProps {
     loading: boolean
     sortedAdjustments: Adjustment[]
     sortKeyStr: string | null
-    sortOrder: any
+    sortOrder: 'asc' | 'desc' | null
     statusFilter: string
     isAdmin: boolean
     actionLoading: boolean
-    handleSort: (key: any) => void
+    handleSort: (key: string) => void
     onApprove: (id: number) => void
     onReject: (id: number) => void
 }

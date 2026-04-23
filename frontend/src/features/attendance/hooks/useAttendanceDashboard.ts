@@ -10,6 +10,61 @@ import { fmtHours, formatLate, fmtMins, toTimeInput } from '@/features/attendanc
 import { AttendanceRecord } from '@/features/attendance/types'
 import * as XLSX from 'xlsx'
 
+interface RawAttendanceLog {
+  employee?: {
+    role?: string
+    firstName: string
+    middleName?: string
+    lastName: string
+    suffix?: string
+    Department?: { name: string }
+    Branch?: { name: string }
+    Shift?: { shiftCode: string; isNightShift: boolean }
+  }
+  status: string
+  checkInTime: string | null
+  checkOutTime: string | null
+  date: string
+  id: number
+  employeeId: number
+  totalHours: number
+  lateMinutes: number
+  overtimeMinutes: number
+  undertimeMinutes: number
+  shiftCode: string | null
+  isAnomaly?: boolean
+  isEarlyOut?: boolean
+  isShiftActive?: boolean
+  gracePeriodApplied?: boolean
+  notes?: string
+  isEarlyPunch?: boolean
+  isMissingCheckout?: boolean
+  checkInDeviceName?: string | null
+  checkOutDeviceName?: string | null
+  checkoutSource?: string | null
+  isEdited?: boolean
+  displayStatus?: string
+}
+
+interface RawEmployee {
+  id: number
+  role: string
+  employmentStatus: string
+  firstName: string
+  lastName: string
+  Department?: { name: string }
+  Branch?: { name: string }
+  Shift?: { shiftCode: string; isNightShift: boolean }
+}
+
+interface EditRequestBody {
+  reason: string
+  employeeId?: number
+  date?: string
+  checkInTime?: string
+  checkOutTime?: string
+}
+
 const ROW_PER_PAGE = 10
 
 export function useAttendanceDashboard(role: 'admin' | 'hr') {
@@ -133,21 +188,21 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
 
       const data = await res.json()
       if (data.success) {
-        const userRecords = data.data.filter((log: any) => {
-          const emp = log.employee || {}
-          return emp.role === 'USER' || !emp.role
+        const userRecords = data.data.filter((log: RawAttendanceLog) => {
+          const emp = log.employee
+          return !emp || emp.role === 'USER' || !emp.role
         })
 
-        const mapped: AttendanceRecord[] = userRecords.map((log: any) => {
-          const emp = log.employee || {}
+        const mapped: AttendanceRecord[] = userRecords.map((log: RawAttendanceLog) => {
+          const emp = log.employee
           const isPending = log.status === 'pending'
-          const checkIn = new Date(log.checkInTime)
+          const checkIn = log.checkInTime ? new Date(log.checkInTime) : new Date()
           const checkOut = log.checkOutTime ? new Date(log.checkOutTime) : null
           const totalHours: number = isPending ? 0 : (log.totalHours ?? (checkOut ? (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60) : 0))
           const lateMinutes: number = isPending ? 0 : (log.lateMinutes ?? 0)
           const overtimeMinutes: number = isPending ? 0 : (log.overtimeMinutes ?? 0)
           const undertimeMinutes: number = isPending ? 0 : (log.undertimeMinutes ?? 0)
-          const shiftCode: string | null = log.shiftCode ?? emp.Shift?.shiftCode ?? null
+          const shiftCode: string | null = log.shiftCode ?? emp?.Shift?.shiftCode ?? null
           const isAnomaly: boolean = isPending ? false : (log.isAnomaly ?? false)
           const isEarlyOut: boolean = isPending ? false : (log.isEarlyOut ?? false)
           const isShiftActive: boolean = isPending ? false : (log.isShiftActive ?? false)
@@ -161,15 +216,15 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
           return {
             id: log.id,
             employeeId: log.employeeId,
-            employeeName: emp.firstName ? `${emp.firstName}${emp.middleName ? ` ${emp.middleName[0]}.` : ''} ${emp.lastName}${emp.suffix ? ` ${emp.suffix}` : ''}` : 'Unknown',
-            department: emp.Department?.name || 'General',
-            branchName: emp.Branch?.name || '—',
+            employeeName: emp?.firstName ? `${emp.firstName}${emp.middleName ? ` ${emp.middleName[0]}.` : ''} ${emp.lastName}${emp.suffix ? ` ${emp.suffix}` : ''}` : 'Unknown',
+            department: emp?.Department?.name || 'General',
+            branchName: emp?.Branch?.name || '—',
             date: new Date(log.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }),
             checkIn: isPending ? '—' : checkIn.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true }),
             checkOut: isPending ? '—' : (checkOut ? checkOut.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'),
             status: isPending ? 'pending' : computedStatus, 
             displayStatus, lateMinutes, totalHours, overtimeMinutes, undertimeMinutes, shiftCode,
-            isNightShift: emp.Shift?.isNightShift ?? false,
+            isNightShift: emp?.Shift?.isNightShift ?? false,
             isAnomaly, isEarlyOut, isShiftActive, gracePeriodApplied,
             notes: log.notes || null,
             isEarlyPunch: log.isEarlyPunch ?? false,
@@ -182,19 +237,19 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
         })
 
         // Fetch all active employees to inject absent rows
-        let allEmployees: any[] = []
+        let allEmployees: RawEmployee[] = []
         try {
           const empRes = await fetch('/api/employees?limit=9999', { credentials: 'include' })
           const empData = await empRes.json()
-          if (empData.success) allEmployees = (empData.employees || empData.data || []).filter((e: any) =>
+          if (empData.success) allEmployees = (empData.employees || empData.data || []).filter((e: RawEmployee) =>
             (e.role === 'USER' || !e.role) && (e.employmentStatus === 'ACTIVE' || !e.employmentStatus)
           )
         } catch { /* ignore */ }
 
         const presentIds = new Set(mapped.map(r => r.employeeId))
         const absentRows: AttendanceRecord[] = allEmployees
-          .filter((e: any) => !presentIds.has(e.id))
-          .map((e: any) => ({
+          .filter((e: RawEmployee) => !presentIds.has(e.id))
+          .map((e: RawEmployee) => ({
             id: `absent-${e.id}`,
             employeeId: e.id,
             employeeName: `${e.firstName} ${e.lastName}`,
@@ -235,8 +290,8 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
       } else {
         setError(data.message || 'Failed to fetch attendance')
       }
-    } catch (e: any) {
-      setError(e.message || 'Network error')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Network error')
     } finally {
       setLoading(false)
     }
@@ -316,7 +371,7 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
     try {
       const isAbsentRecord = String(editingLog.id).startsWith('absent-')
       
-      const body: any = { 
+      const body: EditRequestBody = { 
         reason: editReason,
       }
       
@@ -346,8 +401,8 @@ export function useAttendanceDashboard(role: 'admin' | 'hr') {
       } else {
         showToast('error', 'Update Failed', data.message || 'Update failed')
       }
-    } catch (e: any) {
-      showToast('error', 'Network Error', e.message || 'Network error')
+    } catch (e: unknown) {
+      showToast('error', 'Network Error', e instanceof Error ? e.message : 'Network error')
     } finally {
       setActionLoading(false)
     }

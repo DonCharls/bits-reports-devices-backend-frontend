@@ -1,6 +1,10 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { AuditLog, GroupedAuditLog } from '../utils/adjustment-log-types'
 
+interface RawBranch {
+    name: string
+}
+
 interface UseAdjustmentLogsProps {
     initialItemsPerPage?: number;
     initialEntityId?: number | null;
@@ -70,7 +74,7 @@ export function useAdjustmentLogs({ initialItemsPerPage = 15, initialEntityId = 
             .then(r => r.json())
             .then(d => {
                 if (d.success) {
-                    const names = (d.branches || d.data || []).map((b: any) => b.name)
+                    const names = (d.branches || d.data || []).map((b: RawBranch) => b.name)
                     setBranches(prev => Array.from(new Set([...prev, ...names])).sort())
                 }
             })
@@ -107,7 +111,7 @@ export function useAdjustmentLogs({ initialItemsPerPage = 15, initialEntityId = 
             const first = group.logs[0]
             const emp = first.attendance?.employee
             const adjuster = first.adjustedBy
-            const employeeName = emp ? `${emp.firstName}${ (emp as any).middleName ? ` ${ (emp as any).middleName[0]}.` : ''} ${emp.lastName}${ (emp as any).suffix ? ` ${ (emp as any).suffix}` : ''}` : 'Unknown'
+            const employeeName = emp ? `${emp.firstName}${ emp.middleName ? ` ${ emp.middleName[0]}.` : ''} ${emp.lastName}${ emp.suffix ? ` ${ emp.suffix}` : ''}` : 'Unknown'
             const adjusterName = adjuster ? `${adjuster.firstName} ${adjuster.lastName}` : 'System'
             const branch = emp?.Branch?.name || '—'
             const reason = group.logs.find(l => l.reason)?.reason || '—'

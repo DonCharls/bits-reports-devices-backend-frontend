@@ -102,7 +102,14 @@ export function AdjustmentAuditLogsDashboard() {
     return `${day}/${month}/${year}`;
   };
 
-  const CustomSelect = ({ value, options, onChange, id }: any) => {
+  interface CustomSelectProps {
+    value: string
+    options: string[]
+    onChange: (value: string) => void
+    id: string
+  }
+
+  const CustomSelect = ({ value, options, onChange, id }: CustomSelectProps) => {
     const isOpen = openDropdown === id;
     return (
       <div className="relative min-w-[180px]">

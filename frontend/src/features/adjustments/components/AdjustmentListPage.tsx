@@ -100,7 +100,7 @@ export function AdjustmentListPage({ role }: AdjustmentListPageProps) {
                         statusFilter={statusFilter}
                         isAdmin={isAdmin}
                         actionLoading={actionLoading}
-                        handleSort={handleSort}
+                        handleSort={handleSort as (key: string) => void}
                         onApprove={setApprovingId}
                         onReject={(id) => { setRejectingId(id); setRejectionReason('') }}
                     />
