@@ -155,7 +155,7 @@ export function ShiftFormModal({
                           newBreaks[i].start = e.target.value;
                           return { ...f, breaks: newBreaks };
                         })}
-                        className={`w-1/3 p-2 bg-white border rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 ${getBreakError(b) ? 'border-red-400' : 'border-slate-200'}`}
+                        className={`w-1/3 p-2 bg-white border rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 ${getBreakError(b, form.startTime, form.endTime) ? 'border-red-400' : 'border-slate-200'}`}
                       />
                       <span className="text-slate-400 font-bold">-</span>
                       <input
@@ -165,7 +165,7 @@ export function ShiftFormModal({
                           newBreaks[i].end = e.target.value;
                           return { ...f, breaks: newBreaks };
                         })}
-                        className={`w-1/3 p-2 bg-white border rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 ${getBreakError(b) ? 'border-red-400' : 'border-slate-200'}`}
+                        className={`w-1/3 p-2 bg-white border rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20 ${getBreakError(b, form.startTime, form.endTime) ? 'border-red-400' : 'border-slate-200'}`}
                       />
                       <button
                         type="button"
@@ -175,8 +175,8 @@ export function ShiftFormModal({
                         <Trash2 size={14} />
                       </button>
                     </div>
-                    {getBreakError(b) && (
-                      <p className="text-[11px] text-red-500 font-semibold ml-1">{getBreakError(b)}</p>
+                    {getBreakError(b, form.startTime, form.endTime) && (
+                      <p className="text-[11px] text-red-500 font-semibold ml-1">{getBreakError(b, form.startTime, form.endTime)}</p>
                     )}
                   </div>
                 ))}

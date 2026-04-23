@@ -55,8 +55,30 @@ export function toMinutes(t: string) {
   return h * 60 + m
 }
 
-export function getBreakError(b: { start: string; end: string }) {
+export function getBreakError(
+  b: { start: string; end: string },
+  shiftStart?: string,
+  shiftEnd?: string
+): string | null {
   if (!b.start || !b.end) return null
   if (toMinutes(b.end) <= toMinutes(b.start)) return '"To" time must be later than "From" time.'
+  if (shiftStart && shiftEnd) {
+    const shiftStartMins = toMinutes(shiftStart)
+    const shiftEndMins = toMinutes(shiftEnd)
+    const breakStartMins = toMinutes(b.start)
+    const breakEndMins = toMinutes(b.end)
+    // Handle overnight shifts where endTime < startTime
+    const isOvernight = shiftEndMins <= shiftStartMins
+    if (isOvernight) {
+      // Break must start after shift start OR end before shift end (wraps midnight)
+      const validStart = breakStartMins >= shiftStartMins || breakStartMins < shiftEndMins
+      const validEnd = breakEndMins > shiftStartMins || breakEndMins <= shiftEndMins
+      if (!validStart || !validEnd) return 'Break must be within the shift hours.'
+    } else {
+      if (breakStartMins < shiftStartMins || breakEndMins > shiftEndMins) {
+        return 'Break must be within the shift hours.'
+      }
+    }
+  }
   return null
 }
